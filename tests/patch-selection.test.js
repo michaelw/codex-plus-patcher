@@ -124,6 +124,17 @@ test("review patch mounts repository mux before main branch selection", () => {
     assert.match(transformed, /method:`search-branches`/);
     assert.match(transformed, /CPXBranchPickerDropdownContent/);
     assert.match(transformed, /source:D,operationSource:`codex_plus_review`,hostConfig:t,\.\.\.C\.length>0\?\{baseBranch:C\}:\{\}/);
+    assert.match(transformed, /function CPXRepoDiffBody\(\{cwd:e,hostConfig:t,conversationId:n,diffMode:r,diffText:i,statusText:a,error:o,isLoading:s\}\)/);
+    assert.match(transformed, /c=xr\(i\)/);
+    assert.match(transformed, /\(0,Q\.createElement\)\(Ma,\{key:/);
+    assert.match(
+      transformed,
+      /o\?null:\(0,\$\.jsx\)\(CPXRepoDiffBody,\{cwd:e\.cwd,hostConfig:t,conversationId:r,diffMode:A1,diffText:c,statusText:b,error:f,isLoading:u\}\)/,
+    );
+    assert.match(transformed, /conversationId:o,diffMode:a,baseBranch:m\.get\(S\(e\)\)\?\?``/);
+    assert.match(transformed, /className:`mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2`/);
+    assert.match(transformed, /containerClassName:`codex-review-diff-card extension:rounded-lg w-full max-w-none`/);
+    assert.match(transformed, /className:`flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto`/);
     assert.doesNotMatch(transformed, /placeholder:`base`/);
     assert.doesNotMatch(transformed, /\(0,\$\.jsx\)\(`input`,\{className:`h-7 w-28/);
   }
