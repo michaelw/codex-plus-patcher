@@ -167,3 +167,108 @@ test("worker patch allows codex plus branch picker read-only branch requests", (
     );
   }
 });
+
+test("appearance settings patch adds light and dark user bubble color controls", () => {
+  const fakeSettingsBundle = [
+    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},pointerCursors:",
+    "function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+    "let r=a(s),i=N(),o=i.formatMessage(Q.chromeThemeAccent),c=i.formatMessage(Q.chromeThemeBackground),l=i.formatMessage(Q.chromeThemeForeground),u=i.formatMessage(Q.chromeThemeContrast),d=i.formatMessage(Q.chromeThemeTranslucentSidebar),",
+    "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),O.map",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath === "webview/assets/general-settings-Bit-KX17.js",
+    )?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has appearance settings transform`);
+
+    const transformed = transform(fakeSettingsBundle);
+
+    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
+    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_EVENT=`codex-plus:user-message-bubble-colors-change`/);
+    assert.match(transformed, /userBubble:\{id:`settings\.general\.appearance\.userMessageBubble\.short`,defaultMessage:`User bubble`/);
+    assert.match(transformed, /CPX_defaultUserBubbleColor\(e\)\{return e===`dark`\?`#2f2f2f`:`#f2f2f2`\}/);
+    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\{return CPX_isUserBubbleColor\(t\)&&t\.toLowerCase\(\)!==CPX_defaultUserBubbleColor\(e\)\}/);
+    assert.match(transformed, /light:CPX_isStoredUserBubbleColor\(`light`,e\.light\)\?e\.light:``/);
+    assert.match(transformed, /dark:CPX_isStoredUserBubbleColor\(`dark`,e\.dark\)\?e\.dark:``/);
+    assert.match(transformed, /CPX_readUserBubbleColors\(\)\[e\]\|\|CPX_defaultUserBubbleColor\(e\)/);
+    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\?n\[e\]=t:delete n\[e\]/);
+    assert.match(transformed, /CPX_userBubbleLabel=i\.formatMessage\(Q\.userBubble\)/);
+    assert.match(transformed, /\(0,Z\.jsx\)\(CPXUserBubbleColorRow,\{variant:n,label:CPX_userBubbleLabel,ariaLabel:i\.formatMessage/);
+    assert.match(transformed, /defaultMessage:`\{variant\} user message bubble color`/);
+  }
+});
+
+test("user message patch applies variant-specific bubble colors with default fallback", () => {
+  const fakeUserMessageBundle = [
+    'import{t as ze}from"./use-measured-text-collapse-BhNFLYvW.js";',
+    "var Z=i(),Q=e(n(),1),$=r();function Ue(e){return null}",
+    "function it(){return(0,$.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:null})}",
+    "function ot(e){let t=(0,Z.c)(93),{message:n,sentAtMs:r,collapsedLineCount:i,alwaysShowActions:a,compactActions:u,messageStatus:f,messageStatusIcon:p,hookStats:m,threadDetailLevel:h,referencesPriorConversation:g,reviewMode:_,pullRequestFixMode:v,autoResolveSync:y,hasExternalAttachments:b,commentCount:ee,onEditMessage:x,threadId:S,turnId:w,cwd:T,hostId:k}=e,M=a===void 0?!1:a,N=u===void 0?!1:u,P=g===void 0?!1:g,F=_===void 0?!1:_,I=v===void 0?!1:v,L=y===void 0?!1:y,te=b===void 0?!1:b,R=ee===void 0?0:ee,z=s(re),B=l(n),V=B.trim(),H=x!=null&&w!=null&&!B.startsWith(`PLEASE IMPLEMENT THIS PLAN:`),[ie,ae]=(0,Q.useState)(!1),U=o(at,w),W=H&&U!=null,G=C(),oe=c(ne),se=B.startsWith(`PLEASE IMPLEMENT THIS PLAN:`)?G.formatMessage({id:`codex.userMessage.implementPlan`,defaultMessage:`Yes, implement this plan`,description:`Display text for the synthetic implement-plan follow-up prompt`}):B,K=se.trim().length>0,ce=P||F||I||L||te||R>0,le=K||!ce,ue=ce||f!=null||!N,de;",
+    "let xe=be,Y,Se;if(t[27]!==H){let e=D(`bg-token-foreground/5 max-w-[77%] min-w-0 overflow-hidden break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]`,!K&&`leading-none`),n;Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),children:xe}):null}",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath === "webview/assets/user-message-attachments-CgyXEK9U.js",
+    )?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has user message transform`);
+
+    const transformed = transform(fakeUserMessageBundle);
+
+    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
+    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\{return CPX_isUserBubbleColor\(t\)&&t\.toLowerCase\(\)!==CPX_defaultUserBubbleColor\(e\)\}/);
+    assert.match(transformed, /light:CPX_isStoredUserBubbleColor\(`light`,e\.light\)\?e\.light:null/);
+    assert.match(transformed, /dark:CPX_isStoredUserBubbleColor\(`dark`,e\.dark\)\?e\.dark:null/);
+    assert.match(transformed, /CPX_userBubbleTextColor\(e\)/);
+    assert.match(transformed, /function CPX_setUserBubbleVars\(\)/);
+    assert.match(transformed, /--codex-plus-user-bubble-light-bg/);
+    assert.match(transformed, /--codex-plus-user-bubble-dark-fg/);
+    assert.match(transformed, /function CPX_installUserBubbleColors\(\)/);
+    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
+    assert.match(transformed, /:root\.dark :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\),:root\.electron-dark :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
+    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\]\)\{color:var\(--codex-plus-user-bubble-light-fg\)\}/);
+    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder\{color:var\(--codex-plus-user-bubble-light-fg\)\}/);
+    assert.match(transformed, /:root\.dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\]\)\{color:var\(--codex-plus-user-bubble-dark-fg\)\}/);
+    assert.match(transformed, /:root\.dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root\.dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root\.dark \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder\{color:var\(--codex-plus-user-bubble-dark-fg\)\}/);
+    assert.match(transformed, /window\.addEventListener\(CPX_USER_BUBBLE_COLORS_EVENT,CPX_setUserBubbleVars\)/);
+    assert.match(transformed, /CPX_installUserBubbleColors\(\)/);
+    assert.match(transformed, /"data-user-message-bubble":!0,"data-codex-plus-user-bubble":!0,role:H\?`button`/);
+    assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
+    assert.match(transformed, /bg-token-foreground\/5 max-w-\[77%\]/);
+  }
+});
+
+test("composer patch applies the user entry marker and shared color variables", () => {
+  const fakeComposerBundle = [
+    "function oh(e){let t=(0,$.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,f=i===void 0?`default`:i,p=o===void 0?!1:o,m=s===void 0?`multiline`:s,h=f===`home`&&`z-10`,g=m===`single-line`?`overflow-visible rounded-full`:rh.multilineSurface,_=p&&`bg-token-dropdown-background/50`,v;t[0]!==r||t[1]!==h||t[2]!==g||t[3]!==_?(v=qt(`relative flex flex-col border border-token-input-border bg-token-input-background/90 shadow-[0_4px_16px_0_rgba(0,0,0,0.05)] backdrop-blur-lg electron:dark:bg-token-dropdown-background`,h,g,_,r),t[0]=r,t[1]=h,t[2]=g,t[3]=_,t[4]=v):v=t[4];let y;return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,Q.jsx)(Jt.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath === "webview/assets/composer-CCuv6v-2.js",
+    )?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has composer transform`);
+
+    const transformed = transform(fakeComposerBundle);
+
+    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
+    assert.match(transformed, /function CPX_installUserBubbleColors\(\)/);
+    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
+    assert.match(transformed, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\)/);
+    assert.match(transformed, /\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before/);
+    assert.match(transformed, /\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after/);
+    assert.match(transformed, /input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder/);
+    assert.doesNotMatch(transformed, /\.ProseMirror\[data-placeholder\]::before/);
+    assert.doesNotMatch(transformed, /p\.is-editor-empty:first-child::before/);
+    assert.match(transformed, /button:not\(\[class\*="bg-token-foreground"\]\) svg/);
+    assert.match(transformed, /\[class\*="text-token-description-foreground"\]/);
+    assert.match(transformed, /\[class\*="text-token-input-placeholder-foreground"\]/);
+    assert.match(transformed, /\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg/);
+    assert.match(transformed, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\)/);
+    assert.match(transformed, /\(0,Q\.jsx\)\(Jt\.div,\{inert:a,"data-codex-plus-user-entry":!0,className:v/);
+  }
+});

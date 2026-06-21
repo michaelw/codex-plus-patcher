@@ -5,7 +5,10 @@ const newTitle = "<title>Codex Plus</title>";
 const titleFile = "webview/index.html";
 const workerFile = ".vite/build/worker.js";
 const appShellFile = "webview/assets/app-shell-DCvuE1cb.js";
+const generalSettingsFile = "webview/assets/general-settings-Bit-KX17.js";
 const threadSidePanelTabsFile = "webview/assets/thread-side-panel-tabs-D0dd27Zf.js";
+const userMessageAttachmentsFile = "webview/assets/user-message-attachments-CgyXEK9U.js";
+const composerFile = "webview/assets/composer-CCuv6v-2.js";
 
 function replaceOnce(text, oldText, newText, label) {
   const matches = text.split(oldText).length - 1;
@@ -149,6 +152,77 @@ function patchAppShell(text) {
   );
 }
 
+const codexPlusUserBubbleSettingsHelpers = `
+const CPX_USER_BUBBLE_COLORS_KEY=\`codex-plus:user-message-bubble-colors\`,CPX_USER_BUBBLE_COLORS_EVENT=\`codex-plus:user-message-bubble-colors-change\`;function CPX_isUserBubbleColor(e){return typeof e===\`string\`&&/^#[0-9a-fA-F]{6}$/.test(e)}function CPX_defaultUserBubbleColor(e){return e===\`dark\`?\`#2f2f2f\`:\`#f2f2f2\`}function CPX_isStoredUserBubbleColor(e,t){return CPX_isUserBubbleColor(t)&&t.toLowerCase()!==CPX_defaultUserBubbleColor(e)}function CPX_readUserBubbleColors(){try{let e=JSON.parse(localStorage.getItem(CPX_USER_BUBBLE_COLORS_KEY)??\`{}\`)??{};return{light:CPX_isStoredUserBubbleColor(\`light\`,e.light)?e.light:\`\`,dark:CPX_isStoredUserBubbleColor(\`dark\`,e.dark)?e.dark:\`\`}}catch{return{light:\`\`,dark:\`\`}}}function CPX_writeUserBubbleColor(e,t){let n=CPX_readUserBubbleColors();CPX_isStoredUserBubbleColor(e,t)?n[e]=t:delete n[e],localStorage.setItem(CPX_USER_BUBBLE_COLORS_KEY,JSON.stringify(n)),window.dispatchEvent(new CustomEvent(CPX_USER_BUBBLE_COLORS_EVENT,{detail:n}))}function CPXUserBubbleColorRow({variant:e,label:t,ariaLabel:n}){let[r,i]=(0,X.useState)(()=>CPX_readUserBubbleColors()[e]||CPX_defaultUserBubbleColor(e));return(0,X.useEffect)(()=>{let t=()=>i(CPX_readUserBubbleColors()[e]||CPX_defaultUserBubbleColor(e));return window.addEventListener(CPX_USER_BUBBLE_COLORS_EVENT,t),()=>window.removeEventListener(CPX_USER_BUBBLE_COLORS_EVENT,t)},[e]),(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:n,value:r,onChange:t=>{i(t),CPX_writeUserBubbleColor(e,t)}}),label:t,variant:\`nested\`})}
+`;
+
+function patchGeneralSettings(text) {
+  let patched = replaceOnce(
+    text,
+    "function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+    `${codexPlusUserBubbleSettingsHelpers}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+    "user bubble settings helper insertion anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},pointerCursors:",
+    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},userBubble:{id:`settings.general.appearance.userMessageBubble.short`,defaultMessage:`User bubble`,description:`Short label for the user message bubble color input`},pointerCursors:",
+    "user bubble settings message anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "let r=a(s),i=N(),o=i.formatMessage(Q.chromeThemeAccent),c=i.formatMessage(Q.chromeThemeBackground),l=i.formatMessage(Q.chromeThemeForeground),u=i.formatMessage(Q.chromeThemeContrast),d=i.formatMessage(Q.chromeThemeTranslucentSidebar),",
+    "let r=a(s),i=N(),o=i.formatMessage(Q.chromeThemeAccent),c=i.formatMessage(Q.chromeThemeBackground),l=i.formatMessage(Q.chromeThemeForeground),CPX_userBubbleLabel=i.formatMessage(Q.userBubble),u=i.formatMessage(Q.chromeThemeContrast),d=i.formatMessage(Q.chromeThemeTranslucentSidebar),",
+    "user bubble settings label anchor",
+  );
+  return replaceOnce(
+    patched,
+    "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),O.map",
+    "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),(0,Z.jsx)(CPXUserBubbleColorRow,{variant:n,label:CPX_userBubbleLabel,ariaLabel:i.formatMessage({id:`settings.general.appearance.userMessageBubble`,defaultMessage:`{variant} user message bubble color`,description:`Aria label for the user message bubble color input in appearance settings`},{variant:S})}),O.map",
+    "user bubble settings row anchor",
+  );
+}
+
+const codexPlusUserBubbleHelpers = `
+const CPX_USER_BUBBLE_COLORS_KEY=\`codex-plus:user-message-bubble-colors\`,CPX_USER_BUBBLE_COLORS_EVENT=\`codex-plus:user-message-bubble-colors-change\`;function CPX_isUserBubbleColor(e){return typeof e===\`string\`&&/^#[0-9a-fA-F]{6}$/.test(e)}function CPX_defaultUserBubbleColor(e){return e===\`dark\`?\`#2f2f2f\`:\`#f2f2f2\`}function CPX_isStoredUserBubbleColor(e,t){return CPX_isUserBubbleColor(t)&&t.toLowerCase()!==CPX_defaultUserBubbleColor(e)}function CPX_readUserBubbleColors(){try{let e=JSON.parse(localStorage.getItem(CPX_USER_BUBBLE_COLORS_KEY)??\`{}\`)??{};return{light:CPX_isStoredUserBubbleColor(\`light\`,e.light)?e.light:null,dark:CPX_isStoredUserBubbleColor(\`dark\`,e.dark)?e.dark:null}}catch{return{light:null,dark:null}}}function CPX_userBubbleTextColor(e){let t=parseInt(e.slice(1,3),16),n=parseInt(e.slice(3,5),16),r=parseInt(e.slice(5,7),16),i=e=>{let t=e/255;return t<=.03928?t/12.92:Math.pow((t+.055)/1.055,2.4)},a=.2126*i(t)+.7152*i(n)+.0722*i(r);return a>.46?\`#111111\`:\`#ffffff\`}function CPX_setUserBubbleVars(){let e=CPX_readUserBubbleColors(),t=document.documentElement;for(let n of[\`light\`,\`dark\`]){let r=e[n];r==null?(t.style.removeProperty(\`--codex-plus-user-bubble-\${n}-bg\`),t.style.removeProperty(\`--codex-plus-user-bubble-\${n}-fg\`)):(t.style.setProperty(\`--codex-plus-user-bubble-\${n}-bg\`,r),t.style.setProperty(\`--codex-plus-user-bubble-\${n}-fg\`,CPX_userBubbleTextColor(r)))}}function CPX_installUserBubbleColors(){if(typeof document===\`undefined\`)return;let e=\`codex-plus-user-bubble-colors\`;document.getElementById(e)==null&&document.head?.appendChild(Object.assign(document.createElement(\`style\`),{id:e,textContent:\`:root:not(.dark):not(.electron-dark) :is([data-codex-plus-user-bubble],[data-codex-plus-user-entry]){background-color:var(--codex-plus-user-bubble-light-bg);color:var(--codex-plus-user-bubble-light-fg)}:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"]){color:var(--codex-plus-user-bubble-light-fg)}:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-light-fg)}:root.dark :is([data-codex-plus-user-bubble],[data-codex-plus-user-entry]),:root.electron-dark :is([data-codex-plus-user-bubble],[data-codex-plus-user-entry]){background-color:var(--codex-plus-user-bubble-dark-bg);color:var(--codex-plus-user-bubble-dark-fg)}:root.dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root.electron-dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root.dark [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"]),:root.electron-dark [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"]){color:var(--codex-plus-user-bubble-dark-fg)}:root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.electron-dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-dark-fg)}\`})),CPX_setUserBubbleVars(),window.addEventListener(CPX_USER_BUBBLE_COLORS_EVENT,CPX_setUserBubbleVars)}CPX_installUserBubbleColors();
+`;
+
+function patchUserMessageAttachments(text) {
+  let patched = replaceOnce(
+    text,
+    "var Z=i(),Q=e(n(),1),$=r();function Ue(e){",
+    `var Z=i(),Q=e(n(),1),$=r();${codexPlusUserBubbleHelpers}function Ue(e){`,
+    "user bubble helper insertion anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
+    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,\"data-codex-plus-user-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
+    "user bubble marker attribute anchor",
+  );
+  return replaceOnce(
+    patched,
+    "return(0,$.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "return(0,$.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "edit user message entry marker anchor",
+  );
+}
+
+function patchComposer(text) {
+  let patched = replaceOnce(
+    text,
+    "function oh(e){let t=(0,$.c)(13),",
+    `${codexPlusUserBubbleHelpers}function oh(e){let t=(0,$.c)(13),`,
+    "composer user bubble helper insertion anchor",
+  );
+  return replaceOnce(
+    patched,
+    "(0,Q.jsx)(Jt.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n})",
+    "(0,Q.jsx)(Jt.div,{inert:a,\"data-codex-plus-user-entry\":!0,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n})",
+    "composer user entry marker anchor",
+  );
+}
+
 module.exports = {
   id: "codex-26.616.41845-4198",
   codexVersion: "26.616.41845",
@@ -175,6 +249,14 @@ module.exports = {
     {
       id: "diagnostic-error-boundary",
       fileTransforms: [[appShellFile, patchAppShell]],
+    },
+    {
+      id: "user-message-bubble-colors",
+      fileTransforms: [
+        [generalSettingsFile, patchGeneralSettings],
+        [userMessageAttachmentsFile, patchUserMessageAttachments],
+        [composerFile, patchComposer],
+      ],
     },
   ],
 };
