@@ -3,7 +3,15 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const { expandPath, formatError, formatResult, helpText, parseArgs } = require("../src/cli");
+const {
+  createApplyProgress,
+  expandPath,
+  formatError,
+  formatResult,
+  helpText,
+  parseArgs,
+  shouldShowApplyProgress,
+} = require("../src/cli");
 
 test("empty invocation shows help", () => {
   assert.equal(parseArgs([]).command, "help");
@@ -61,4 +69,68 @@ test("formatError hides stack traces unless debug is enabled", () => {
 
   assert.equal(formatError(error), "Error: Unsupported Codex.app 1");
   assert.match(formatError(error, { debug: true }), /Error: Unsupported Codex\.app 1\n\s+at /);
+});
+
+test("apply progress is shown only for interactive non-json apply", () => {
+  assert.equal(shouldShowApplyProgress({ dryRun: false, json: false }, { isTTY: true }), true);
+  assert.equal(shouldShowApplyProgress({ dryRun: true, json: false }, { isTTY: true }), false);
+  assert.equal(shouldShowApplyProgress({ dryRun: false, json: true }, { isTTY: true }), false);
+  assert.equal(shouldShowApplyProgress({ dryRun: false, json: false }, { isTTY: false }), false);
+});
+
+test("disabled apply progress does not import ora", async () => {
+  const progress = await createApplyProgress(
+    { dryRun: true, json: false },
+    {
+      stream: { isTTY: true },
+      importOra() {
+        throw new Error("ora should not be imported");
+      },
+    },
+  );
+
+  assert.equal(progress, null);
+});
+
+test("enabled apply progress reports and completes spinner steps", async () => {
+  const calls = [];
+  const spinner = {
+    succeed(text) {
+      calls.push(["succeed", text]);
+    },
+    start() {
+      calls.push(["start", this.text]);
+    },
+    fail() {
+      calls.push(["fail", this.text]);
+    },
+  };
+  const progress = await createApplyProgress(
+    { dryRun: false, json: false },
+    {
+      stream: { isTTY: true },
+      async importOra(specifier) {
+        assert.equal(specifier, "ora");
+        return {
+          default(options) {
+            calls.push(["ora", options.stream.isTTY]);
+            return spinner;
+          },
+        };
+      },
+    },
+  );
+
+  progress({ step: 1, total: 2, label: "Inspect source app" });
+  progress({ status: "succeed", step: 1, total: 2, label: "Inspect source app" });
+  progress({ step: 2, total: 2, label: "Finish" });
+  progress({ status: "succeed", step: 2, total: 2, label: "Finish" });
+
+  assert.deepEqual(calls, [
+    ["ora", true],
+    ["start", "[1/2] Inspect source app"],
+    ["succeed", "[1/2] Inspect source app"],
+    ["start", "[2/2] Finish"],
+    ["succeed", "[2/2] Finish"],
+  ]);
 });

@@ -8,7 +8,42 @@ const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./pl
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
 
 function run(command, args) {
-  childProcess.execFileSync(command, args, { stdio: "inherit" });
+  return new Promise((resolve, reject) => {
+    const child = childProcess.spawn(command, args, { stdio: ["inherit", "pipe", "pipe"] });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on("data", (chunk) => stdout.push(chunk));
+    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const error = new Error(`${command} failed${signal ? ` with signal ${signal}` : ` with exit code ${code}`}`);
+      error.stdout = Buffer.concat(stdout);
+      error.stderr = Buffer.concat(stderr);
+      reject(error);
+    });
+  });
+}
+
+function reportProgress(progress, event) {
+  if (progress) progress(event);
+}
+
+async function withProgress(progress, step, total, label, action) {
+  reportProgress(progress, { status: "start", step, total, label });
+  try {
+    const result = await action();
+    reportProgress(progress, { status: "succeed", step, total, label });
+    return result;
+  } catch (error) {
+    reportProgress(progress, { status: "fail", step, total, label });
+    if (error.stdout && error.stdout.length > 0) process.stdout.write(error.stdout);
+    if (error.stderr && error.stderr.length > 0) process.stderr.write(error.stderr);
+    throw error;
+  }
 }
 
 function getAppIdentity(appPath) {
@@ -61,7 +96,21 @@ function collectInfoPlistStrings(patchSet) {
   );
 }
 
-function applyPatchSet({ sourceApp, targetApp, patchSet, dryRun = false }) {
+async function applyPatchSet({
+  sourceApp,
+  targetApp,
+  patchSet,
+  dryRun = false,
+  progress,
+  progressOffset = 0,
+  progressTotal = 6,
+  operations = {},
+}) {
+  const fsImpl = operations.fs || fs;
+  const runCommand = operations.run || run;
+  const patchAsarFile = operations.patchAsar || patchAsar;
+  const replacePlistStringValue = operations.replacePlistString || replacePlistString;
+  const setPlistBuddyStringValue = operations.setPlistBuddyValue || setPlistBuddyValue;
   const patchQueue = collectPatchQueue(patchSet);
   const fileTransforms = collectFileTransforms(patchSet);
   if (dryRun) {
@@ -75,20 +124,33 @@ function applyPatchSet({ sourceApp, targetApp, patchSet, dryRun = false }) {
     };
   }
 
-  fs.rmSync(targetApp, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(targetApp), { recursive: true });
-  run("/usr/bin/ditto", [sourceApp, targetApp]);
+  await withProgress(progress, progressOffset + 1, progressTotal, "Prepare target app", () => {
+    fsImpl.rmSync(targetApp, { recursive: true, force: true });
+    fsImpl.mkdirSync(path.dirname(targetApp), { recursive: true });
+  });
+
+  await withProgress(progress, progressOffset + 2, progressTotal, "Copy app bundle", () =>
+    runCommand("/usr/bin/ditto", [sourceApp, targetApp]),
+  );
 
   const targetAsar = path.join(targetApp, ASAR_PATH_IN_BUNDLE);
-  const patchedAsarSha = patchAsar(targetAsar, fileTransforms);
+  const patchedAsarSha = await withProgress(progress, progressOffset + 3, progressTotal, "Patch app.asar", () =>
+    patchAsarFile(targetAsar, fileTransforms),
+  );
 
   const plistPath = path.join(targetApp, "Contents/Info.plist");
-  for (const [keyPath, value] of Object.entries(collectInfoPlistStrings(patchSet))) {
-    replacePlistString(plistPath, keyPath, value);
-  }
-  setPlistBuddyValue(plistPath, ":ElectronAsarIntegrity:Resources/app.asar:hash", patchedAsarSha);
+  await withProgress(progress, progressOffset + 4, progressTotal, "Update bundle metadata", () => {
+    for (const [keyPath, value] of Object.entries(collectInfoPlistStrings(patchSet))) {
+      replacePlistStringValue(plistPath, keyPath, value);
+    }
+    setPlistBuddyStringValue(plistPath, ":ElectronAsarIntegrity:Resources/app.asar:hash", patchedAsarSha);
+  });
 
-  run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", targetApp]);
+  await withProgress(progress, progressOffset + 5, progressTotal, "Sign copied app", () =>
+    runCommand("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", targetApp]),
+  );
+
+  await withProgress(progress, progressOffset + 6, progressTotal, "Finish", () => {});
 
   return {
     sourceApp,
@@ -101,10 +163,20 @@ function applyPatchSet({ sourceApp, targetApp, patchSet, dryRun = false }) {
   };
 }
 
-function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false }) {
-  const identity = getAppIdentity(sourceApp);
-  const patchSet = selectPatch(patchSets, identity);
-  return applyPatchSet({ sourceApp, targetApp, patchSet, dryRun });
+async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, progress, operations }) {
+  const applyProgress = dryRun ? undefined : progress;
+  const identity = await withProgress(applyProgress, 1, 8, "Inspect source app", () => getAppIdentity(sourceApp));
+  const patchSet = await withProgress(applyProgress, 2, 8, "Select patch set", () => selectPatch(patchSets, identity));
+  return applyPatchSet({
+    sourceApp,
+    targetApp,
+    patchSet,
+    dryRun,
+    progress: applyProgress,
+    progressOffset: 2,
+    progressTotal: 8,
+    operations,
+  });
 }
 
 module.exports = {

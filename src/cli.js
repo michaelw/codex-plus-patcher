@@ -130,6 +130,53 @@ function formatError(error, { debug = false } = {}) {
   return `Error: ${error.message || String(error)}`;
 }
 
+function shouldShowApplyProgress(args, stream = process.stderr) {
+  return !args.dryRun && !args.json && Boolean(stream.isTTY);
+}
+
+async function createApplyProgress(args, { stream = process.stderr, importOra = (specifier) => import(specifier) } = {}) {
+  if (!shouldShowApplyProgress(args, stream)) return null;
+  const { default: ora } = await importOra("ora");
+  const spinner = ora({
+    color: "cyan",
+    spinner: "dots",
+    stream,
+  });
+  let active = false;
+
+  const progress = ({ status = "start", step, total, label }) => {
+    const text = `[${step}/${total}] ${label}`;
+    if (status === "start") {
+      if (active) spinner.succeed();
+      spinner.text = text;
+      spinner.start();
+      active = true;
+      return;
+    }
+    if (!active) return;
+    if (status === "succeed") spinner.succeed(text);
+    else if (status === "fail") spinner.fail(text);
+    active = false;
+  };
+  progress.start = (text) => {
+    if (active) spinner.succeed();
+    spinner.text = text;
+    spinner.start();
+    active = true;
+  };
+  progress.succeed = (text) => {
+    if (!active) return;
+    spinner.succeed(text);
+    active = false;
+  };
+  progress.fail = () => {
+    if (!active) return;
+    spinner.fail();
+    active = false;
+  };
+  return progress;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.command === "help") {
@@ -139,12 +186,20 @@ async function main() {
   if (args.command !== "apply") throw new Error(`Unknown command: ${args.command}`);
 
   const patchSets = await loadPatchSets(args);
-  const result = patchCodexApp({
-    sourceApp: args.source,
-    targetApp: args.target,
-    patchSets,
-    dryRun: args.dryRun,
-  });
+  const progress = await createApplyProgress(args);
+  let result;
+  try {
+    result = await patchCodexApp({
+      sourceApp: args.source,
+      targetApp: args.target,
+      patchSets,
+      dryRun: args.dryRun,
+      progress,
+    });
+  } catch (error) {
+    if (progress) progress.fail();
+    throw error;
+  }
   process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatResult(result));
 }
 
@@ -157,6 +212,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  createApplyProgress,
   expandPath,
   formatError,
   formatResult,
@@ -164,4 +220,5 @@ module.exports = {
   loadPatchSets,
   parseArgs,
   requirePatchSetModule,
+  shouldShowApplyProgress,
 };
