@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": false,
   "description": "Patch queue tool for building a local Codex Plus.app from an installed Codex.app.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/michaelw/codex-plus-patcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/michaelw/codex-plus-patcher/issues"
+  },
+  "homepage": "https://github.com/michaelw/codex-plus-patcher#readme",
   "bin": {
     "codex-plus-patcher": "src/cli.js"
   },
@@ -18,7 +26,7 @@
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "ora": "^9.4.0"
   }
