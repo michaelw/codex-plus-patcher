@@ -93,6 +93,7 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
 
 test("review patch mounts repository mux before main branch selection", () => {
   const fakeBundle = [
+    'import{r as vi,t as yi}from"./dropdown-CTBRoADH.js";',
     "function uf({cwd:e,fileEntries:t,generatedPathsReady:n,hasUnhandledAttributesFiles:r,isCappedMode:i,repositorySource:a,reviewSummarySource:o}){",
     "return {children:d&&!u&&c==null?(0,$.jsx)(Oa,{}):(0,$.jsx)(of,{diffRefs:t,diffMode:e,isCappedMode:d,reviewDiffMetrics:g,showReviewGitActions:v})}",
     "}",
@@ -108,11 +109,50 @@ test("review patch mounts repository mux before main branch selection", () => {
 
     const transformed = transform(fakeBundle);
 
+    assert.match(
+      transformed,
+      /import\{r as vi,t as yi\}from"\.\/dropdown-CTBRoADH\.js";import\{t as CPXBranchPickerDropdownContent\}from"\.\/git-branch-picker-dropdown-content-Ch_voM6R\.js";/,
+    );
     assert.match(transformed, /children:d&&!u&&c==null\?\(0,\$\.jsx\)\(Oa,\{\}\):\(0,\$\.jsx\)\(of,/);
     assert.match(
       transformed,
       /s=\(0,\$\.jsx\)\(CPXReviewMux,\{mainReviewContent:\(0,\$\.jsx\)\(Tf,\{diffMode:a,setTabState:r,tabState:i\}\)\}\)/,
     );
     assert.match(transformed, /p=e\.mainReviewContent,g=\(0,Q\.useMemo\)\(\(\)=>p\?\?/);
+    assert.match(transformed, /function CPXBranchPicker\(\{repo:e,hostConfig:t,baseBranch:n,setBaseBranch:r\}\)/);
+    assert.match(transformed, /method:`recent-branches`/);
+    assert.match(transformed, /method:`search-branches`/);
+    assert.match(transformed, /CPXBranchPickerDropdownContent/);
+    assert.match(transformed, /source:D,operationSource:`codex_plus_review`,hostConfig:t,\.\.\.C\.length>0\?\{baseBranch:C\}:\{\}/);
+    assert.doesNotMatch(transformed, /placeholder:`base`/);
+    assert.doesNotMatch(transformed, /\(0,\$\.jsx\)\(`input`,\{className:`h-7 w-28/);
+  }
+});
+
+test("worker patch allows codex plus branch picker read-only branch requests", () => {
+  const fakeWorker = [
+    "function pae(e,t){return e.queryClient.fetchQuery}",
+    "case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+    "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)}",
+    "case`commit-message-diff`:case`submodule-paths`:case`cat-file`:",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath === ".vite/build/worker.js")?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has worker transform`);
+
+    const transformed = transform(fakeWorker);
+
+    assert.match(transformed, /case`repository-targets`:a=X\(await CPX_repositoryTargets/);
+    assert.match(transformed, /case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:/);
+    assert.match(
+      transformed,
+      /function CPX_isReadOnlyBranchRequest\(e,t\)\{return t===`codex_plus_review`&&\(e===`recent-branches`\|\|e===`search-branches`\)\}/,
+    );
+    assert.match(
+      transformed,
+      /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPX_isReadOnlyBranchRequest\(e,t\)\}/,
+    );
   }
 });
