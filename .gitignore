@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+
+# Generated apps and local patch/test output.
+work/
+outputs/
+
+# Local release-mode cache.
+.codex-plus-cache/
