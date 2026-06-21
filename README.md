@@ -2,12 +2,40 @@
 
 `codex-plus-patcher` creates a local `Codex Plus.app` from an installed `Codex.app` by applying version-checked ASAR patch queues. It does not ship `Codex.app` or any OpenAI app binaries.
 
+## Purpose
+
+Codex Plus is an experimental local demonstrator for changes that can be layered onto an installed Codex desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
+
+The current built-in patches rename the copied app, add patch provenance to the About dialog, expose nested repositories in the Review pane, and add diagnostic detail for selected app-shell errors.
+
+## How It Works
+
+The patcher reads the installed `Codex.app`, verifies the exact Codex version, bundle version, and original `Contents/Resources/app.asar` SHA-256, then selects the matching patch queue. Unsupported app versions fail closed so a patch written for one bundle is not applied to a different bundle by accident.
+
+When applying patches, the tool copies `Codex.app` to the target `Codex Plus.app`, rewrites selected packed ASAR files with ordered text transforms, updates bundle metadata such as the app name and identifier, refreshes Electron ASAR integrity metadata, and signs the copied app ad hoc. The source app is not modified.
+
+## Disclaimer
+
+**Disclaimer of Warranty and Limitation of Liability**
+
+THIS SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. This is a modified, binary-patched demonstrator provided strictly for experimental or demonstration purposes.
+
+The upstream developers, contributors, and maintainers assume NO responsibility or liability for any errors, malfunctions, data loss, or damages—including consequential or incidental damages—arising from the installation or use of this patched version. You use, test, or distribute this patched app at your sole and absolute risk.
+
+The original authors and upstream suppliers are under no obligation to provide support, updates, fixes, or assistance with any issues, mess, or conflicts caused by this modified build.
+
 ## Usage
 
 Install the CLI:
 
 ```bash
 npm install -g codex-plus-patcher
+```
+
+Or run it without a global install:
+
+```bash
+npx codex-plus-patcher apply
 ```
 
 Show help:

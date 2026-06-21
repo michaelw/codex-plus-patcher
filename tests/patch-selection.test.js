@@ -47,27 +47,46 @@ test("collects named patch queue transforms and plist changes", () => {
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
   const progress = [];
+  let transformContext;
   const operations = {
     fs: {
       rmSync() {},
       mkdirSync() {},
     },
     run() {},
-    patchAsar() {
+    patchAsar(_asarPath, _fileTransforms, context) {
+      transformContext = context;
       return "patched-sha";
+    },
+    getPatcherGitSha() {
+      return "abc123def456";
     },
     replacePlistString() {},
     setPlistBuddyValue() {},
   };
 
+  const patchSet = {
+    id: "codex-example",
+    codexVersion: "1.2.3",
+    bundleVersion: "456",
+    asarSha256: "source-sha",
+    patches: [
+      {
+        id: "identity",
+        infoPlistStrings: { CFBundleName: "Codex Plus" },
+        fileTransforms: [["webview/index.html", (text) => text]],
+      },
+      {
+        id: "about",
+        fileTransforms: [[".vite/build/main.js", (text) => text]],
+      },
+    ],
+  };
+
   const result = await applyPatchSet({
     sourceApp: "/Applications/Codex.app",
     targetApp: "/Users/example/Applications/Codex Plus.app",
-    patchSet: {
-      id: "codex-example",
-      infoPlistStrings: { CFBundleName: "Codex Plus" },
-      fileTransforms: [["webview/index.html", (text) => text]],
-    },
+    patchSet,
     progress: (event) => progress.push(event),
     progressOffset: 2,
     progressTotal: 8,
@@ -75,6 +94,15 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
   });
 
   assert.equal(result.patchedAsarSha, "patched-sha");
+  assert.deepEqual(transformContext, {
+    patcherRepoUrl: "https://github.com/OWNER/codex-plus-patcher",
+    patcherGitSha: "abc123def456",
+    patchSetId: "codex-example",
+    codexVersion: "1.2.3",
+    bundleVersion: "456",
+    sourceAsarSha256: "source-sha",
+    appliedPatches: ["identity", "about"],
+  });
   assert.deepEqual(progress, [
     { status: "start", step: 3, total: 8, label: "Prepare target app" },
     { status: "succeed", step: 3, total: 8, label: "Prepare target app" },
@@ -89,6 +117,59 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
     { status: "start", step: 8, total: 8, label: "Finish" },
     { status: "succeed", step: 8, total: 8, label: "Finish" },
   ]);
+});
+
+function fakeAboutDialogBundle() {
+  return [
+    "let i=a.app.getName(),o=a.app.getVersion(),s=B0(o),c=t.aa(e),l=c==null?o:`${o} • ${c}`,u=process.platform===`darwin`,d=r.$(),f=await G0(),p=d.formatMessage({messageId:C0,defaultMessage:w0,values:{appName:i}}),m=u?null:d.formatMessage({messageId:T0,defaultMessage:`OK`}),h=s==null?d.formatMessage({messageId:E0,defaultMessage:D0,values:{version:l}}):d.formatMessage({messageId:O0,defaultMessage:k0,values:{version:l,releaseDate:s}}),g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),v=_.length===0?h:[h,``,..._].join(`\n`),y=n!=null&&!n.isDestroyed()?n:null,b=a.nativeTheme.shouldUseDarkColors;",
+    "K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})",
+    "function V0(e){return[]}",
+    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:`<img class=\"app-icon\" src=\"${(0,zz.default)(r)}\" alt=\"\">`,c=a==null?``:`footer`,l=a==null?``:`script`;return`",
+    "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;\n      color: var(--muted-text);\n      white-space: pre-wrap;\n      overflow-wrap: anywhere;\n      border: 0;\n      background: transparent;\n      font: inherit;\n    }",
+    "    .app-name,\n    .build-info,\n    .copyright {",
+    '      <div class="app-name" id="app-name">${(0,zz.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,zz.default)(t)}">${(0,zz.default)(n)}</pre>',
+  ].join("");
+}
+
+test("about dialog patch reports Codex Plus patch provenance", () => {
+  const patchSet = patchSets.find((patchSet) => patchSet.id === "codex-26.616.51431-4212");
+  const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath === ".vite/build/main-B6erVVHq.js")?.[1];
+
+  assert.equal(typeof transform, "function", "current patch set has about dialog transform");
+
+  const transformed = transform(fakeAboutDialogBundle(), {
+    patcherRepoUrl: "https://github.com/OWNER/codex-plus-patcher",
+    patcherGitSha: "abc123def456",
+    sourceAsarSha256: "source-sha",
+    appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
+  });
+
+  assert.match(transformed, /let i=`Codex Plus`,o=a\.app\.getVersion\(\)/);
+  assert.match(transformed, /codexPlusDisclaimerHeading:"Disclaimer of Warranty and Limitation of Liability"/);
+  assert.match(transformed, /codexPlusDisclaimerBody:"THIS SOFTWARE IS PROVIDED/);
+  assert.match(transformed, /class="codex-plus-disclaimer"/);
+  assert.match(transformed, /class="codex-plus-disclaimer-heading"/);
+  assert.match(transformed, /\.codex-plus-disclaimer \{\n      width: 100%;\n      margin: 0 0 12px;/);
+  assert.match(transformed, /\.codex-plus-disclaimer-heading \{\n      margin-bottom: 4px;\n      font-weight: 700;/);
+  assert.match(transformed, /\.build-info \{\n      width: 100%;\n      margin: 0;\n      line-height: 1\.45;\n      color: var\(--muted-text\);\n      text-align: left;/);
+  assert.match(transformed, /\.codex-plus-disclaimer,\n    \.build-info,/);
+  assert.match(transformed, /\$\{q\}\n      <pre class="build-info"/);
+  assert.doesNotMatch(transformed, /This app is Codex Plus\./);
+  assert.match(transformed, /https:\/\/github\.com\/OWNER\/codex-plus-patcher/);
+  assert.match(transformed, /Patcher commit: abc123def456/);
+  assert.match(transformed, /Source app\.asar: source-sha/);
+  assert.match(transformed, /- bundle-identity/);
+  assert.match(transformed, /- about-codex-plus-metadata/);
+});
+
+test("about dialog patch fails closed when the build information hook changes", () => {
+  const patchSet = patchSets.find((patchSet) => patchSet.id === "codex-26.616.51431-4212");
+  const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath === ".vite/build/main-B6erVVHq.js")?.[1];
+
+  assert.throws(
+    () => transform(fakeAboutDialogBundle().replace("function V0(e){return[]}", "function V0(e){return[1]}")),
+    /Expected one about dialog build information anchor, found 0/,
+  );
 });
 
 test("review patch mounts repository mux before main branch selection", () => {

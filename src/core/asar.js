@@ -40,7 +40,7 @@ function fileIntegrity(buffer) {
   };
 }
 
-function patchAsar(asarPath, fileTransforms) {
+function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   const archive = readAsar(asarPath);
   const entries = walkFiles(archive.header);
   const contents = new Map();
@@ -54,7 +54,7 @@ function patchAsar(asarPath, fileTransforms) {
   for (const [filePath, transform] of fileTransforms) {
     const original = contents.get(filePath);
     if (!original) throw new Error(`Could not find ${filePath} in app.asar`);
-    const patched = transform(original.toString("utf8"));
+    const patched = transform(original.toString("utf8"), transformContext);
     contents.set(filePath, Buffer.from(patched, "utf8"));
   }
 

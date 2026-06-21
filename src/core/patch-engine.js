@@ -6,6 +6,7 @@ const { patchAsar, sha256File } = require("./asar");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
+const PATCHER_REPO_URL = "https://github.com/OWNER/codex-plus-patcher";
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -96,6 +97,31 @@ function collectInfoPlistStrings(patchSet) {
   );
 }
 
+function getPatcherGitSha({ cwd = path.resolve(__dirname, "../.."), execFileSync = childProcess.execFileSync } = {}) {
+  try {
+    return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function buildPatchContext(patchSet, patchQueue, operations = {}) {
+  const readPatcherGitSha = operations.getPatcherGitSha || (() => getPatcherGitSha());
+  return {
+    patcherRepoUrl: PATCHER_REPO_URL,
+    patcherGitSha: readPatcherGitSha(),
+    patchSetId: patchSet.id,
+    codexVersion: patchSet.codexVersion,
+    bundleVersion: patchSet.bundleVersion,
+    sourceAsarSha256: patchSet.asarSha256,
+    appliedPatches: patchQueue.map((patch) => patch.id),
+  };
+}
+
 async function applyPatchSet({
   sourceApp,
   targetApp,
@@ -134,8 +160,9 @@ async function applyPatchSet({
   );
 
   const targetAsar = path.join(targetApp, ASAR_PATH_IN_BUNDLE);
+  const patchContext = buildPatchContext(patchSet, patchQueue, operations);
   const patchedAsarSha = await withProgress(progress, progressOffset + 3, progressTotal, "Patch app.asar", () =>
-    patchAsarFile(targetAsar, fileTransforms),
+    patchAsarFile(targetAsar, fileTransforms, patchContext),
   );
 
   const plistPath = path.join(targetApp, "Contents/Info.plist");
@@ -185,6 +212,7 @@ module.exports = {
   collectFileTransforms,
   collectInfoPlistStrings,
   collectPatchQueue,
+  getPatcherGitSha,
   getAppIdentity,
   patchCodexApp,
   selectPatch,

@@ -4,6 +4,7 @@ const oldTitle = "<title>Codex</title>";
 const newTitle = "<title>Codex Plus</title>";
 const titleFile = "webview/index.html";
 const workerFile = ".vite/build/worker.js";
+const mainFile = ".vite/build/main-B6erVVHq.js";
 const appShellFile = "webview/assets/app-shell-DCvuE1cb.js";
 const generalSettingsFile = "webview/assets/general-settings-Bit-KX17.js";
 const threadSidePanelTabsFile = "webview/assets/thread-side-panel-tabs-D0dd27Zf.js";
@@ -33,6 +34,73 @@ function CPX_error(e){return{name:e?.name??null,code:e?.code??null,message:e?.me
 
 function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
+}
+
+const codexPlusDisclaimerHeading = "Disclaimer of Warranty and Limitation of Liability";
+const codexPlusDisclaimerBody = [
+  'THIS SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. This is a modified, binary-patched demonstrator provided strictly for experimental or demonstration purposes.',
+  "The upstream developers, contributors, and maintainers assume NO responsibility or liability for any errors, malfunctions, data loss, or damages—including consequential or incidental damages—arising from the installation or use of this patched version. You use, test, or distribute this patched app at your sole and absolute risk.",
+  "The original authors and upstream suppliers are under no obligation to provide support, updates, fixes, or assistance with any issues, mess, or conflicts caused by this modified build.",
+].join("\n\n");
+
+function patchAboutDialog(text, context = {}) {
+  const appliedPatches = context.appliedPatches || [];
+  const lines = [
+    `Patcher: ${context.patcherRepoUrl || "https://github.com/OWNER/codex-plus-patcher"}`,
+    `Patcher commit: ${context.patcherGitSha || "unknown"}`,
+    `Source app.asar: ${context.sourceAsarSha256 || "unknown"}`,
+    "",
+    "Applied patches:",
+    ...appliedPatches.map((patchId) => `- ${patchId}`),
+  ];
+  let patched = replaceOnce(
+    text,
+    "let i=a.app.getName(),o=a.app.getVersion()",
+    "let i=`Codex Plus`,o=a.app.getVersion()",
+    "about dialog app name anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "function V0(e){return[]}",
+    `function V0(e){return ${JSON.stringify(lines)}}`,
+    "about dialog build information anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})",
+    `K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,codexPlusDisclaimerHeading:${JSON.stringify(codexPlusDisclaimerHeading)},codexPlusDisclaimerBody:${JSON.stringify(codexPlusDisclaimerBody)},iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})`,
+    "about dialog renderer call anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
+    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let q=D==null||O==null?``:`<section class=\"codex-plus-disclaimer\" aria-label=\"${(0,zz.default)(D)}\"><div class=\"codex-plus-disclaimer-heading\">${(0,zz.default)(D)}</div><div class=\"codex-plus-disclaimer-body\">${(0,zz.default)(O)}</div></section>`,s=r==null?``:",
+    "about dialog renderer signature anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+    "    .codex-plus-disclaimer {\n      width: 100%;\n      margin: 0 0 12px;\n      color: var(--muted-text);\n      text-align: left;\n      font-size: 9px;\n      line-height: 1.25;\n      white-space: pre-wrap;\n      overflow-wrap: anywhere;\n    }\n\n    .codex-plus-disclaimer-heading {\n      margin-bottom: 4px;\n      font-weight: 700;\n    }\n\n    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+    "about dialog disclaimer styles anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "      color: var(--muted-text);\n      white-space: pre-wrap;",
+    "      color: var(--muted-text);\n      text-align: left;\n      white-space: pre-wrap;",
+    "about dialog build info left align anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "    .app-name,\n    .build-info,\n    .copyright {",
+    "    .app-name,\n    .codex-plus-disclaimer,\n    .build-info,\n    .copyright {",
+    "about dialog selectable disclaimer anchor",
+  );
+  return replaceOnce(
+    patched,
+    '      <div class="app-name" id="app-name">${(0,zz.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,zz.default)(t)}">${(0,zz.default)(n)}</pre>',
+    '      <div class="app-name" id="app-name">${(0,zz.default)(e)}</div>\n      ${q}\n      <pre class="build-info" aria-label="${(0,zz.default)(t)}">${(0,zz.default)(n)}</pre>',
+    "about dialog disclaimer insertion anchor",
+  );
 }
 
 function patchWorker(text) {
@@ -237,6 +305,10 @@ module.exports = {
         CFBundleIdentifier: "com.openai.codex-plus",
       },
       fileTransforms: [[titleFile, patchTitle]],
+    },
+    {
+      id: "about-codex-plus-metadata",
+      fileTransforms: [[mainFile, patchAboutDialog]],
     },
     {
       id: "nested-repository-worker",
