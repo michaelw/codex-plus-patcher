@@ -8,8 +8,12 @@ Codex Plus is an experimental local demonstrator for changes that can be layered
 
 The current built-in patches:
 
-- expose nested git repositories in the Review pane
-- add user bubble color controls in Appearance settings
+- rename the copied app and add patch provenance to the About dialog
+- expose nested repositories in the Review pane
+- add diagnostic detail for selected app-shell errors
+- add user-message bubble color controls in Appearance settings
+- add adaptive project colors for sidebar projects, grouped threads, pinned threads, user-message accents, and the composer
+- add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
 
 ## How It Works
 
@@ -117,7 +121,7 @@ Business logic that can be tested outside Codex lives under `src/plus/`. The cur
 4. Update target chunk filenames and fail-closed anchor strings by inspecting the new ASAR.
 5. Run `npm test`, `npm run check`, and a dry run.
 6. Apply the patch to a copied app and verify `codesign --verify --deep --strict`.
-7. Launch manually and validate Review pane nested repository behavior.
+7. Launch manually and validate Review pane nested repository behavior, Appearance controls, project color matching, and command palette entries.
 
 ## Update Hook Direction
 
