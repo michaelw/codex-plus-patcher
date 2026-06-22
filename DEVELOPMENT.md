@@ -83,7 +83,10 @@ exist in the generated target before testing the app manually.
 7. Register the new patch in `src/patches/index.js`, with the newest supported
    patch set first.
 8. Update `npm run check` in `package.json` if it names patch files explicitly.
-9. Run the dry-run, full workspace apply, codesign verification, and ASAR
+9. If a patch is added, removed, or renamed, update the README patch summary
+   and verify the About dialog still reports the applied patch IDs from the
+   patch queue.
+10. Run the dry-run, full workspace apply, codesign verification, and ASAR
    marker/readback checks from the common commands section.
 
 Prefer copying a patch set and tightening it to the new build over making an
