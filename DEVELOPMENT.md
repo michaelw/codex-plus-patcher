@@ -108,7 +108,8 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 
 - Use semantic commit messages such as `feat: ...`, `fix: ...`, or
   `docs: ...`; release-please uses them to decide which changes belong in the
-  generated release.
+  generated release. Use the same format for PR titles when squash-merging,
+  because GitHub uses the PR title as the squash commit subject.
 - Commit source-only changes.
 - Keep generated app bundles and local validation output ignored.
 - For patch ports, prefer one commit for the new versioned patch and registry
