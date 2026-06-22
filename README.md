@@ -6,7 +6,10 @@
 
 Codex Plus is an experimental local demonstrator for changes that can be layered onto an installed Codex desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
 
-The current built-in patches rename the copied app, add patch provenance to the About dialog, expose nested repositories in the Review pane, and add diagnostic detail for selected app-shell errors.
+The current built-in patches:
+
+- expose nested git repositories in the Review pane
+- add user bubble color controls in Appearance settings
 
 ## How It Works
 
