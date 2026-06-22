@@ -1,44 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":semanticCommits"
   ],
-  "semanticCommits": "enabled",
   "enabledManagers": [
     "npm",
     "github-actions"
   ],
   "packageRules": [
-    {
-      "description": "Classify GitHub Actions updates as CI-only changes",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "semanticCommitType": "ci",
-      "semanticCommitScope": "deps"
-    },
-    {
-      "description": "Classify npm runtime dependency updates as patch-release changes",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchDepTypes": [
-        "dependencies"
-      ],
-      "semanticCommitType": "fix",
-      "semanticCommitScope": "deps"
-    },
-    {
-      "description": "Classify npm development dependency updates as non-release maintenance",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchDepTypes": [
-        "devDependencies"
-      ],
-      "semanticCommitType": "chore",
-      "semanticCommitScope": "deps"
-    },
     {
       "description": "Automerge Renovate npm and GitHub Actions minor/patch updates after required CI passes",
       "matchManagers": [
