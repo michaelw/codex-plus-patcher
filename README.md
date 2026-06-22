@@ -4,10 +4,9 @@
 
 ## Screenshots
 
-<p>
-  <img src="docs/images/codex-plus-main-screen.png" alt="Codex Plus main screen with project, worktree, repository, and branch controls" width="49%">
-  <img src="docs/images/codex-plus-git-subrepos.png" alt="Codex Plus Review tab showing nested git subrepositories" width="34%">
-</p>
+![Codex Plus main screen with project, worktree, repository, and branch controls](docs/images/codex-plus-main-screen.png)
+
+![Codex Plus Review tab showing nested git subrepositories](docs/images/codex-plus-git-subrepos.png)
 
 <details>
 <summary>More screenshots</summary>
