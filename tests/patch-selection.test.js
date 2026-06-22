@@ -95,7 +95,7 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
 
   assert.equal(result.patchedAsarSha, "patched-sha");
   assert.deepEqual(transformContext, {
-    patcherRepoUrl: "https://github.com/OWNER/codex-plus-patcher",
+    patcherRepoUrl: "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: "abc123def456",
     patchSetId: "codex-example",
     codexVersion: "1.2.3",
@@ -138,7 +138,7 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
   assert.equal(typeof transform, "function", "current patch set has about dialog transform");
 
   const transformed = transform(fakeAboutDialogBundle(), {
-    patcherRepoUrl: "https://github.com/OWNER/codex-plus-patcher",
+    patcherRepoUrl: "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: "abc123def456",
     sourceAsarSha256: "source-sha",
     appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
@@ -155,7 +155,7 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
   assert.match(transformed, /\.codex-plus-disclaimer,\n    \.build-info,/);
   assert.match(transformed, /\$\{q\}\n      <pre class="build-info"/);
   assert.doesNotMatch(transformed, /This app is Codex Plus\./);
-  assert.match(transformed, /https:\/\/github\.com\/OWNER\/codex-plus-patcher/);
+  assert.match(transformed, /https:\/\/github\.com\/michaelw\/codex-plus-patcher/);
   assert.match(transformed, /Patcher commit: abc123def456/);
   assert.match(transformed, /Source app\.asar: source-sha/);
   assert.match(transformed, /- bundle-identity/);
