@@ -46,7 +46,7 @@ const codexPlusDisclaimerBody = [
 function patchAboutDialog(text, context = {}) {
   const appliedPatches = context.appliedPatches || [];
   const lines = [
-    `Patcher: ${context.patcherRepoUrl || "https://github.com/OWNER/codex-plus-patcher"}`,
+    `Patcher: ${context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher"}`,
     `Patcher commit: ${context.patcherGitSha || "unknown"}`,
     `Source app.asar: ${context.sourceAsarSha256 || "unknown"}`,
     "",

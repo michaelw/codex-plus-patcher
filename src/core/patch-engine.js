@@ -6,7 +6,7 @@ const { patchAsar, sha256File } = require("./asar");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
-const PATCHER_REPO_URL = "https://github.com/OWNER/codex-plus-patcher";
+const PATCHER_REPO_URL = "https://github.com/michaelw/codex-plus-patcher";
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
