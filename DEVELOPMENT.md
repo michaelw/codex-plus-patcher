@@ -106,6 +106,9 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 
 ## Git Hygiene
 
+- Use semantic commit messages such as `feat: ...`, `fix: ...`, or
+  `docs: ...`; release-please uses them to decide which changes belong in the
+  generated release.
 - Commit source-only changes.
 - Keep generated app bundles and local validation output ignored.
 - For patch ports, prefer one commit for the new versioned patch and registry

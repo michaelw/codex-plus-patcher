@@ -2,6 +2,22 @@
 
 `codex-plus-patcher` creates a local `Codex Plus.app` from an installed `Codex.app` by applying version-checked ASAR patch queues. It does not ship `Codex.app` or any OpenAI app binaries.
 
+## Screenshots
+
+<p>
+  <img src="docs/images/codex-plus-main-screen.png" alt="Codex Plus main screen with project, worktree, repository, and branch controls" width="49%">
+  <img src="docs/images/codex-plus-git-subrepos.png" alt="Codex Plus Review tab showing nested git subrepositories" width="34%">
+</p>
+
+<details>
+<summary>More screenshots</summary>
+
+![Codex Plus conversation view with adaptive project color accents](docs/images/codex-plus-conversation.png)
+
+![Codex Plus sidebar with adaptive project colors](docs/images/codex-plus-project-colors.png)
+
+</details>
+
 ## Purpose
 
 Codex Plus is an experimental local demonstrator for changes that can be layered onto an installed Codex desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
