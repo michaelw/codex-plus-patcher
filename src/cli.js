@@ -2,6 +2,7 @@
 const os = require("node:os");
 const path = require("node:path");
 
+const { readAsar, walkFiles } = require("./core/asar");
 const { patchCodexApp } = require("./core/patch-engine");
 const { resolveReleasePatchDirectory } = require("./core/release");
 const { patchSets: builtInPatchSets } = require("./patches");
@@ -35,6 +36,9 @@ function parseArgs(argv) {
     };
     if (arg === "--source") args.source = path.resolve(expandPath(next()));
     else if (arg === "--target") args.target = path.resolve(expandPath(next()));
+    else if (arg === "--asar") args.asar = path.resolve(expandPath(next()));
+    else if (arg === "--file") args.file = next();
+    else if (arg === "--contains") args.contains = next();
     else if (arg === "--mode") args.mode = next();
     else if (arg === "--patch-dir") args.patchDir = path.resolve(expandPath(next()));
     else if (arg === "--github-repo") args.githubRepo = next();
@@ -58,10 +62,15 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
+  codex-plus-patcher asar-list --asar <path> [--contains <text>] [--json]
+  codex-plus-patcher asar-cat --asar <path> --file <asar-path> [--json]
 
 Options:
   --source <path>          Source Codex.app. Default: /Applications/Codex.app
   --target <path>          Target Codex Plus.app. Default: ~/Applications/Codex Plus.app
+  --asar <path>            app.asar path for ASAR readback commands
+  --file <asar-path>       Packed file path for asar-cat
+  --contains <text>        Filter asar-list paths by substring
   --mode <builtin|dev|release>
   --patch-dir <path>       Dev mode patch directory containing index.js
   --github-repo <owner/repo>
@@ -120,12 +129,39 @@ function formatResult(result) {
     `Patch set: ${result.patchSet}`,
     `Patches: ${result.patches.join(", ")}`,
   ];
-  if (Array.isArray(result.addedFiles) && result.addedFiles.length > 0) {
-    lines.push(`Added files: ${result.addedFiles.join(", ")}`);
-  }
   if (result.patchedAsarSha) lines.push(`Patched app.asar SHA-256: ${result.patchedAsarSha}`);
   if (!result.dryRun) lines.push(`Open: open ${JSON.stringify(result.targetApp)}`);
   return `${lines.join("\n")}\n`;
+}
+
+function listAsarFiles({ asar, contains }) {
+  if (!asar) throw new Error("--asar is required");
+  const archive = readAsar(asar);
+  const files = walkFiles(archive.header)
+    .map(([file]) => file)
+    .filter((file) => contains == null || file.includes(contains));
+  return { asar, files };
+}
+
+function readAsarFile({ asar, file }) {
+  if (!asar) throw new Error("--asar is required");
+  if (!file) throw new Error("--file is required");
+  const archive = readAsar(asar);
+  const node = new Map(walkFiles(archive.header)).get(file);
+  if (!node) throw new Error(`Could not find ${file} in ${asar}`);
+  if (node.unpacked) throw new Error(`Cannot read unpacked ASAR file ${file} from ${asar}`);
+  const size = Number(node.size || 0);
+  const start = archive.dataStart + Number(node.offset || 0);
+  const content = archive.buffer.subarray(start, start + size).toString("utf8");
+  return { asar, file, size, content };
+}
+
+function formatAsarListResult(result) {
+  return result.files.length > 0 ? `${result.files.join("\n")}\n` : "";
+}
+
+function formatAsarCatResult(result) {
+  return result.content;
 }
 
 function formatError(error, { debug = false } = {}) {
@@ -186,6 +222,16 @@ async function main() {
     printHelp();
     return;
   }
+  if (args.command === "asar-list") {
+    const result = listAsarFiles(args);
+    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatAsarListResult(result));
+    return;
+  }
+  if (args.command === "asar-cat") {
+    const result = readAsarFile(args);
+    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatAsarCatResult(result));
+    return;
+  }
   if (args.command !== "apply") throw new Error(`Unknown command: ${args.command}`);
 
   const patchSets = await loadPatchSets(args);
@@ -217,11 +263,15 @@ if (require.main === module) {
 module.exports = {
   createApplyProgress,
   expandPath,
+  formatAsarCatResult,
+  formatAsarListResult,
   formatError,
   formatResult,
   helpText,
+  listAsarFiles,
   loadPatchSets,
   parseArgs,
+  readAsarFile,
   requirePatchSetModule,
   shouldShowApplyProgress,
 };

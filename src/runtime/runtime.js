@@ -154,6 +154,110 @@
     return command.run?.(...args);
   }
 
+  function commandGroups(command) {
+    return command.menu?.groups || [];
+  }
+
+  function commandKeybindings(command) {
+    return command.shortcut?.defaultKeybindings || [];
+  }
+
+  function commandMetadata() {
+    return Array.from(commands.values())
+      .filter((command) => command.palette?.enabled !== false)
+      .map((command) => {
+        const groups = commandGroups(command);
+        return {
+          id: command.id,
+          title: command.title,
+          description: command.description,
+          menuGroups: groups,
+          defaultKeybindings: commandKeybindings(command),
+          commandMenuGroupKey: groups.includes("panels") ? "panels" : groups[0],
+          commandMenu: true,
+          electron: {
+            menuTitle: command.title,
+            defaultKeybindings: commandKeybindings(command),
+          },
+        };
+      });
+  }
+
+  function CommandMenuItemHost({ command, deps, group, close }) {
+    const jsx = deps?.jsx;
+    const MenuItem = deps?.MenuItem;
+    if (typeof jsx !== "function" || MenuItem == null) return null;
+    const render = (closeMenu) =>
+      jsx(
+        MenuItem,
+        {
+          value: command.title,
+          title: command.title,
+          description: command.description,
+          onSelect() {
+            runCommand(command.id);
+            closeMenu?.();
+            close?.();
+          },
+        },
+        command.id,
+      );
+    deps?.register?.(command.id, () => runCommand(command.id), {
+      menuItem: { id: command.id, groupKey: group, render },
+    });
+    return null;
+  }
+
+  function renderCommandMenuItems({ group, deps, close } = {}) {
+    const jsx = deps?.jsx;
+    if (typeof jsx !== "function") return [];
+    return Array.from(commands.values())
+      .filter((command) => commandGroups(command).includes(group))
+      .map((command) => jsx(CommandMenuItemHost, { command, deps, group, close }, command.id));
+  }
+
+  function mergeDataAttributes(base, extra) {
+    if (extra == null) return base;
+    if (base == null) return extra;
+    return { ...base, ...extra, style: { ...base.style, ...extra.style } };
+  }
+
+  function applyDecorators(props, decorators) {
+    let result;
+    for (const decorator of decorators) result = mergeDataAttributes(result, decorator(props));
+    return result;
+  }
+
+  function AppearanceRowHost({ row, deps, variant }) {
+    return row.render?.({ ...deps, variant, row }) ?? null;
+  }
+
+  function renderAppearanceRows({ deps, variant, section = "appearance" } = {}) {
+    const jsx = deps?.jsx;
+    if (typeof jsx !== "function") return [];
+    return CodexPlus.ui.settings.appearance.rows
+      .filter((row) => (row.section || "appearance") === section)
+      .slice()
+      .sort((left, right) => (left.order || 0) - (right.order || 0))
+      .map((row) => jsx(AppearanceRowHost, { row, deps, variant }, row.id));
+  }
+
+  function renderReviewBody({ props, deps, defaultBody } = {}) {
+    let body = defaultBody;
+    for (const wrapper of CodexPlus.ui.review.wrappers) {
+      body = wrapper({ ...props, mainReviewContent: body }, deps);
+    }
+    return body;
+  }
+
+  function renderErrorDetails({ jsx, error, componentStack } = {}) {
+    for (const decorator of CodexPlus.ui.errors.boundaryDecorators) {
+      const detail = decorator({ jsx, error, componentStack });
+      if (detail != null) return detail;
+    }
+    return null;
+  }
+
   function registerStyle(pluginId, cssText) {
     if (typeof document === "undefined") return null;
     const id = `codex-plus-style-${safeId(pluginId)}`;
@@ -210,15 +314,24 @@
     patches: { register: registerPatch, apply: applyPatchDescriptors, all: patchDescriptors },
     modules: { registerHostModule, findByCode, findByProps, findComponentByCode, waitFor },
     ui: {
-      settings: { appearance: { rows: [], addRow(row) { this.rows.push(row); return row; } } },
-      review: { wrappers: [], panels: [], wrapBody(wrapper) { this.wrappers.push(wrapper); return wrapper; }, addRepositoryPanel(panel) { this.panels.push(panel); return panel; } },
-      sidebar: { projectDecorators: [], threadDecorators: [], decorateProjectRow(fn) { this.projectDecorators.push(fn); return fn; }, decorateThreadRow(fn) { this.threadDecorators.push(fn); return fn; } },
-      message: { userBubbleDecorators: [], decorateUserBubble(fn) { this.userBubbleDecorators.push(fn); return fn; } },
-      composer: { surfaceDecorators: [], decorateSurface(fn) { this.surfaceDecorators.push(fn); return fn; } },
+      commands: { renderMenuItems: renderCommandMenuItems, commandMetadata },
+      settings: { appearance: { rows: [], addRow(row) { this.rows.push(row); return row; }, renderRows: renderAppearanceRows } },
+      review: { wrappers: [], wrapBody(wrapper) { this.wrappers.push(wrapper); return wrapper; }, renderBody: renderReviewBody },
+      sidebar: {
+        projectDecorators: [],
+        threadDecorators: [],
+        decorateProjectRow(fn) { this.projectDecorators.push(fn); return fn; },
+        decorateThreadRow(fn) { this.threadDecorators.push(fn); return fn; },
+        mergeDataAttributes,
+        projectRowProps(props) { return applyDecorators(props, this.projectDecorators); },
+        threadRowProps(props) { return applyDecorators(props, this.threadDecorators); },
+      },
+      message: { userBubbleDecorators: [], decorateUserBubble(fn) { this.userBubbleDecorators.push(fn); return fn; }, userBubbleProps(props) { return applyDecorators(props, this.userBubbleDecorators); } },
+      composer: { surfaceDecorators: [], decorateSurface(fn) { this.surfaceDecorators.push(fn); return fn; }, surfaceProps(props) { return applyDecorators(props, this.surfaceDecorators); } },
       about: { buildInfo: [], addBuildInfo(fn) { this.buildInfo.push(fn); return fn; } },
-      errors: { boundaryDecorators: [], decorateBoundary(fn) { this.boundaryDecorators.push(fn); return fn; } },
+      errors: { boundaryDecorators: [], decorateBoundary(fn) { this.boundaryDecorators.push(fn); return fn; }, renderDetails: renderErrorDetails },
     },
-    commands: { register: registerCommand, run: runCommand, all: commands },
+    commands: { register: registerCommand, run: runCommand, all: () => Array.from(commands.values()), menuItems: (group) => Array.from(commands.values()).filter((command) => commandGroups(command).includes(group)) },
     settings: { define: defineSettings },
     native: { async request(method, params) { return globalObject.CodexPlusHost?.nativeRequest?.(method, params); } },
     styles: { register: registerStyle, setRootVars },

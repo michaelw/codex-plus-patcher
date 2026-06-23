@@ -12,8 +12,9 @@
           id: "codexPlusToggleSidebarNameBlur",
           title: "Toggle sidebar blur",
           description: "Blur or show sidebar chat and project names",
-          menuGroup: "panels",
-          defaultKeybindings: [],
+          menu: { groups: ["suggested", "panels"] },
+          palette: { enabled: true, keywords: ["privacy", "blur"] },
+          shortcut: { defaultKeybindings: [] },
           run() {
             const root = document.documentElement;
             const enabled = root.getAttribute("data-codex-plus-sidebar-names-blurred") === "true";

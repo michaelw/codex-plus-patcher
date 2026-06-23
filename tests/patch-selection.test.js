@@ -49,12 +49,6 @@ function versionedNames(patchSet) {
   };
 }
 
-function extractUserBubbleTextColor(transformed) {
-  const match = transformed.match(/(function CPX_userBubbleTextColor\(e\)\{[\s\S]*?\})function CPX_setUserBubbleVars/);
-  assert.ok(match, "transformed bundle has CPX_userBubbleTextColor");
-  return vm.runInNewContext(`${match[1]};CPX_userBubbleTextColor`);
-}
-
 test("selectPatch chooses the exact version and asar hash", () => {
   const patchSet = {
     codexVersion: "1",
@@ -99,6 +93,7 @@ test("collects named patch queue transforms and plist changes", () => {
 test("current patch queues ship the Codex Plus runtime plugin assets", () => {
   for (const patchSet of patchSets) {
     const addedFiles = collectAssetFiles(patchSet).map(([filePath]) => filePath);
+    assert.ok(addedFiles.includes(".vite/build/codex-plus-aboutMetadata.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/runtime.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/aboutMetadata.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/nestedRepositories.js"));
@@ -118,6 +113,17 @@ test("current patch queues expose project colors and sidebar blur separately fro
     assert.ok(patchIds.indexOf("user-message-bubble-colors") < patchIds.indexOf("project-colors"));
     assert.ok(patchIds.indexOf("project-colors") < patchIds.indexOf("sidebar-name-blur"));
   }
+});
+
+test("versioned patch files stay below the runtime migration line-count gate", () => {
+  const patchDir = path.join(__dirname, "../src/patches");
+  const totalLines = fs
+    .readdirSync(patchDir)
+    .filter((file) => file.endsWith(".js"))
+    .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
+    .reduce((sum, count) => sum + count, 0);
+
+  assert.ok(totalLines <= 1608, `src/patches/*.js line count ${totalLines} exceeds 1608`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -311,23 +317,74 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   vm.runInNewContext(runtime, context);
 
   const api = window.CodexPlus;
+  const jsx = (type, props, key) => ({ type, props, key });
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  const registeredMenus = [];
   api.registerPlugin(
     api.definePlugin({
       id: "sample",
       name: "Sample",
       required: true,
       settings: { enabled: { type: "boolean", default: true } },
-      commands: [{ id: "sample.command", run: () => "ok" }],
+      commands: [{
+        id: "sample.command",
+        title: "Sample command",
+        description: "Runs a sample command",
+        menu: { groups: ["suggested", "panels"] },
+        shortcut: { defaultKeybindings: [] },
+        run: () => "ok",
+      }],
       styles: ".sample{}",
       patches: [{ find: "hello", replacement: { match: "hello", replace: "hi" } }],
       start(instance) {
         instance.modules.registerHostModule("sample", { marker: true });
+        instance.ui.settings.appearance.addRow({
+          id: "sample-row",
+          render: ({ jsx }) => jsx("row", { label: "Sample row" }, "sample-row"),
+        });
+        instance.ui.sidebar.decorateProjectRow(() => ({ style: { color: "red" }, "data-sample-project": "" }));
+        instance.ui.sidebar.decorateProjectRow(() => ({ style: { background: "blue" }, "data-sample-project-2": "" }));
+        instance.ui.sidebar.decorateThreadRow(() => ({ "data-sample-thread": "" }));
+        instance.ui.message.decorateUserBubble(() => ({ "data-sample-message": "" }));
+        instance.ui.composer.decorateSurface(() => ({ "data-sample-composer": "" }));
+        instance.ui.review.wrapBody((props) => `wrapped:${props.mainReviewContent}`);
+        instance.ui.errors.decorateBoundary(({ jsx, error }) => jsx("pre", { children: error.message }, "error"));
       },
     }),
   );
 
   assert.equal(api.plugins.get("sample").settingsStore.get("enabled"), true);
   assert.equal(api.commands.run("sample.command"), "ok");
+  assert.deepEqual(Array.from(api.commands.menuItems("suggested").map((command) => command.id)), ["sample.command"]);
+  assert.deepEqual(Array.from(api.ui.commands.commandMetadata().map((command) => command.id)), ["sample.command"]);
+  const menuItems = api.ui.commands.renderMenuItems({
+    group: "suggested",
+    deps: {
+      jsx,
+      MenuItem: "menu-item",
+      register(id, run, options) {
+        registeredMenus.push({ id, run, options });
+      },
+    },
+  });
+  assert.equal(menuItems.length, 1);
+  menuItems[0].type(menuItems[0].props);
+  assert.equal(registeredMenus[0].id, "sample.command");
+  assert.equal(registeredMenus[0].run(), "ok");
+  assert.equal(registeredMenus[0].options.menuItem.render(() => {}).type, "menu-item");
+  const rows = api.ui.settings.appearance.renderRows({ deps: { jsx }, variant: "light" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].type(rows[0].props).props.label, "Sample row");
+  assert.deepEqual(plain(api.ui.sidebar.projectRowProps({ project: "x" })), {
+    "data-sample-project": "",
+    "data-sample-project-2": "",
+    style: { color: "red", background: "blue" },
+  });
+  assert.deepEqual(plain(api.ui.sidebar.threadRowProps({ project: "x" })), { "data-sample-thread": "" });
+  assert.deepEqual(plain(api.ui.message.userBubbleProps({ project: "x" })), { "data-sample-message": "" });
+  assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), { "data-sample-composer": "" });
+  assert.equal(api.ui.review.renderBody({ defaultBody: "body", props: {}, deps: {} }), "wrapped:body");
+  assert.equal(api.ui.errors.renderDetails({ jsx, error: new Error("boom") }).props.children, "boom");
   assert.deepEqual(api.modules.findByProps("marker"), { marker: true });
   assert.equal(api.patches.apply("hello world"), "hi world");
   assert.equal(styles.some((element) => element.id === "codex-plus-style-sample"), true);
@@ -358,22 +415,46 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
     appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
   });
 
-  assert.match(transformed, /let i=`Codex Plus`,o=a\.app\.getVersion\(\)/);
-  assert.match(transformed, /codexPlusDisclaimerHeading:"Disclaimer of Warranty and Limitation of Liability"/);
-  assert.match(transformed, /codexPlusDisclaimerBody:"THIS SOFTWARE IS PROVIDED/);
-  assert.match(transformed, /class="codex-plus-disclaimer"/);
-  assert.match(transformed, /class="codex-plus-disclaimer-heading"/);
-  assert.match(transformed, /\.codex-plus-disclaimer \{\n      width: 100%;\n      margin: 0 0 12px;/);
-  assert.match(transformed, /\.codex-plus-disclaimer-heading \{\n      margin-bottom: 4px;\n      font-weight: 700;/);
+  assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)/);
+  assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)\.aboutPayload/);
+  assert.match(transformed, /i=CPXAbout\.appDisplayName,o=a\.app\.getVersion\(\)/);
+  assert.match(transformed, /function V0\(e\)\{return CPXAbout\.buildInfoLines\}/);
+  assert.match(transformed, /codexPlusDisclaimerHeading:CPXAbout\.disclaimerHeading/);
+  assert.match(transformed, /codexPlusDisclaimerBody:CPXAbout\.disclaimerBody/);
+  assert.match(transformed, /let CPXAboutMetadata=require\("\.\/codex-plus-aboutMetadata\.js"\),q=/);
+  assert.match(transformed, /CPXAboutMetadata\.disclaimerMarkup\(\{escape:zz\.default,heading:D,body:O\}\)/);
+  assert.match(transformed, /\$\{CPXAboutMetadata\.disclaimerStyles\(\)\}/);
   assert.match(transformed, /\.build-info \{\n      width: 100%;\n      margin: 0;\n      line-height: 1\.45;\n      color: var\(--muted-text\);\n      text-align: left;/);
   assert.match(transformed, /\.codex-plus-disclaimer,\n    \.build-info,/);
   assert.match(transformed, /\$\{q\}\n      <pre class="build-info"/);
+  assert.doesNotMatch(transformed, /THIS SOFTWARE IS PROVIDED/);
+  assert.doesNotMatch(transformed, /class="codex-plus-disclaimer"/);
   assert.doesNotMatch(transformed, /This app is Codex Plus\./);
   assert.match(transformed, /https:\/\/github\.com\/michaelw\/codex-plus-patcher/);
-  assert.match(transformed, /Patcher commit: abc123def456/);
-  assert.match(transformed, /Source app\.asar: source-sha/);
-  assert.match(transformed, /- bundle-identity/);
-  assert.match(transformed, /- about-codex-plus-metadata/);
+  assert.match(transformed, /"patcherGitSha":"abc123def456"/);
+  assert.match(transformed, /"sourceAsarSha256":"source-sha"/);
+  assert.match(transformed, /"appliedPatches":\["bundle-identity","about-codex-plus-metadata"\]/);
+
+  const aboutPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aboutMetadata.js"), "utf8");
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.match(aboutPlugin, /function aboutPayload/);
+  assert.match(aboutPlugin, /function buildInfoLines/);
+  assert.match(aboutPlugin, /function disclaimerMarkup/);
+  assert.match(aboutPlugin, /THIS SOFTWARE IS PROVIDED/);
+  assert.doesNotMatch(commonPatches, /THIS SOFTWARE IS PROVIDED/);
+
+  const aboutMetadata = require("../src/runtime/plugins/aboutMetadata.js");
+  const payload = aboutMetadata.aboutPayload({
+    patcherRepoUrl: "https://github.com/michaelw/codex-plus-patcher",
+    patcherGitSha: "abc123def456",
+    sourceAsarSha256: "source-sha",
+    appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
+  });
+  assert.equal(payload.appDisplayName, "Codex Plus");
+  assert.ok(payload.buildInfoLines.includes("Patcher commit: abc123def456"));
+  assert.ok(payload.buildInfoLines.includes("Source app.asar: source-sha"));
+  assert.ok(payload.buildInfoLines.includes("- bundle-identity"));
+  assert.ok(payload.buildInfoLines.includes("- about-codex-plus-metadata"));
 });
 
 test("title patch loads the Codex Plus runtime bootstrap", () => {
@@ -422,9 +503,17 @@ test("about dialog applied patch examples stay aligned with the active patch que
   });
 
   for (const patch of patchSet.patches) {
-    assert.match(transformed, new RegExp(`- ${patch.id}`));
+    assert.match(transformed, new RegExp(`"${patch.id}"`));
   }
   assert.doesNotMatch(transformed, /Patch descriptions:/);
+
+  const aboutMetadata = require("../src/runtime/plugins/aboutMetadata.js");
+  const payload = aboutMetadata.aboutPayload({
+    appliedPatches: patchSet.patches.map((patch) => patch.id),
+  });
+  for (const patch of patchSet.patches) {
+    assert.ok(payload.buildInfoLines.includes(`- ${patch.id}`));
+  }
 });
 
 test("about dialog patch fails closed when the build information hook changes", () => {
@@ -435,6 +524,42 @@ test("about dialog patch fails closed when the build information hook changes", 
     () => transform(fakeAboutDialogBundle().replace("function V0(e){return[]}", "function V0(e){return[1]}")),
     /Expected one about dialog build information anchor, found 0/,
   );
+});
+
+test("diagnostic error patches delegate detail rendering to the runtime plugin", () => {
+  const fakeAppShellBundle = [
+    "function En(e){return(0,Q.jsx)(wn,{onRetry:()=>{e.resetError()}})}",
+    "children:[r,(0,Q.jsx)(Le,{color:`secondary`,size:`default`,onClick:n,children:i})]",
+    "return t[2]===n?a=t[3]:(a=(0,Q.jsxs)(`div`,{className:`flex h-full min-h-0 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-token-text-secondary`,children:",
+    "}),t[2]=n,t[3]=a),a}function Tn(e){return e.composedPath().some",
+  ].join("");
+  const fakeErrorBoundaryBundle = [
+    "function Xf(e){let t=(0,Vf.c)(9),{resetError:n}=e,r=ee(),i,a;",
+    "children:[i,a,(0,$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,$.jsx)(m,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,$.jsx)(Xf,{resetError:()=>e.resetError()}));",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const appShellFile = findTransformPath(patchSet, "app-shell");
+    const errorBoundaryFile = findTransformPath(patchSet, "error-boundary");
+    const appShell = transformFile(patchSet, appShellFile, fakeAppShellBundle);
+    const errorBoundary = transformFile(patchSet, errorBoundaryFile, fakeErrorBoundaryBundle);
+
+    assert.match(appShell, /function CPXDiagnosticDetails\(e\)\{return window\.CodexPlus\?\.ui\?\.errors\?\.renderDetails\?\.\(e\)\?\?null\}/);
+    assert.match(appShell, /CPXDiagnosticDetails\(\{jsx:Q\.jsx,error:e\.error\}\)/);
+    assert.doesNotMatch(appShell, /max-h-80 max-w-full/);
+    assert.match(errorBoundary, /error:CPX_error,componentStack:CPX_componentStack/);
+    assert.match(errorBoundary, /CPXDiagnosticDetails\(\{jsx:\$\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
+    assert.doesNotMatch(errorBoundary, /CPX_errorText/);
+    assert.doesNotMatch(errorBoundary, /max-h-80 max-w-full/);
+  }
+
+  const diagnosticPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/diagnosticErrors.js"), "utf8");
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.match(diagnosticPlugin, /function diagnosticText/);
+  assert.match(diagnosticPlugin, /function renderDetails/);
+  assert.match(diagnosticPlugin, /max-h-80 max-w-full/);
+  assert.doesNotMatch(commonPatches, /max-h-80 max-w-full/);
 });
 
 test("review patch mounts repository mux before main branch selection", () => {
@@ -464,28 +589,30 @@ test("review patch mounts repository mux before main branch selection", () => {
     assert.match(transformed, /children:d&&!u&&c==null\?\(0,\$\.jsx\)\(Oa,\{\}\):\(0,\$\.jsx\)\(of,/);
     assert.match(
       transformed,
-      /s=\(0,\$\.jsx\)\(CPXReviewMux,\{mainReviewContent:\(0,\$\.jsx\)\(Tf,\{diffMode:a,setTabState:r,tabState:i\}\)\}\)/,
+      /s=\(0,\$\.jsx\)\(CPXReviewMux,\{mainReviewContent:\(0,\$\.jsx\)\(Tf,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
     );
-    assert.match(transformed, /p=e\.mainReviewContent,g=\(0,Q\.useMemo\)\(\(\)=>p\?\?/);
-    assert.match(transformed, /function CPXBranchPicker\(\{repo:e,hostConfig:t,baseBranch:n,setBaseBranch:r\}\)/);
-    assert.match(transformed, /method:`recent-branches`/);
-    assert.match(transformed, /method:`search-branches`/);
+    assert.match(transformed, /ui\?\.review\?\.renderBody/);
+    assert.doesNotMatch(transformed, /plugins\?\.get\(`nestedRepositories`\)\?\.exports/);
     assert.match(transformed, /CPXBranchPickerDropdownContent/);
-    assert.match(transformed, /source:D,operationSource:`codex_plus_review`,hostConfig:t,\.\.\.C\.length>0\?\{baseBranch:C\}:\{\}/);
-    assert.match(transformed, /function CPXRepoDiffBody\(\{cwd:e,hostConfig:t,conversationId:n,diffMode:r,diffText:i,statusText:a,error:o,isLoading:s\}\)/);
-    assert.match(transformed, /c=xr\(i\)/);
-    assert.match(transformed, /\(0,Q\.createElement\)\(Ma,\{key:/);
-    assert.match(
-      transformed,
-      /o\?null:\(0,\$\.jsx\)\(CPXRepoDiffBody,\{cwd:e\.cwd,hostConfig:t,conversationId:r,diffMode:A1,diffText:c,statusText:b,error:f,isLoading:u\}\)/,
-    );
-    assert.match(transformed, /conversationId:o,diffMode:a,baseBranch:m\.get\(S\(e\)\)\?\?``/);
-    assert.match(transformed, /className:`mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2`/);
-    assert.match(transformed, /containerClassName:`codex-review-diff-card extension:rounded-lg w-full max-w-none`/);
-    assert.match(transformed, /className:`flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto`/);
+    assert.doesNotMatch(transformed, /function CPXBranchPicker/);
+    assert.doesNotMatch(transformed, /function CPXRepoPatchGroup/);
+    assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
     assert.doesNotMatch(transformed, /placeholder:`base`/);
     assert.doesNotMatch(transformed, /\(0,\$\.jsx\)\(`input`,\{className:`h-7 w-28/);
   }
+
+  const pluginSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/nestedRepositories.js"), "utf8");
+  assert.match(pluginSource, /function ReviewMux/);
+  assert.match(pluginSource, /function BranchPicker/);
+  assert.match(pluginSource, /function RepoPatchGroup/);
+  assert.match(pluginSource, /jsx\(BranchPicker, \{ repo, hostConfig, baseBranch, setBaseBranch, deps \}\)/);
+  assert.match(pluginSource, /jsx\(\s*RepoPatchGroup,/);
+  const directRepoPatchGroupCalls = pluginSource
+    .split("\n")
+    .filter((line) => /RepoPatchGroup\(\s*(\{|$)/.test(line) && !line.includes("function RepoPatchGroup"));
+  assert.deepEqual(directRepoPatchGroupCalls, []);
+  assert.match(pluginSource, /method: "recent-branches"/);
+  assert.match(pluginSource, /method: "search-branches"/);
 });
 
 test("worker patch allows codex plus branch picker read-only branch requests", () => {
@@ -505,15 +632,19 @@ test("worker patch allows codex plus branch picker read-only branch requests", (
 
     assert.match(transformed, /case`repository-targets`:a=X\(await CPX_repositoryTargets/);
     assert.match(transformed, /case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:/);
-    assert.match(
-      transformed,
-      /function CPX_isReadOnlyBranchRequest\(e,t\)\{return t===`codex_plus_review`&&\(e===`recent-branches`\|\|e===`search-branches`\)\}/,
-    );
+    assert.match(transformed, /const CPXWorkerBridge=require\("\.\/codex-plus-worker\.js"\)/);
+    assert.match(transformed, /function CPX_isReadOnlyBranchRequest\(e,t\)\{return CPXWorkerBridge\.isReadOnlyBranchRequest\(e,t\)\}/);
     assert.match(
       transformed,
       /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPX_isReadOnlyBranchRequest\(e,t\)\}/,
     );
   }
+
+  const workerSource = fs.readFileSync(path.join(__dirname, "../src/runtime/worker.js"), "utf8");
+  assert.match(workerSource, /function repositoryTargets/);
+  assert.match(workerSource, /function isReadOnlyBranchRequest/);
+  assert.match(workerSource, /recent-branches/);
+  assert.match(workerSource, /search-branches/);
 });
 
 test("appearance settings patch adds user bubble colors and project colors only", () => {
@@ -530,47 +661,36 @@ test("appearance settings patch adds user bubble colors and project colors only"
       ([filePath]) => filePath === settingsFile,
     );
 
-    assert.equal(transforms.length, 2, `${patchSet.id} has split appearance settings transforms`);
+    assert.equal(transforms.length, 1, `${patchSet.id} has one generic appearance settings transform`);
 
     const transformed = transformFile(patchSet, settingsFile, fakeSettingsBundle);
 
-    {
-      const helperStart = transformed.indexOf("const CPX_PROJECT_COLORS_ENABLED_KEY");
-      const helperEnd = transformed.indexOf("function tn", helperStart);
-      assert.doesNotThrow(() => new Function(transformed.slice(helperStart, helperEnd)));
-    }
-    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
-    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_EVENT=`codex-plus:user-message-bubble-colors-change`/);
-    assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
+    assert.match(transformed, /ui\?\.settings\?\.appearance\?\.renderRows/);
     assert.doesNotMatch(transformed, /CPX_USER_BUBBLE_OVERRIDE_KEY/);
     assert.doesNotMatch(transformed, /codex-plus:user-bubble-color-override/);
-    assert.match(transformed, /CPX_PROJECT_PALETTE=\[\[/);
-    assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
-    {
-      const paletteStart = transformed.indexOf("CPX_PROJECT_PALETTE=");
-      const paletteEnd = transformed.indexOf(";function CPX_readBool", paletteStart);
-      const paletteSource = transformed.slice(paletteStart, paletteEnd);
-      assert.ok((paletteSource.match(/\[`#[0-9a-fA-F]{6}`/g) ?? []).length >= 32);
-    }
-    assert.match(transformed, /userBubble:\{id:`settings\.general\.appearance\.userMessageBubble\.short`,defaultMessage:`User bubble`/);
-    assert.match(transformed, /projectColors:\{id:`settings\.general\.appearance\.projectColors\.short`,defaultMessage:`Project colors`/);
+    assert.doesNotMatch(transformed, /CPX_PROJECT_PALETTE/);
+    assert.doesNotMatch(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY/);
     assert.doesNotMatch(transformed, /userBubbleOverride/);
-    assert.match(transformed, /CPX_defaultUserBubbleColor\(e\)\{return e===`dark`\?`#2f2f2f`:`#f2f2f2`\}/);
-    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\{return CPX_isUserBubbleColor\(t\)&&t\.toLowerCase\(\)!==CPX_defaultUserBubbleColor\(e\)\}/);
-    assert.match(transformed, /light:CPX_isStoredUserBubbleColor\(`light`,e\.light\)\?e\.light:``/);
-    assert.match(transformed, /dark:CPX_isStoredUserBubbleColor\(`dark`,e\.dark\)\?e\.dark:``/);
-    assert.match(transformed, /CPX_readUserBubbleColors\(\)\[e\]\|\|CPX_defaultUserBubbleColor\(e\)/);
-    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\?n\[e\]=t:delete n\[e\]/);
-    assert.match(transformed, /CPX_userBubbleLabel=i\.formatMessage\(Q\.userBubble\)/);
-    assert.match(transformed, /CPX_projectColorsLabel=i\.formatMessage\(Q\.projectColors\)/);
+    assert.doesNotMatch(transformed, /CPX_userBubbleTextColor/);
     assert.doesNotMatch(transformed, /CPX_userBubbleOverrideLabel/);
-    assert.match(transformed, /\(0,Z\.jsx\)\(CPXUserBubbleColorRow,\{variant:n,label:CPX_userBubbleLabel,ariaLabel:i\.formatMessage/);
-    assert.match(transformed, /\(0,Z\.jsx\)\(CPXProjectColorToggleRow,\{label:CPX_projectColorsLabel,ariaLabel:i\.formatMessage/);
+    assert.match(transformed, /\.\.\.CPXAppearanceRows\(n\),O\.map/);
+    assert.doesNotMatch(transformed, /CPXUserBubbleColorRow/);
+    assert.doesNotMatch(transformed, /CPXProjectColorToggleRow/);
     assert.doesNotMatch(transformed, /CPXUserBubbleOverrideToggleRow/);
-    assert.match(transformed, /defaultMessage:`\{variant\} user message bubble color`/);
-    assert.match(transformed, /defaultMessage:`\{variant\} project colors`/);
     assert.doesNotMatch(transformed, /custom user bubble colors override project colors/);
   }
+
+  const projectPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/projectColors.js"), "utf8");
+  const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
+  assert.match(projectPlugin, /const STORAGE_KEY = "codex-plus:project-colors-enabled"/);
+  assert.match(projectPlugin, /function fnv1a32\(value\)/);
+  assert.match(projectPlugin, /0x811c9dc5/);
+  assert.match(projectPlugin, /0x01000193/);
+  assert.ok((projectPlugin.match(/#[0-9a-fA-F]{6}/g) ?? []).length >= 32);
+  assert.match(projectPlugin, /render: \(deps\) => renderToggleRow/);
+  assert.match(bubblePlugin, /const STORAGE_KEY = "codex-plus:user-message-bubble-colors"/);
+  assert.match(bubblePlugin, /function textColor/);
+  assert.match(bubblePlugin, /render: \(deps\) => renderColorRow/);
 });
 
 test("app main patch applies project colors to project headers and grouped row options", () => {
@@ -598,31 +718,30 @@ test("app main patch applies project colors to project headers and grouped row o
 
     const transformed = transformFile(patchSet, appMainFile, fakeAppMainBundle);
 
-    assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
-    assert.match(transformed, /CPX_PROJECT_PALETTE=\[\[/);
-    assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
-    assert.match(transformed, /let t=e\.projectId\?\?e\.id/);
-    assert.match(transformed, /data-codex-plus-project-color/);
-    assert.match(transformed, /data-codex-plus-project-sidebar-color/);
-    assert.match(transformed, /data-codex-plus-project-sidebar-color\]\{border-radius:0;background-color/);
-    assert.match(transformed, /--codex-plus-project-separator-light/);
-    assert.match(transformed, /\[data-codex-plus-project-color\]:not\(\[data-codex-plus-project-sidebar-color\]\)\{background-image:linear-gradient/);
-    assert.match(transformed, /background-size:2px 100%/);
-    assert.match(transformed, /rowAttributes:\{\.\.\.ke,\.\.\.CPX_projectColorDataAttributes\(n,!0\)\}/);
-    assert.match(transformed, /dataAttributes:CPX_projectColorDataAttributes\(i,!0\)/);
+    assert.match(transformed, /ui\?\.sidebar\?\.projectRowProps/);
+    assert.match(transformed, /ui\?\.sidebar\?\.threadRowProps/);
+    assert.match(transformed, /rowAttributes:\{\.\.\.ke,\.\.\.CPXHostProjectRowProps\(n\)\}/);
+    assert.match(transformed, /dataAttributes:CPXHostThreadRowProps\(i\)/);
     assert.match(transformed, /"data-codex-plus-sidebar-name":``/);
-    assert.match(transformed, /function CPXSidebarNameBlurCommand\(\)/);
-    assert.match(transformed, /Hp\(`codexPlusToggleSidebarNameBlur`/);
-    assert.match(transformed, /Toggle sidebar blur/);
+    assert.doesNotMatch(transformed, /function CPXSidebarNameBlurCommand\(\)/);
+    assert.match(transformed, /ui\?\.commands\?\.renderMenuItems/);
+    assert.match(transformed, /MenuItem:Zy,register:Hp/);
     assert.match(transformed, /codexPlusToggleSidebarNameBlur:\$i/);
-    assert.match(transformed, /data-codex-plus-sidebar-names-blurred/);
     assert.doesNotMatch(transformed, /localStorage\.(?:setItem|getItem)\(`codex-plus:sidebar/);
-    assert.match(transformed, /children:\[l,u,\(0,Z\.jsx\)\(CPXSidebarNameBlurCommand,\{\}\),\(0,Z\.jsx\)\(H_,\{route:a,children:C\}\)\]/);
+    assert.match(transformed, /children:\[l,u,\.\.\.\(window\.CodexPlus\?\.ui\?\.commands\?\.renderMenuItems/);
     assert.match(transformed, /function Pk\(e\)\{let t=\(0,Q\.c\)\(46\),/);
     assert.match(transformed, /t\[24\]!==a\|\|t\[45\]!==i\?/);
     assert.match(transformed, /t\[24\]=a,t\[45\]=i,t\[25\]=q\):q=t\[25\]/);
-    assert.match(transformed, /CPX_installProjectColorStyles\(\)/);
+    assert.doesNotMatch(transformed, /CPX_PROJECT_PALETTE/);
+    assert.doesNotMatch(transformed, /CPX_installProjectColorStyles/);
   }
+
+  const projectPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/projectColors.js"), "utf8");
+  const blurPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/sidebarNameBlur.js"), "utf8");
+  assert.match(projectPlugin, /data-codex-plus-project-sidebar-color/);
+  assert.match(projectPlugin, /--codex-plus-project-separator-light/);
+  assert.match(projectPlugin, /background-size:2px 100%/);
+  assert.match(blurPlugin, /data-codex-plus-sidebar-names-blurred/);
 });
 
 test("local task row patch colors standalone rows from row project context", () => {
@@ -644,7 +763,7 @@ test("local task row patch colors standalone rows from row project context", () 
     const transformed = transform(fakeLocalTaskRowBundle);
 
     assert.doesNotMatch(transformed, /CPX_threadProjectAssignments/);
-    assert.match(transformed, /CPX_rowDataAttributes=Fe\?\?CPX_projectColorDataAttributes\(Oe,!0\)/);
+    assert.match(transformed, /CPX_rowDataAttributes=Fe\?\?CPXHostProjectRowProps\(Oe\)/);
     assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
     assert.match(transformed, /t\[87\]!==CPX_rowDataAttributes/);
     assert.match(transformed, /t\[87\]=CPX_rowDataAttributes/);
@@ -664,21 +783,18 @@ test("command palette metadata exposes the sidebar blur command without a shortc
     assert.equal(typeof transform, "function", `${patchSet.id} has command metadata transform`);
 
     const transformed = transform(fakeElectronMenuShortcutsBundle);
-    const commandStart = transformed.indexOf("id:`codexPlusToggleSidebarNameBlur`");
+    const commandStart = transformed.indexOf("window.CodexPlus?.ui?.commands?.commandMetadata");
     const commandEnd = transformed.indexOf("},{id:`toggleBottomPanel`");
     const commandMetadata = transformed.slice(commandStart, commandEnd);
 
     assert.notEqual(commandStart, -1);
-    assert.match(commandMetadata, /titleIntlId:`codexPlus\.command\.toggleSidebarNameBlur`/);
-    assert.match(commandMetadata, /descriptionIntlId:`codexPlus\.commandDescription\.toggleSidebarNameBlur`/);
-    assert.match(commandMetadata, /commandMenuGroupKey:`panels`/);
-    assert.match(commandMetadata, /commandMenu:!0/);
-    assert.match(commandMetadata, /electron:\{menuTitle:`Toggle sidebar blur`,menuTitleIntlId:`codexPlus\.commandMenuTitle\.toggleSidebarNameBlur`,defaultKeybindings:\[\]\}/);
+    assert.match(commandMetadata, /commandMetadata\?\.\(\)\?\?\[\]/);
+    assert.doesNotMatch(commandMetadata, /codexPlusToggleSidebarNameBlur/);
     assert.doesNotMatch(commandMetadata, /localStorage/);
   }
 });
 
-test("keyboard shortcut search metadata defines sidebar blur intl messages", () => {
+test("keyboard shortcut search metadata falls back to command declaration titles", () => {
   const fakeKeyboardShortcutsSearchBundle = [
     "\"codex.command.toggleSidebar\":{id:`codex.command.toggleSidebar`,defaultMessage:`Toggle sidebar`,description:`Command menu item to toggle the sidebar`},\"codex.command.toggleBottomPanel\":",
     "\"codex.commandMenuTitle.toggleSidebar\":{id:`codex.commandMenuTitle.toggleSidebar`,defaultMessage:`Toggle Sidebar`,description:`Native menu item to toggle the sidebar`},\"codex.commandMenuTitle.toggleBottomPanel\":",
@@ -695,11 +811,9 @@ test("keyboard shortcut search metadata defines sidebar blur intl messages", () 
 
     const transformed = transform(fakeKeyboardShortcutsSearchBundle);
 
-    assert.match(transformed, /"codexPlus\.command\.toggleSidebarNameBlur":\{id:`codexPlus\.command\.toggleSidebarNameBlur`,defaultMessage:`Toggle sidebar blur`/);
-    assert.match(transformed, /"codexPlus\.commandMenuTitle\.toggleSidebarNameBlur":\{id:`codexPlus\.commandMenuTitle\.toggleSidebarNameBlur`,defaultMessage:`Toggle sidebar blur`/);
-    assert.match(transformed, /"codexPlus\.commandDescription\.toggleSidebarNameBlur":\{id:`codexPlus\.commandDescription\.toggleSidebarNameBlur`,defaultMessage:`Blur or show sidebar chat and project names`/);
+    assert.doesNotMatch(transformed, /codexPlus\.command\.toggleSidebarNameBlur/);
     assert.match(transformed, /t\.formatMessage\(c\[e\.titleIntlId\]\)/);
-    assert.match(transformed, /t\.formatMessage\(l\[e\.electron\.menuTitleIntlId\]\)/);
+    assert.match(transformed, /e\.title\?\?e\.electron\?\.menuTitle\?\?t\.formatMessage\(l\[e\.electron\.menuTitleIntlId\]\)/);
   }
 });
 
@@ -734,12 +848,12 @@ test("sidebar thread list forwards project color data attributes into rows", () 
 
     const transformed = transform(fakeSidebarRowsBundle);
 
-    assert.match(transformed, /function CPX_mergeDataAttributes\(e,t\)/);
+    assert.doesNotMatch(transformed, /function CPX_mergeDataAttributes\(e,t\)/);
     assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
     assert.match(transformed, /dataAttributes:l\?\.dataAttributes/);
-    assert.match(transformed, /CPX_mergeDataAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /CPX_mergeDataAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e\.task\.title\?\?``\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /CPX_mergeDataAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:t\.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t\.label\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e\.task\.title\?\?``\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:t\.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t\.label\}\),CPX_rowDataAttributes\)/);
     assert.match(transformed, /function Rn\(e\)\{let t=\(0,zt\.c\)\(44\),/);
     assert.match(transformed, /var En=\(0,Vt\.memo\)\(function\(e\)\{let t=\(0,zt\.c\)\(41\),/);
     assert.match(transformed, /function On\(e\)\{let t=\(0,zt\.c\)\(124\),/);
@@ -770,47 +884,28 @@ test("user message patch applies variant-specific bubble colors with default fal
 
     const transformed = transformFile(patchSet, userMessageAttachmentsFile, fakeBundle);
 
-    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
-    assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
+    assert.match(transformed, /ui\?\.message\?\.userBubbleProps/);
     assert.doesNotMatch(transformed, /CPX_USER_BUBBLE_OVERRIDE_KEY/);
     assert.doesNotMatch(transformed, /CPX_userBubbleOverrideEnabled/);
-    assert.match(transformed, /function CPX_projectColorStyle\(e\)/);
-    assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
+    assert.doesNotMatch(transformed, /function CPX_projectColorStyle\(e\)/);
     assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
     assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
-    assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\{return CPX_isUserBubbleColor\(t\)&&t\.toLowerCase\(\)!==CPX_defaultUserBubbleColor\(e\)\}/);
-    assert.match(transformed, /light:CPX_isStoredUserBubbleColor\(`light`,e\.light\)\?e\.light:null/);
-    assert.match(transformed, /dark:CPX_isStoredUserBubbleColor\(`dark`,e\.dark\)\?e\.dark:null/);
-    assert.match(transformed, /CPX_userBubbleTextColor\(e\)/);
-    assert.match(transformed, /s>=4\.5&&s>=l\?`#111111`:o>=l\?`#000000`:`#ffffff`/);
-    const userBubbleTextColor = extractUserBubbleTextColor(transformed);
-    assert.equal(userBubbleTextColor("#e0218a"), "#000000");
-    assert.equal(userBubbleTextColor("#65FB63"), "#111111");
-    assert.equal(userBubbleTextColor("#2f2f2f"), "#ffffff");
-    assert.match(transformed, /function CPX_setUserBubbleVars\(\)/);
-    assert.match(transformed, /--codex-plus-user-bubble-light-bg/);
-    assert.match(transformed, /--codex-plus-user-bubble-dark-fg/);
-    assert.match(transformed, /--codex-plus-project-separator-light/);
-    assert.match(transformed, /\[data-codex-plus-project-color\]:not\(\[data-codex-plus-project-sidebar-color\]\)\{background-image:linear-gradient/);
-    assert.match(transformed, /background-size:2px 100%/);
+    assert.doesNotMatch(transformed, /CPX_userBubbleTextColor/);
+    assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
+    assert.doesNotMatch(transformed, /CPX_PROJECT_PALETTE/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-bubble\]\[data-codex-plus-project-color\]\).*background-color:var\(--codex-plus-project/);
-    assert.match(transformed, /function CPX_installUserBubbleColors\(\)/);
-    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
-    assert.match(transformed, /:root\.dark :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\),:root\.electron-dark :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
-    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\],\[class\*="text-token-text-link-foreground"\],\[class\*="text-token-editor-warning-foreground"\]\)\{color:var\(--codex-plus-user-bubble-light-fg\)\}/);
-    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder\{color:var\(--codex-plus-user-bubble-light-fg\)\}/);
-    assert.match(transformed, /:root\.dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\],\[class\*="text-token-text-link-foreground"\],\[class\*="text-token-editor-warning-foreground"\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\),button:not\(\[class\*="bg-token-foreground"\]\) svg,\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg,\[class\*="text-token-foreground"\],\[class\*="text-token-description-foreground"\],\[class\*="text-token-input-placeholder-foreground"\],\[class\*="text-token-text-link-foreground"\],\[class\*="text-token-editor-warning-foreground"\]\)\{color:var\(--codex-plus-user-bubble-dark-fg\)\}/);
-    assert.match(transformed, /:root\.dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root\.dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root\.dark \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after,:root\.electron-dark \[data-codex-plus-user-entry\] :is\(input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder\{color:var\(--codex-plus-user-bubble-dark-fg\)\}/);
-    assert.match(transformed, /window\.addEventListener\(CPX_USER_BUBBLE_COLORS_EVENT,CPX_setUserBubbleVars\)/);
-    assert.doesNotMatch(transformed, /window\.addEventListener\(CPX_PROJECT_COLOR_EVENT,CPX_setUserBubbleVars\)/);
-    assert.match(transformed, /CPX_installUserBubbleColors\(\)/);
+    assert.match(transformed, /function CPX_installHostSurfaceProps\(\)/);
+    assert.match(transformed, /CPX_installHostSurfaceProps\(\)/);
     assert.match(transformed, /CPX_userMessageProjectId=o\(CPX_threadProjectId,S==null\?null:CPX_localThreadKey\(S\)\)/);
-    assert.match(transformed, /CPX_userMessageProjectStyle=CPX_projectColorStyle\(CPX_userMessageProjectId\)/);
-    assert.match(transformed, /"data-user-message-bubble":!0,"data-codex-plus-user-bubble":!0,"data-codex-plus-project-color":CPX_userMessageProjectStyle\?``:void 0,style:CPX_userMessageProjectStyle/);
-    assert.match(transformed, /borderLeft:`6px solid \$\{t\}`/);
+    assert.doesNotMatch(transformed, /CPX_userMessageProjectStyle/);
+    assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXHostUserBubbleProps\(\{project:CPX_userMessageProjectId\}\),role:H\?`button`:void 0/);
     assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
     assert.match(transformed, /bg-token-foreground\/5 max-w-\[77%\]/);
   }
+
+  const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
+  assert.match(bubblePlugin, /function textColor/);
+  assert.match(bubblePlugin, /--codex-plus-user-bubble-light-bg/);
 });
 
 test("composer patch applies the user entry marker and shared color variables", () => {
@@ -844,37 +939,25 @@ test("composer patch applies the user entry marker and shared color variables", 
 
     const transformed = transformFile(patchSet, composerFile, fakeBundle);
 
-    assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
-    assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
-    assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
+    assert.match(transformed, /ui\?\.composer\?\.surfaceProps/);
     assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
     assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
-    assert.match(transformed, /function CPX_installUserBubbleColors\(\)/);
+    assert.match(transformed, /function CPX_installHostSurfaceProps\(\)/);
     assert.match(transformed, /function oh\(e\)\{let t=\(0,\$\.c\)\(14\)/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\].*background-color:var\(--codex-plus-project/);
-    assert.match(transformed, /:root:not\(\.dark\):not\(\.electron-dark\) :is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)/);
-    assert.match(transformed, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root:not\(\.dark\):not\(\.electron-dark\) \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\),\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\)/);
-    assert.match(transformed, /\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::before/);
-    assert.match(transformed, /\[data-placeholder\],\[class\*="text-token-input-placeholder-foreground"\]\)::after/);
-    assert.match(transformed, /input,textarea,\[contenteditable="true"\],\[class\*="placeholder:text-token-input-placeholder-foreground"\]\)::placeholder/);
-    assert.doesNotMatch(transformed, /\.ProseMirror\[data-placeholder\]::before/);
-    assert.doesNotMatch(transformed, /p\.is-editor-empty:first-child::before/);
-    assert.match(transformed, /button:not\(\[class\*="bg-token-foreground"\]\) svg/);
-    assert.match(transformed, /\[class\*="text-token-description-foreground"\]/);
-    assert.match(transformed, /\[class\*="text-token-input-placeholder-foreground"\]/);
-    assert.match(transformed, /\[class\*="text-token-text-link-foreground"\]/);
-    assert.match(transformed, /\[class\*="text-token-editor-warning-foreground"\]/);
-    assert.match(transformed, /text-token-text-link-foreground"\],\[class\*="text-token-editor-warning-foreground"\]\)\{color:var\(--codex-plus-user-bubble-light-fg\)\}/);
-    assert.match(transformed, /text-token-text-link-foreground"\],\[class\*="text-token-editor-warning-foreground"\]\)\{color:var\(--codex-plus-user-bubble-dark-fg\)\}/);
-    assert.match(transformed, /\[role="button"\]:not\(\[class\*="bg-token-foreground"\]\) svg/);
-    assert.match(transformed, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.electron-dark \[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,textarea,\[contenteditable="true"\],\[data-placeholder\]\),:root\.dark \[data-codex-plus-user-entry\] :is\(button:not\(\[class\*="bg-token-foreground"\]\)/);
-    assert.match(transformed, /style:CPX_projectColorInlineStyle,className:v/);
-    assert.match(transformed, /data-codex-plus-project-color":CPX_projectColorInlineStyle\?``:void 0/);
+    assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
+    assert.doesNotMatch(transformed, /CPX_userBubbleTextColor/);
+    assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
+    assert.doesNotMatch(transformed, /CPX_projectColorInlineStyle/);
     assert.match(transformed, /CPX_composerThreadProjectId=a\(CPX_threadProjectId,G==null\?null:CPX_localThreadKey\(G\)\)/);
-    assert.match(transformed, /CPX_composerProjectStyle=CPX_projectColorStyle\(G==null\?On\?\{hostId:On\.hostId,path:On\.remotePath,projectId:kn,label:On\.label\?\?On\.name\}:x\?\?void 0:CPX_composerThreadProjectId\);return/);
-    assert.match(transformed, /style:!Ge&&!Hn\?CPX_composerProjectStyle:void 0/);
+    assert.match(transformed, /CPX_composerSurfaceProps=CPXHostComposerSurfaceProps\(\{project:G==null\?On\?\{hostId:On\.hostId,path:On\.remotePath,projectId:kn,label:On\.label\?\?On\.name\}:x\?\?void 0:CPX_composerThreadProjectId\}\);return/);
+    assert.match(transformed, /codexPlusProps:!Ge&&!Hn\?CPX_composerSurfaceProps:void 0/);
     assert.doesNotMatch(transformed, /style:!Ge&&!Hn\?CPX_projectColorStyle\(.*a\(CPX_threadProjectId/);
-    assert.match(transformed, /--codex-plus-project-separator-dark/);
-    assert.match(transformed, /background-size:2px 100%/);
   }
+
+  const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
+  const projectPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/projectColors.js"), "utf8");
+  assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg/);
+  assert.match(projectPlugin, /--codex-plus-project-separator-dark/);
+  assert.match(projectPlugin, /background-size:2px 100%/);
 });

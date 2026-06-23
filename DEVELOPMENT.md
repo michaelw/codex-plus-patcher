@@ -58,12 +58,21 @@ Read back the patched ASAR SHA and inspect markers:
 
 ```sh
 rtk shasum -a 256 "work/Codex Plus <version>.app/Contents/Resources/app.asar"
-rtk node -e 'const { readAsar, walkFiles } = require("./src/core/asar"); const archive = readAsar("work/Codex Plus <version>.app/Contents/Resources/app.asar"); console.log(walkFiles(archive.header).map(([file]) => file).filter((file) => file.includes("webview/assets/")).join("\n"));'
+rtk codex-plus-patcher asar-list \
+  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
+  --contains "webview/assets/codex-plus/"
+rtk codex-plus-patcher asar-cat \
+  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
+  --file "webview/assets/codex-plus/plugins/nestedRepositories.js"
 ```
 
 Use the ASAR readback to confirm the expected chunk names, patch markers, and
 `webview/assets/codex-plus/runtime.js` plugin assets exist in the generated
-target before testing the app manually.
+target before testing the app manually. Prefer the built-in `asar-list` and
+`asar-cat` commands over ad hoc imports from external ASAR packages. Use them
+after workspace-local app applies, when confirming runtime/plugin assets were
+inserted, when checking patched chunks contain host hooks, and when verifying
+moved feature bodies are no longer inside versioned chunks.
 
 ## Runtime Plugin Shape
 
