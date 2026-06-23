@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.2.1...v0.3.0) (2026-06-23)
+
+
+### Features
+
+* add runtime plugin support ([#16](https://github.com/michaelw/codex-plus-patcher/issues/16)) ([ae1f9f8](https://github.com/michaelw/codex-plus-patcher/commit/ae1f9f881fc894f870012dd3bc0a750a952c899e))
+* move Codex Plus features into runtime plugins ([#19](https://github.com/michaelw/codex-plus-patcher/issues/19)) ([c848edb](https://github.com/michaelw/codex-plus-patcher/commit/c848edb88551a09da4897855234d9c9706b7c881))
+
 ## [0.2.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.2.0...v0.2.1) (2026-06-23)
 
 
