@@ -114,6 +114,17 @@ test("current patch queues expose project colors and sidebar blur separately fro
   }
 });
 
+test("versioned patch files stay below the runtime migration line-count gate", () => {
+  const patchDir = path.join(__dirname, "../src/patches");
+  const totalLines = fs
+    .readdirSync(patchDir)
+    .filter((file) => file.endsWith(".js"))
+    .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
+    .reduce((sum, count) => sum + count, 0);
+
+  assert.ok(totalLines <= 1608, `src/patches/*.js line count ${totalLines} exceeds 1608`);
+});
+
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
   const progress = [];
   let transformContext;
