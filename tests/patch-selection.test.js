@@ -411,7 +411,7 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(pluginSupport, /sidebarNameBlur/);
   assert.match(pluginSupport, /third-party plugin marketplace/);
   assert.equal(packageJson.version, "0.3.0");
-  assert.equal(packageJson.scripts.check, "node src/check-js.js");
+  assert.equal(packageJson.scripts.check, "node scripts/check-syntax.js");
 });
 
 test("about dialog applied patch examples stay aligned with the active patch queue", () => {
