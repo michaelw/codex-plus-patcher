@@ -115,7 +115,9 @@
       required: true,
       styles:
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-sidebar-color]{border-radius:0;background-color:var(--codex-plus-project-soft-light);border-left-color:var(--codex-plus-project-accent)}" +
+        ":root:not(.dark):not(.electron-dark) [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color]{background-color:var(--codex-plus-project-bg-light);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-sidebar-color],:root.electron-dark [data-codex-plus-project-sidebar-color]{border-radius:0;background-color:var(--codex-plus-project-bg-dark);border-left-color:var(--codex-plus-project-border-dark)}" +
+        ":root.dark [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color],:root.electron-dark [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color]{background-color:color-mix(in srgb,var(--codex-plus-project-accent) 38%,transparent);border-left-color:color-mix(in srgb,var(--codex-plus-project-accent) 88%,transparent);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-color],:root.electron-dark [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-border-dark)}" +
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){background-image:linear-gradient(to right,var(--codex-plus-project-separator-light),var(--codex-plus-project-separator-light));background-repeat:no-repeat;background-size:2px 100%;background-position:left top}" +
