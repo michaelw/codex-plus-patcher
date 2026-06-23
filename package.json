@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/core/asar.js && node --check src/core/patch-engine.js && node --check src/core/plist.js && node --check src/core/release.js && node --check src/patches/index.js && node --check src/patches/26.616.41845-4198.js && node --check src/patches/26.616.51431-4212.js && node --check src/plus/repositories.js"
+    "check": "node --check src/cli.js && node --check src/core/asar.js && node --check src/core/patch-engine.js && node --check src/core/plist.js && node --check src/core/release.js && node --check src/patches/index.js && node --check src/patches/26.616.41845-4198.js && node --check src/patches/26.616.51431-4212.js && node --check src/patches/26.616.71553-4265.js && node --check src/plus/repositories.js"
   },
   "engines": {
     "node": ">=20"

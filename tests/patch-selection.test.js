@@ -12,6 +12,34 @@ function transformFile(patchSet, filePath, text, context) {
     .reduce((current, [, transform]) => transform(current, context), text);
 }
 
+function findTransformPath(patchSet, fileNamePrefix) {
+  const filePath = collectFileTransforms(patchSet).find(([candidate]) => {
+    const fileName = candidate.split("/").pop();
+    return fileName === fileNamePrefix || fileName.startsWith(`${fileNamePrefix}-`);
+  })?.[0];
+  assert.ok(filePath, `${patchSet.id} has ${fileNamePrefix} transform`);
+  return filePath;
+}
+
+function versionedNames(patchSet) {
+  if (patchSet.id === "codex-26.616.71553-4265") {
+    return {
+      srcFile: "src-l0hbMZ-p.js",
+      threadContextInputsFile: "thread-context-inputs-B6tQCr7t.js",
+      sidebarThreadKeysFile: "sidebar-thread-keys-Ch_amVKz.js",
+      sidebarThreadRowSignalsFile: "sidebar-thread-row-signals-ZqNv-_WT.js",
+      branchPickerDropdownContentFile: "git-branch-picker-dropdown-content-tZj3VhUw.js",
+    };
+  }
+  return {
+    srcFile: "src-C7fSIbpz.js",
+    threadContextInputsFile: "thread-context-inputs-CF11za43.js",
+    sidebarThreadKeysFile: "sidebar-thread-keys-xpkHnzZL.js",
+    sidebarThreadRowSignalsFile: "sidebar-thread-row-signals-DVmC0DJ3.js",
+    branchPickerDropdownContentFile: "git-branch-picker-dropdown-content-Ch_voM6R.js",
+  };
+}
+
 function extractUserBubbleTextColor(transformed) {
   const match = transformed.match(/(function CPX_userBubbleTextColor\(e\)\{[\s\S]*?\})function CPX_setUserBubbleVars/);
   assert.ok(match, "transformed bundle has CPX_userBubbleTextColor");
@@ -234,6 +262,7 @@ test("review patch mounts repository mux before main branch selection", () => {
   ].join("");
 
   for (const patchSet of patchSets) {
+    const names = versionedNames(patchSet);
     const transform = collectFileTransforms(patchSet).find(
       ([filePath]) => filePath.includes("thread-side-panel-tabs"),
     )?.[1];
@@ -242,9 +271,10 @@ test("review patch mounts repository mux before main branch selection", () => {
 
     const transformed = transform(fakeBundle);
 
-    assert.match(
-      transformed,
-      /import\{r as vi,t as yi\}from"\.\/dropdown-CTBRoADH\.js";import\{t as CPXBranchPickerDropdownContent\}from"\.\/git-branch-picker-dropdown-content-Ch_voM6R\.js";/,
+    assert.ok(
+      transformed.includes(
+        `import{r as vi,t as yi}from"./dropdown-CTBRoADH.js";import{t as CPXBranchPickerDropdownContent}from"./${names.branchPickerDropdownContentFile}";`,
+      ),
     );
     assert.match(transformed, /children:d&&!u&&c==null\?\(0,\$\.jsx\)\(Oa,\{\}\):\(0,\$\.jsx\)\(of,/);
     assert.match(
@@ -310,13 +340,14 @@ test("appearance settings patch adds user bubble colors and project colors only"
   ].join("");
 
   for (const patchSet of patchSets) {
+    const settingsFile = findTransformPath(patchSet, "general-settings");
     const transforms = collectFileTransforms(patchSet).filter(
-      ([filePath]) => filePath === "webview/assets/general-settings-Bit-KX17.js",
+      ([filePath]) => filePath === settingsFile,
     );
 
     assert.equal(transforms.length, 2, `${patchSet.id} has split appearance settings transforms`);
 
-    const transformed = transformFile(patchSet, "webview/assets/general-settings-Bit-KX17.js", fakeSettingsBundle);
+    const transformed = transformFile(patchSet, settingsFile, fakeSettingsBundle);
 
     {
       const helperStart = transformed.indexOf("const CPX_PROJECT_COLORS_ENABLED_KEY");
@@ -373,13 +404,14 @@ test("app main patch applies project colors to project headers and grouped row o
   ].join("");
 
   for (const patchSet of patchSets) {
+    const appMainFile = findTransformPath(patchSet, "app-main");
     const transforms = collectFileTransforms(patchSet).filter(
-      ([filePath]) => filePath === "webview/assets/app-main-C-_HjS2P.js",
+      ([filePath]) => filePath === appMainFile,
     );
 
     assert.equal(transforms.length, 2, `${patchSet.id} has split app main transforms`);
 
-    const transformed = transformFile(patchSet, "webview/assets/app-main-C-_HjS2P.js", fakeAppMainBundle);
+    const transformed = transformFile(patchSet, appMainFile, fakeAppMainBundle);
 
     assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
     assert.match(transformed, /CPX_PROJECT_PALETTE=\[\[/);
@@ -419,7 +451,7 @@ test("local task row patch colors standalone rows from row project context", () 
 
   for (const patchSet of patchSets) {
     const transform = collectFileTransforms(patchSet).find(
-      ([filePath]) => filePath === "webview/assets/local-task-row-vTrSC6Rc.js",
+      ([filePath]) => filePath === findTransformPath(patchSet, "local-task-row"),
     )?.[1];
 
     assert.equal(typeof transform, "function", `${patchSet.id} has local task row transform`);
@@ -471,7 +503,7 @@ test("keyboard shortcut search metadata defines sidebar blur intl messages", () 
 
   for (const patchSet of patchSets) {
     const transform = collectFileTransforms(patchSet).find(
-      ([filePath]) => filePath === "webview/assets/keyboard-shortcuts-search-input-DjVpifwp.js",
+      ([filePath]) => filePath === findTransformPath(patchSet, "keyboard-shortcuts-search-input"),
     )?.[1];
 
     assert.equal(typeof transform, "function", `${patchSet.id} has keyboard shortcut search transform`);
@@ -510,7 +542,7 @@ test("sidebar thread list forwards project color data attributes into rows", () 
 
   for (const patchSet of patchSets) {
     const transform = collectFileTransforms(patchSet).find(
-      ([filePath]) => filePath === "webview/assets/sidebar-project-hover-card-source-rows-CYy4Y4ei.js",
+      ([filePath]) => filePath === findTransformPath(patchSet, "sidebar-project-hover-card-source-rows"),
     )?.[1];
 
     assert.equal(typeof transform, "function", `${patchSet.id} has sidebar row list transform`);
@@ -533,7 +565,7 @@ test("sidebar thread list forwards project color data attributes into rows", () 
 
 test("user message patch applies variant-specific bubble colors with default fallback", () => {
   const fakeUserMessageBundle = [
-    'import{Aa as x,Ta as S}from"./src-C7fSIbpz.js";',
+    'import{Aa as x,Ta as S}from"./__SRC_FILE__";',
     'import{t as ze}from"./use-measured-text-collapse-BhNFLYvW.js";',
     "var Z=i(),Q=e(n(),1),$=r();function Ue(e){return null}",
     "function it(){return(0,$.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:null})}",
@@ -542,13 +574,16 @@ test("user message patch applies variant-specific bubble colors with default fal
   ].join("");
 
   for (const patchSet of patchSets) {
+    const names = versionedNames(patchSet);
+    const userMessageAttachmentsFile = findTransformPath(patchSet, "user-message-attachments");
+    const fakeBundle = fakeUserMessageBundle.replace("__SRC_FILE__", names.srcFile);
     const transforms = collectFileTransforms(patchSet).filter(
-      ([filePath]) => filePath === "webview/assets/user-message-attachments-CgyXEK9U.js",
+      ([filePath]) => filePath === userMessageAttachmentsFile,
     );
 
     assert.equal(transforms.length, 2, `${patchSet.id} has split user message transforms`);
 
-    const transformed = transformFile(patchSet, "webview/assets/user-message-attachments-CgyXEK9U.js", fakeUserMessageBundle);
+    const transformed = transformFile(patchSet, userMessageAttachmentsFile, fakeBundle);
 
     assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
     assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
@@ -556,8 +591,8 @@ test("user message patch applies variant-specific bubble colors with default fal
     assert.doesNotMatch(transformed, /CPX_userBubbleOverrideEnabled/);
     assert.match(transformed, /function CPX_projectColorStyle\(e\)/);
     assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
-    assert.match(transformed, /import\{t as CPX_localThreadKey\}from"\.\/sidebar-thread-keys-xpkHnzZL\.js";/);
-    assert.match(transformed, /import\{s as CPX_threadProjectId\}from"\.\/sidebar-thread-row-signals-DVmC0DJ3\.js";/);
+    assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
+    assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
     assert.match(transformed, /CPX_isStoredUserBubbleColor\(e,t\)\{return CPX_isUserBubbleColor\(t\)&&t\.toLowerCase\(\)!==CPX_defaultUserBubbleColor\(e\)\}/);
     assert.match(transformed, /light:CPX_isStoredUserBubbleColor\(`light`,e\.light\)\?e\.light:null/);
     assert.match(transformed, /dark:CPX_isStoredUserBubbleColor\(`dark`,e\.dark\)\?e\.dark:null/);
@@ -595,26 +630,40 @@ test("user message patch applies variant-specific bubble colors with default fal
 
 test("composer patch applies the user entry marker and shared color variables", () => {
   const fakeComposerBundle = [
-    'import{$t as q,A as oe,At as se,Ca as ce,D as J,Dt as le,Ea as ue,Fi as de,Ht as fe,Ii as pe,It as me,J as he,Jn as ge,Li as _e,Lt as ve,M as ye,Mi as be,Mt as xe,Pi as Se,Ri as Ce,Sa as we,T as Te,Vt as Ee,Yn as De,Zi as Oe,an as ke,bt as Ae,cn as je,dt as Me,en as Ne,ft as Pe,in as Fe,kt as Ie,ln as Le,m as Re,n as ze,on as Be,ot as Ve,p as He,pa as Ue,ra as We,rn as Ge,sn as Ke,st as qe,tr as Je,vt as Ye,xa as Xe,yt as Ze,z as Qe}from"./thread-context-inputs-CF11za43.js";',
+    'import{$t as q,A as oe,At as se,Ca as ce,D as J,Dt as le,Ea as ue,Fi as de,Ht as fe,Ii as pe,It as me,J as he,Jn as ge,Li as _e,Lt as ve,M as ye,Mi as be,Mt as xe,Pi as Se,Ri as Ce,Sa as we,T as Te,Vt as Ee,Yn as De,Zi as Oe,an as ke,bt as Ae,cn as je,dt as Me,en as Ne,ft as Pe,in as Fe,kt as Ie,ln as Le,m as Re,n as ze,on as Be,ot as Ve,p as He,pa as Ue,ra as We,rn as Ge,sn as Ke,st as qe,tr as Je,vt as Ye,xa as Xe,yt as Ze,z as Qe}from"./__THREAD_CONTEXT_INPUTS_FILE__";',
     "function oh(e){let t=(0,$.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,f=i===void 0?`default`:i,p=o===void 0?!1:o,m=s===void 0?`multiline`:s,h=f===`home`&&`z-10`,g=m===`single-line`?`overflow-visible rounded-full`:rh.multilineSurface,_=p&&`bg-token-dropdown-background/50`,v;t[0]!==r||t[1]!==h||t[2]!==g||t[3]!==_?(v=qt(`relative flex flex-col border border-token-input-border bg-token-input-background/90 shadow-[0_4px_16px_0_rgba(0,0,0,0.05)] backdrop-blur-lg electron:dark:bg-token-dropdown-background`,h,g,_,r),t[0]=r,t[1]=h,t[2]=g,t[3]=_,t[4]=v):v=t[4];let y;return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,Q.jsx)(Jt.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
     "Il=(0,Q.jsx)(_n,{onOpen:()=>{Bc.prepare(),X.toggleContextSuggestions()}});return",
     "):(0,Q.jsxs)(ah,{className:A,externalFooterVariant:k,inert:Y,isDragActive:jo,layout:Nl,onDragEnter:kl?void 0:il,onDragOver:kl?void 0:sl,onDragLeave:kl?void 0:al,onDrop:kl?void 0:ll,children:",
   ].join("");
 
   for (const patchSet of patchSets) {
+    const names = versionedNames(patchSet);
+    const composerFile = findTransformPath(patchSet, "composer");
+    let fakeBundle = fakeComposerBundle.replace("__THREAD_CONTEXT_INPUTS_FILE__", names.threadContextInputsFile);
+    if (patchSet.id === "codex-26.616.71553-4265") {
+      fakeBundle = fakeBundle
+        .replace(
+          "Il=(0,Q.jsx)(_n,{onOpen:()=>{Bc.prepare(),X.toggleContextSuggestions()}});return",
+          "Rl=(0,Q.jsx)(_n,{onOpen:()=>{Uc.prepare(),X.toggleContextSuggestions()}});return",
+        )
+        .replace(
+          "):(0,Q.jsxs)(ah,{className:A,externalFooterVariant:k,inert:Y,isDragActive:jo,layout:Nl,onDragEnter:kl?void 0:il,onDragOver:kl?void 0:sl,onDragLeave:kl?void 0:al,onDrop:kl?void 0:ll,children:",
+          "):(0,Q.jsxs)(ah,{className:A,externalFooterVariant:k,inert:Y,isDragActive:Po,layout:Fl,onDragEnter:Ml?void 0:sl,onDragOver:Ml?void 0:dl,onDragLeave:Ml?void 0:ll,onDrop:Ml?void 0:fl,children:",
+        );
+    }
     const transforms = collectFileTransforms(patchSet).filter(
-      ([filePath]) => filePath === "webview/assets/composer-CCuv6v-2.js",
+      ([filePath]) => filePath === composerFile,
     );
 
     assert.equal(transforms.length, 2, `${patchSet.id} has split composer transforms`);
 
-    const transformed = transformFile(patchSet, "webview/assets/composer-CCuv6v-2.js", fakeComposerBundle);
+    const transformed = transformFile(patchSet, composerFile, fakeBundle);
 
     assert.match(transformed, /CPX_USER_BUBBLE_COLORS_KEY=`codex-plus:user-message-bubble-colors`/);
     assert.match(transformed, /CPX_PROJECT_COLORS_ENABLED_KEY=`codex-plus:project-colors-enabled`/);
     assert.match(transformed, /function CPX_projectColorKey\(e\)\{if\(e==null\)return``;if\(typeof e===`string`\)return e\.trim\(\)/);
-    assert.match(transformed, /import\{t as CPX_localThreadKey\}from"\.\/sidebar-thread-keys-xpkHnzZL\.js";/);
-    assert.match(transformed, /import\{s as CPX_threadProjectId\}from"\.\/sidebar-thread-row-signals-DVmC0DJ3\.js";/);
+    assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
+    assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
     assert.match(transformed, /function CPX_installUserBubbleColors\(\)/);
     assert.match(transformed, /function oh\(e\)\{let t=\(0,\$\.c\)\(14\)/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\].*background-color:var\(--codex-plus-project/);
