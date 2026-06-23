@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const runtimeRoot = __dirname;
 const runtimeFiles = [
+  [".vite/build/codex-plus-worker.js", "worker.js"],
   ["webview/assets/codex-plus/runtime.js", "runtime.js"],
   ["webview/assets/codex-plus/plugins/aboutMetadata.js", "plugins/aboutMetadata.js"],
   ["webview/assets/codex-plus/plugins/nestedRepositories.js", "plugins/nestedRepositories.js"],
