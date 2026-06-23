@@ -1,9 +1,18 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const { applyPatchSet, collectFileTransforms, collectInfoPlistStrings, selectPatch } = require("../src/core/patch-engine");
+const { patchAsar, readAsar, walkFiles } = require("../src/core/asar");
+const {
+  applyPatchSet,
+  collectAssetFiles,
+  collectFileTransforms,
+  collectInfoPlistStrings,
+  selectPatch,
+} = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
 
 function transformFile(patchSet, filePath, text, context) {
@@ -87,6 +96,19 @@ test("collects named patch queue transforms and plist changes", () => {
   assert.deepEqual(collectInfoPlistStrings(patchSet), { CFBundleName: "Codex Plus" });
 });
 
+test("current patch queues ship the Codex Plus runtime plugin assets", () => {
+  for (const patchSet of patchSets) {
+    const addedFiles = collectAssetFiles(patchSet).map(([filePath]) => filePath);
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/runtime.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/aboutMetadata.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/nestedRepositories.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/diagnosticErrors.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/userBubbleColors.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectColors.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/sidebarNameBlur.js"));
+  }
+});
+
 test("current patch queues expose project colors and sidebar blur separately from bubble colors", () => {
   for (const patchSet of patchSets) {
     const patchIds = patchSet.patches.map((patch) => patch.id);
@@ -155,6 +177,7 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
     bundleVersion: "456",
     sourceAsarSha256: "source-sha",
     appliedPatches: ["identity", "about"],
+    assetFiles: [],
   });
   assert.deepEqual(progress, [
     { status: "start", step: 3, total: 8, label: "Prepare target app" },
@@ -170,6 +193,144 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
     { status: "start", step: 8, total: 8, label: "Finish" },
     { status: "succeed", step: 8, total: 8, label: "Finish" },
   ]);
+});
+
+test("applyPatchSet dry-run reports runtime asset files", async () => {
+  const patchSet = {
+    id: "codex-example",
+    codexVersion: "1.2.3",
+    bundleVersion: "456",
+    asarSha256: "source-sha",
+    assetFiles: [["webview/assets/codex-plus/runtime.js", "runtime"]],
+    patches: [
+      {
+        id: "identity",
+        fileTransforms: [["webview/index.html", (text) => text]],
+      },
+    ],
+  };
+
+  const result = await applyPatchSet({
+    sourceApp: "/Applications/Codex.app",
+    targetApp: "/Users/example/Applications/Codex Plus.app",
+    patchSet,
+    dryRun: true,
+  });
+
+  assert.deepEqual(result.addedFiles, ["webview/assets/codex-plus/runtime.js"]);
+});
+
+function makeAsar(fileMap) {
+  const header = { files: {} };
+  let offset = 0;
+  const buffers = [];
+  for (const [filePath, text] of Object.entries(fileMap)) {
+    const parts = filePath.split("/");
+    let node = header;
+    for (const part of parts.slice(0, -1)) {
+      node.files[part] ||= { files: {} };
+      node = node.files[part];
+    }
+    const buffer = Buffer.from(text, "utf8");
+    node.files[parts.at(-1)] = { size: buffer.length, offset: String(offset) };
+    buffers.push(buffer);
+    offset += buffer.length;
+  }
+  const json = Buffer.from(JSON.stringify(header), "utf8");
+  const prefix = Buffer.alloc(16);
+  prefix.writeUInt32LE(4, 0);
+  prefix.writeUInt32LE(json.length + 8, 4);
+  prefix.writeUInt32LE(json.length + 4, 8);
+  prefix.writeUInt32LE(json.length, 12);
+  return Buffer.concat([prefix, json, ...buffers]);
+}
+
+test("patchAsar inserts new runtime files and integrity metadata", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-asar-"));
+  const asarPath = path.join(tmpDir, "app.asar");
+  fs.writeFileSync(asarPath, makeAsar({ "webview/index.html": "<title>Codex</title>" }));
+
+  patchAsar(
+    asarPath,
+    [["webview/index.html", (text) => text.replace("Codex", "Codex Plus")]],
+    { assetFiles: [["webview/assets/codex-plus/runtime.js", "window.CodexPlus={}"]] },
+  );
+
+  const archive = readAsar(asarPath);
+  const files = new Map(walkFiles(archive.header));
+  assert.ok(files.has("webview/assets/codex-plus/runtime.js"));
+  assert.equal(files.get("webview/assets/codex-plus/runtime.js").size, "window.CodexPlus={}".length);
+  assert.equal(files.get("webview/assets/codex-plus/runtime.js").integrity.algorithm, "SHA256");
+});
+
+test("runtime API registers plugins, settings, commands, styles, modules, and patches", () => {
+  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
+  const styles = [];
+  const storage = new Map();
+  const window = {
+    location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+    localStorage: {
+      getItem(key) {
+        return storage.get(key) || null;
+      },
+      setItem(key, value) {
+        storage.set(key, value);
+      },
+    },
+  };
+  const context = {
+    window,
+    globalThis: window,
+    URL,
+    document: {
+      documentElement: {
+        style: {
+          values: {},
+          setProperty(key, value) {
+            this.values[key] = value;
+          },
+          removeProperty(key) {
+            delete this.values[key];
+          },
+        },
+      },
+      head: {
+        appendChild(element) {
+          styles.push(element);
+        },
+      },
+      createElement(tag) {
+        return { tag };
+      },
+      getElementById() {
+        return null;
+      },
+    },
+  };
+
+  vm.runInNewContext(runtime, context);
+
+  const api = window.CodexPlus;
+  api.registerPlugin(
+    api.definePlugin({
+      id: "sample",
+      name: "Sample",
+      required: true,
+      settings: { enabled: { type: "boolean", default: true } },
+      commands: [{ id: "sample.command", run: () => "ok" }],
+      styles: ".sample{}",
+      patches: [{ find: "hello", replacement: { match: "hello", replace: "hi" } }],
+      start(instance) {
+        instance.modules.registerHostModule("sample", { marker: true });
+      },
+    }),
+  );
+
+  assert.equal(api.plugins.get("sample").settingsStore.get("enabled"), true);
+  assert.equal(api.commands.run("sample.command"), "ok");
+  assert.deepEqual(api.modules.findByProps("marker"), { marker: true });
+  assert.equal(api.patches.apply("hello world"), "hi world");
+  assert.equal(styles.some((element) => element.id === "codex-plus-style-sample"), true);
 });
 
 function fakeAboutDialogBundle() {
@@ -215,18 +376,42 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
   assert.match(transformed, /- about-codex-plus-metadata/);
 });
 
+test("title patch loads the Codex Plus runtime bootstrap", () => {
+  for (const patchSet of patchSets) {
+    const transformed = transformFile(patchSet, "webview/index.html", "<title>Codex</title>");
+    assert.match(transformed, /<title>Codex Plus<\/title>/);
+    assert.match(transformed, /<script src="\.\/assets\/codex-plus\/runtime\.js"><\/script>/);
+  }
+});
+
 test("documentation mentions current patches and contributor sync rule", () => {
   const readme = fs.readFileSync("README.md", "utf8");
   const development = fs.readFileSync("DEVELOPMENT.md", "utf8");
+  const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
 
   assert.match(readme, /nested repositories in the Review pane/);
   assert.match(readme, /diagnostic detail/);
   assert.match(readme, /user-message bubble color controls/);
   assert.match(readme, /adaptive project colors/);
   assert.match(readme, /Toggle sidebar blur/);
-  assert.match(development, /If a patch is added, removed, or renamed/);
+  assert.match(readme, /Runtime Plugin Support\]\(docs\/plugin-support\.md\)/);
+  assert.match(readme, /Versioned ASAR patches install the runtime,\s+built-in plugins/);
+  assert.match(development, /If a patch or runtime plugin is added, removed, or renamed/);
   assert.match(development, /README patch summary/);
   assert.match(development, /About dialog still reports the applied patch IDs/);
+  assert.match(development, /Prefer new user-facing additions as readable runtime plugins/);
+  assert.match(development, /hook that surface\s+into Codex core with the smallest versioned patch needed/);
+
+  const pluginSupport = fs.readFileSync("docs/plugin-support.md", "utf8");
+  assert.match(pluginSupport, /window\.CodexPlus/);
+  assert.match(pluginSupport, /window\.CodexPlusHost/);
+  assert.match(pluginSupport, /CodexPlus\.definePlugin/);
+  assert.match(pluginSupport, /CodexPlus\.registerPlugin/);
+  assert.match(pluginSupport, /aboutMetadata/);
+  assert.match(pluginSupport, /sidebarNameBlur/);
+  assert.match(pluginSupport, /third-party plugin marketplace/);
+  assert.equal(packageJson.version, "0.3.0");
+  assert.equal(packageJson.scripts.check, "node src/check-js.js");
 });
 
 test("about dialog applied patch examples stay aligned with the active patch queue", () => {

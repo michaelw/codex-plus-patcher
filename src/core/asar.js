@@ -26,6 +26,26 @@ function walkFiles(node, prefix = "", out = []) {
   return out;
 }
 
+function ensureFileEntry(header, filePath) {
+  const parts = filePath.split("/").filter(Boolean);
+  if (parts.length === 0) throw new Error("Cannot add an empty ASAR path");
+
+  let node = header;
+  for (const part of parts.slice(0, -1)) {
+    node.files ||= {};
+    node.files[part] ||= { files: {} };
+    if (!node.files[part].files) throw new Error(`Cannot add ${filePath}: ${part} is already a file`);
+    node = node.files[part];
+  }
+
+  node.files ||= {};
+  const fileName = parts.at(-1);
+  const existing = node.files[fileName];
+  if (existing?.files) throw new Error(`Cannot add ${filePath}: path is already a directory`);
+  node.files[fileName] = existing || {};
+  return node.files[fileName];
+}
+
 function fileIntegrity(buffer) {
   const blockSize = 4 * 1024 * 1024;
   const blocks = [];
@@ -42,6 +62,9 @@ function fileIntegrity(buffer) {
 
 function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   const archive = readAsar(asarPath);
+  const assetFiles = transformContext.assetFiles || [];
+  for (const [filePath] of assetFiles) ensureFileEntry(archive.header, filePath);
+
   const entries = walkFiles(archive.header);
   const contents = new Map();
 
@@ -56,6 +79,11 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
     if (!original) throw new Error(`Could not find ${filePath} in app.asar`);
     const patched = transform(original.toString("utf8"), transformContext);
     contents.set(filePath, Buffer.from(patched, "utf8"));
+  }
+
+  for (const [filePath, content] of assetFiles) {
+    if (!contents.has(filePath)) throw new Error(`Could not add ${filePath} to app.asar`);
+    contents.set(filePath, Buffer.isBuffer(content) ? content : Buffer.from(String(content), "utf8"));
   }
 
   let dataOffset = 0;
@@ -82,6 +110,7 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
 }
 
 module.exports = {
+  ensureFileEntry,
   patchAsar,
   readAsar,
   sha256,

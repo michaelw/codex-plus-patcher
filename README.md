@@ -21,7 +21,8 @@
 
 Codex Plus is an experimental local demonstrator for changes that can be layered onto an installed Codex desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
 
-The current built-in patches:
+The current built-in Codex Plus features are delivered by versioned ASAR
+patches plus readable runtime plugins:
 
 - rename the copied app and add patch provenance to the About dialog
 - expose nested repositories in the Review pane
@@ -30,11 +31,21 @@ The current built-in patches:
 - add adaptive project colors for sidebar projects, grouped threads, pinned threads, user-message accents, and the composer
 - add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
 
+The generated app includes a readable Codex Plus runtime under
+`webview/assets/codex-plus/`. Versioned ASAR patches install the runtime,
+built-in plugins, and the small Codex core hooks those plugins use. See
+[Runtime Plugin Support](docs/plugin-support.md) for the currently supported
+plugin interfaces.
+
 ## How It Works
 
 The patcher reads the installed `Codex.app`, verifies the exact Codex version, bundle version, and original `Contents/Resources/app.asar` SHA-256, then selects the matching patch queue. Unsupported app versions fail closed so a patch written for one bundle is not applied to a different bundle by accident.
 
-When applying patches, the tool copies `Codex.app` to the target `Codex Plus.app`, rewrites selected packed ASAR files with ordered text transforms, updates bundle metadata such as the app name and identifier, refreshes Electron ASAR integrity metadata, and signs the copied app ad hoc. The source app is not modified.
+When applying patches, the tool copies `Codex.app` to the target `Codex Plus.app`, rewrites selected packed ASAR files with ordered text transforms, adds Codex Plus runtime/plugin assets, updates bundle metadata such as the app name and identifier, refreshes Electron ASAR integrity metadata, and signs the copied app ad hoc. The source app is not modified.
+
+The patch transforms should stay small where possible: their job is increasingly
+to add reusable plugin interfaces and hook those interfaces into Codex core
+surfaces, while feature behavior lives in readable runtime/plugin files.
 
 ## Disclaimer
 
@@ -115,6 +126,8 @@ Patch queues export `patchSets` from `index.js`. Each patch set declares:
 - an ordered `patches` array with stable patch IDs
 - optional bundle metadata updates for the copied app
 - ordered file transforms applied to packed ASAR files
+- optional `assetFiles` entries added to the packed ASAR, used for runtime code,
+  built-in plugins, and plugin interface assets
 
 Unsupported app versions fail closed.
 

@@ -120,6 +120,9 @@ function formatResult(result) {
     `Patch set: ${result.patchSet}`,
     `Patches: ${result.patches.join(", ")}`,
   ];
+  if (Array.isArray(result.addedFiles) && result.addedFiles.length > 0) {
+    lines.push(`Added files: ${result.addedFiles.join(", ")}`);
+  }
   if (result.patchedAsarSha) lines.push(`Patched app.asar SHA-256: ${result.patchedAsarSha}`);
   if (!result.dryRun) lines.push(`Open: open ${JSON.stringify(result.targetApp)}`);
   return `${lines.join("\n")}\n`;

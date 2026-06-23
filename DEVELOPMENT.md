@@ -11,6 +11,8 @@ stay outside commits.
 - `src/core/*` contains ASAR, plist, release, and patch application logic.
 - `src/plus/*` contains code shared by tests and injected patch helpers.
 - `src/patches/*` contains versioned patch sets and the patch registry.
+- `src/runtime/*` contains the readable Codex Plus runtime and built-in plugin
+  assets that are added to generated apps under `webview/assets/codex-plus/`.
 - `tests/*` covers CLI behavior, patch selection, and shared parser logic.
 
 ## Common Commands
@@ -59,8 +61,19 @@ rtk shasum -a 256 "work/Codex Plus <version>.app/Contents/Resources/app.asar"
 rtk node -e 'const { readAsar, walkFiles } = require("./src/core/asar"); const archive = readAsar("work/Codex Plus <version>.app/Contents/Resources/app.asar"); console.log(walkFiles(archive.header).map(([file]) => file).filter((file) => file.includes("webview/assets/")).join("\n"));'
 ```
 
-Use the ASAR readback to confirm the expected chunk names and patch markers
-exist in the generated target before testing the app manually.
+Use the ASAR readback to confirm the expected chunk names, patch markers, and
+`webview/assets/codex-plus/runtime.js` plugin assets exist in the generated
+target before testing the app manually.
+
+## Runtime Plugin Shape
+
+Prefer new user-facing additions as readable runtime plugins backed by generic
+interfaces. Add or extend a `CodexPlus` surface first, then hook that surface
+into Codex core with the smallest versioned patch needed.
+
+Keep host hooks small, fail-closed, and reusable across more than one plugin or
+feature when practical. Avoid putting large feature bodies directly into
+minified bundle transforms if a runtime/plugin interface can carry the behavior.
 
 ## Porting A New Codex Version
 
@@ -83,9 +96,8 @@ exist in the generated target before testing the app manually.
 7. Register the new patch in `src/patches/index.js`, with the newest supported
    patch set first.
 8. Update `npm run check` in `package.json` if it names patch files explicitly.
-9. If a patch is added, removed, or renamed, update the README patch summary
-   and verify the About dialog still reports the applied patch IDs from the
-   patch queue.
+9. If a patch or runtime plugin is added, removed, or renamed, update the
+   README patch summary. Also verify the About dialog still reports the applied patch IDs.
 10. Run the dry-run, full workspace apply, codesign verification, and ASAR
    marker/readback checks from the common commands section.
 

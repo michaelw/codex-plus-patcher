@@ -89,6 +89,13 @@ function collectFileTransforms(patchSet) {
   return collectPatchQueue(patchSet).flatMap((patch) => patch.fileTransforms || []);
 }
 
+function collectAssetFiles(patchSet) {
+  return [
+    ...(patchSet.assetFiles || []),
+    ...collectPatchQueue(patchSet).flatMap((patch) => patch.assetFiles || []),
+  ];
+}
+
 function collectInfoPlistStrings(patchSet) {
   return Object.assign(
     {},
@@ -139,6 +146,7 @@ async function applyPatchSet({
   const setPlistBuddyStringValue = operations.setPlistBuddyValue || setPlistBuddyValue;
   const patchQueue = collectPatchQueue(patchSet);
   const fileTransforms = collectFileTransforms(patchSet);
+  const assetFiles = collectAssetFiles(patchSet);
   if (dryRun) {
     return {
       sourceApp,
@@ -146,6 +154,7 @@ async function applyPatchSet({
       patchSet: patchSet.id,
       patches: patchQueue.map((patch) => patch.id),
       patchedFiles: fileTransforms.map(([filePath]) => filePath),
+      addedFiles: assetFiles.map(([filePath]) => filePath),
       dryRun: true,
     };
   }
@@ -162,7 +171,7 @@ async function applyPatchSet({
   const targetAsar = path.join(targetApp, ASAR_PATH_IN_BUNDLE);
   const patchContext = buildPatchContext(patchSet, patchQueue, operations);
   const patchedAsarSha = await withProgress(progress, progressOffset + 3, progressTotal, "Patch app.asar", () =>
-    patchAsarFile(targetAsar, fileTransforms, patchContext),
+    patchAsarFile(targetAsar, fileTransforms, { ...patchContext, assetFiles }),
   );
 
   const plistPath = path.join(targetApp, "Contents/Info.plist");
@@ -185,6 +194,7 @@ async function applyPatchSet({
     patchSet: patchSet.id,
     patches: patchQueue.map((patch) => patch.id),
     patchedFiles: fileTransforms.map(([filePath]) => filePath),
+    addedFiles: assetFiles.map(([filePath]) => filePath),
     patchedAsarSha,
     dryRun: false,
   };
@@ -210,6 +220,7 @@ module.exports = {
   ASAR_PATH_IN_BUNDLE,
   applyPatchSet,
   collectFileTransforms,
+  collectAssetFiles,
   collectInfoPlistStrings,
   collectPatchQueue,
   getPatcherGitSha,
