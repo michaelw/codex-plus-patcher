@@ -1,7 +1,8 @@
 const { parsePlusToml, unquoteTomlValue } = require("../plus/repositories");
+const { codexPlusRuntimeAssets } = require("../runtime/assets");
 
 const oldTitle = "<title>Codex</title>";
-const newTitle = "<title>Codex Plus</title>";
+const newTitle = '<title>Codex Plus</title><script src="./assets/codex-plus/runtime.js"></script>';
 const titleFile = "webview/index.html";
 const workerFile = ".vite/build/worker.js";
 const mainFile = ".vite/build/main-cC-d0ezP.js";
@@ -682,6 +683,7 @@ module.exports = {
   codexVersion: "26.616.71553",
   bundleVersion: "4265",
   asarSha256: "5bbeadcd13b66985a5dfe6ffef208fbb24628838e3dca724209e8a321083a17c",
+  assetFiles: codexPlusRuntimeAssets(),
   patches: [
     {
       id: "bundle-identity",
