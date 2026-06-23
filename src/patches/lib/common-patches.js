@@ -35,51 +35,41 @@ function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
 }
 
-const codexPlusDisclaimerHeading = "Disclaimer of Warranty and Limitation of Liability";
-const codexPlusDisclaimerBody = [
-  'THIS SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. This is a modified, binary-patched demonstrator provided strictly for experimental or demonstration purposes.',
-  "The upstream developers, contributors, and maintainers assume NO responsibility or liability for any errors, malfunctions, data loss, or damages—including consequential or incidental damages—arising from the installation or use of this patched version. You use, test, or distribute this patched app at your sole and absolute risk.",
-  "The original authors and upstream suppliers are under no obligation to provide support, updates, fixes, or assistance with any issues, mess, or conflicts caused by this modified build.",
-].join("\n\n");
-
 function patchAboutDialog(text, context = {}) {
-  const appliedPatches = context.appliedPatches || [];
-  const lines = [
-    `Patcher: ${context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher"}`,
-    `Patcher commit: ${context.patcherGitSha || "unknown"}`,
-    `Source app.asar: ${context.sourceAsarSha256 || "unknown"}`,
-    "",
-    "Applied patches:",
-    ...appliedPatches.map((patchId) => `- ${patchId}`),
-  ];
+  const aboutContext = {
+    patcherRepoUrl: context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher",
+    patcherGitSha: context.patcherGitSha || "unknown",
+    sourceAsarSha256: context.sourceAsarSha256 || "unknown",
+    appliedPatches: context.appliedPatches || [],
+  };
   let patched = replaceOnce(
     text,
     "let i=a.app.getName(),o=a.app.getVersion()",
-    "let i=`Codex Plus`,o=a.app.getVersion()",
+    `let CPXAbout=require("./codex-plus-aboutMetadata.js").aboutPayload(${JSON.stringify(aboutContext)}),i=CPXAbout.appDisplayName,o=a.app.getVersion()`,
     "about dialog app name anchor",
   );
   patched = replaceOnce(
     patched,
     "function V0(e){return[]}",
-    `function V0(e){return ${JSON.stringify(lines)}}`,
+    "function V0(e){return CPXAbout.buildInfoLines}",
     "about dialog build information anchor",
   );
   patched = replaceOnce(
     patched,
     "K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})",
-    `K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,codexPlusDisclaimerHeading:${JSON.stringify(codexPlusDisclaimerHeading)},codexPlusDisclaimerBody:${JSON.stringify(codexPlusDisclaimerBody)},iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})`,
+    "K0({appDisplayName:i,buildInfoLabel:g,buildInfoText:v,codexPlusDisclaimerHeading:CPXAbout.disclaimerHeading,codexPlusDisclaimerBody:CPXAbout.disclaimerBody,iconDataUrl:f.htmlIconDataUrl,isDark:b,okLabel:m,title:p})",
     "about dialog renderer call anchor",
   );
   patched = replaceOnce(
     patched,
     "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
-    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let q=D==null||O==null?``:`<section class=\"codex-plus-disclaimer\" aria-label=\"${(0,zz.default)(D)}\"><div class=\"codex-plus-disclaimer-heading\">${(0,zz.default)(D)}</div><div class=\"codex-plus-disclaimer-body\">${(0,zz.default)(O)}</div></section>`,s=r==null?``:",
+    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let CPXAboutMetadata=require(\"./codex-plus-aboutMetadata.js\"),q=CPXAboutMetadata.disclaimerMarkup({escape:zz.default,heading:D,body:O}),s=r==null?``:",
     "about dialog renderer signature anchor",
   );
   patched = replaceOnce(
     patched,
     "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
-    "    .codex-plus-disclaimer {\n      width: 100%;\n      margin: 0 0 12px;\n      color: var(--muted-text);\n      text-align: left;\n      font-size: 9px;\n      line-height: 1.25;\n      white-space: pre-wrap;\n      overflow-wrap: anywhere;\n    }\n\n    .codex-plus-disclaimer-heading {\n      margin-bottom: 4px;\n      font-weight: 700;\n    }\n\n    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+    "${CPXAboutMetadata.disclaimerStyles()}\n\n    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
     "about dialog disclaimer styles anchor",
   );
   patched = replaceOnce(
@@ -135,6 +125,9 @@ function CPXReviewMux(e){let t=window.CodexPlus?.plugins?.get(\`nestedRepositori
 const codexPlusSubrepoDiffHelpers = `
 `;
 
+const codexPlusDiagnosticHelpers = `
+function CPXDiagnosticDetails(e){return window.CodexPlus?.plugins?.get(\`diagnosticErrors\`)?.exports?.renderDetails?.(e)??null}`;
+
 function patchThreadSidePanelTabs(text) {
   let patched = replaceOnce(
     text,
@@ -159,13 +152,13 @@ function patchAppShell(text) {
   let patched = replaceOnce(
     text,
     "function En(e){return(0,Q.jsx)(wn,{onRetry:()=>{e.resetError()}})}",
-    "function En(e){return(0,Q.jsx)(wn,{error:e.error,onRetry:()=>{e.resetError()}})}",
+    `${codexPlusDiagnosticHelpers}function En(e){return(0,Q.jsx)(wn,{error:e.error,onRetry:()=>{e.resetError()}})}`,
     "app shell error fallback prop anchor",
   );
   patched = replaceOnce(
     patched,
     "children:[r,(0,Q.jsx)(Le,{color:`secondary`,size:`default`,onClick:n,children:i})]",
-    "children:[r,(0,Q.jsx)(`pre`,{className:`max-h-80 max-w-full overflow-auto whitespace-pre-wrap rounded-md border border-token-border bg-token-main-surface-secondary p-2 text-left font-vscode-editor text-[11px] leading-4 text-token-text-primary`,children:e.error?.stack??e.error?.message??String(e.error??``)}),(0,Q.jsx)(Le,{color:`secondary`,size:`default`,onClick:n,children:i})]",
+    "children:[r,CPXDiagnosticDetails({jsx:Q.jsx,error:e.error}),(0,Q.jsx)(Le,{color:`secondary`,size:`default`,onClick:n,children:i})]",
     "app shell error detail insertion anchor",
   );
   patched = replaceOnce(
@@ -186,13 +179,13 @@ function patchErrorBoundary(text) {
   let patched = replaceOnce(
     text,
     "function Xf(e){let t=(0,Vf.c)(9),{resetError:n}=e,r=ee(),i,a;",
-    "function Xf(e){let t=(0,Vf.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=ee(),CPX_errorText=CPX_error?.stack??CPX_error?.message??String(CPX_error??``),i,a;",
+    `${codexPlusDiagnosticHelpers}function Xf(e){let t=(0,Vf.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=ee(),i,a;`,
     "webview error boundary fallback prop anchor",
   );
   patched = replaceOnce(
     patched,
     "children:[i,a,(0,$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,$.jsx)(m,{onClick:s,children:c})]})]",
-    "children:[i,a,CPX_errorText?(0,$.jsx)(`pre`,{className:`max-h-80 max-w-full overflow-auto whitespace-pre-wrap rounded-md border border-token-border bg-token-main-surface-secondary p-2 text-left font-vscode-editor text-[11px] leading-4 text-token-text-primary`,children:[CPX_errorText,CPX_componentStack?`\\n\\n${CPX_componentStack}`:``].join(``)}):null,(0,$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,$.jsx)(m,{onClick:s,children:c})]})]",
+    "children:[i,a,CPXDiagnosticDetails({jsx:$.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,$.jsx)(m,{onClick:s,children:c})]})]",
     "webview error boundary detail anchor",
   );
   return replaceOnce(

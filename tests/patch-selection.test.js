@@ -93,6 +93,7 @@ test("collects named patch queue transforms and plist changes", () => {
 test("current patch queues ship the Codex Plus runtime plugin assets", () => {
   for (const patchSet of patchSets) {
     const addedFiles = collectAssetFiles(patchSet).map(([filePath]) => filePath);
+    assert.ok(addedFiles.includes(".vite/build/codex-plus-aboutMetadata.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/runtime.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/aboutMetadata.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/nestedRepositories.js"));
@@ -363,22 +364,46 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
     appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
   });
 
-  assert.match(transformed, /let i=`Codex Plus`,o=a\.app\.getVersion\(\)/);
-  assert.match(transformed, /codexPlusDisclaimerHeading:"Disclaimer of Warranty and Limitation of Liability"/);
-  assert.match(transformed, /codexPlusDisclaimerBody:"THIS SOFTWARE IS PROVIDED/);
-  assert.match(transformed, /class="codex-plus-disclaimer"/);
-  assert.match(transformed, /class="codex-plus-disclaimer-heading"/);
-  assert.match(transformed, /\.codex-plus-disclaimer \{\n      width: 100%;\n      margin: 0 0 12px;/);
-  assert.match(transformed, /\.codex-plus-disclaimer-heading \{\n      margin-bottom: 4px;\n      font-weight: 700;/);
+  assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)/);
+  assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)\.aboutPayload/);
+  assert.match(transformed, /i=CPXAbout\.appDisplayName,o=a\.app\.getVersion\(\)/);
+  assert.match(transformed, /function V0\(e\)\{return CPXAbout\.buildInfoLines\}/);
+  assert.match(transformed, /codexPlusDisclaimerHeading:CPXAbout\.disclaimerHeading/);
+  assert.match(transformed, /codexPlusDisclaimerBody:CPXAbout\.disclaimerBody/);
+  assert.match(transformed, /let CPXAboutMetadata=require\("\.\/codex-plus-aboutMetadata\.js"\),q=/);
+  assert.match(transformed, /CPXAboutMetadata\.disclaimerMarkup\(\{escape:zz\.default,heading:D,body:O\}\)/);
+  assert.match(transformed, /\$\{CPXAboutMetadata\.disclaimerStyles\(\)\}/);
   assert.match(transformed, /\.build-info \{\n      width: 100%;\n      margin: 0;\n      line-height: 1\.45;\n      color: var\(--muted-text\);\n      text-align: left;/);
   assert.match(transformed, /\.codex-plus-disclaimer,\n    \.build-info,/);
   assert.match(transformed, /\$\{q\}\n      <pre class="build-info"/);
+  assert.doesNotMatch(transformed, /THIS SOFTWARE IS PROVIDED/);
+  assert.doesNotMatch(transformed, /class="codex-plus-disclaimer"/);
   assert.doesNotMatch(transformed, /This app is Codex Plus\./);
   assert.match(transformed, /https:\/\/github\.com\/michaelw\/codex-plus-patcher/);
-  assert.match(transformed, /Patcher commit: abc123def456/);
-  assert.match(transformed, /Source app\.asar: source-sha/);
-  assert.match(transformed, /- bundle-identity/);
-  assert.match(transformed, /- about-codex-plus-metadata/);
+  assert.match(transformed, /"patcherGitSha":"abc123def456"/);
+  assert.match(transformed, /"sourceAsarSha256":"source-sha"/);
+  assert.match(transformed, /"appliedPatches":\["bundle-identity","about-codex-plus-metadata"\]/);
+
+  const aboutPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aboutMetadata.js"), "utf8");
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.match(aboutPlugin, /function aboutPayload/);
+  assert.match(aboutPlugin, /function buildInfoLines/);
+  assert.match(aboutPlugin, /function disclaimerMarkup/);
+  assert.match(aboutPlugin, /THIS SOFTWARE IS PROVIDED/);
+  assert.doesNotMatch(commonPatches, /THIS SOFTWARE IS PROVIDED/);
+
+  const aboutMetadata = require("../src/runtime/plugins/aboutMetadata.js");
+  const payload = aboutMetadata.aboutPayload({
+    patcherRepoUrl: "https://github.com/michaelw/codex-plus-patcher",
+    patcherGitSha: "abc123def456",
+    sourceAsarSha256: "source-sha",
+    appliedPatches: ["bundle-identity", "about-codex-plus-metadata"],
+  });
+  assert.equal(payload.appDisplayName, "Codex Plus");
+  assert.ok(payload.buildInfoLines.includes("Patcher commit: abc123def456"));
+  assert.ok(payload.buildInfoLines.includes("Source app.asar: source-sha"));
+  assert.ok(payload.buildInfoLines.includes("- bundle-identity"));
+  assert.ok(payload.buildInfoLines.includes("- about-codex-plus-metadata"));
 });
 
 test("title patch loads the Codex Plus runtime bootstrap", () => {
@@ -427,9 +452,17 @@ test("about dialog applied patch examples stay aligned with the active patch que
   });
 
   for (const patch of patchSet.patches) {
-    assert.match(transformed, new RegExp(`- ${patch.id}`));
+    assert.match(transformed, new RegExp(`"${patch.id}"`));
   }
   assert.doesNotMatch(transformed, /Patch descriptions:/);
+
+  const aboutMetadata = require("../src/runtime/plugins/aboutMetadata.js");
+  const payload = aboutMetadata.aboutPayload({
+    appliedPatches: patchSet.patches.map((patch) => patch.id),
+  });
+  for (const patch of patchSet.patches) {
+    assert.ok(payload.buildInfoLines.includes(`- ${patch.id}`));
+  }
 });
 
 test("about dialog patch fails closed when the build information hook changes", () => {
@@ -440,6 +473,42 @@ test("about dialog patch fails closed when the build information hook changes", 
     () => transform(fakeAboutDialogBundle().replace("function V0(e){return[]}", "function V0(e){return[1]}")),
     /Expected one about dialog build information anchor, found 0/,
   );
+});
+
+test("diagnostic error patches delegate detail rendering to the runtime plugin", () => {
+  const fakeAppShellBundle = [
+    "function En(e){return(0,Q.jsx)(wn,{onRetry:()=>{e.resetError()}})}",
+    "children:[r,(0,Q.jsx)(Le,{color:`secondary`,size:`default`,onClick:n,children:i})]",
+    "return t[2]===n?a=t[3]:(a=(0,Q.jsxs)(`div`,{className:`flex h-full min-h-0 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-token-text-secondary`,children:",
+    "}),t[2]=n,t[3]=a),a}function Tn(e){return e.composedPath().some",
+  ].join("");
+  const fakeErrorBoundaryBundle = [
+    "function Xf(e){let t=(0,Vf.c)(9),{resetError:n}=e,r=ee(),i,a;",
+    "children:[i,a,(0,$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,$.jsx)(m,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,$.jsx)(Xf,{resetError:()=>e.resetError()}));",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const appShellFile = findTransformPath(patchSet, "app-shell");
+    const errorBoundaryFile = findTransformPath(patchSet, "error-boundary");
+    const appShell = transformFile(patchSet, appShellFile, fakeAppShellBundle);
+    const errorBoundary = transformFile(patchSet, errorBoundaryFile, fakeErrorBoundaryBundle);
+
+    assert.match(appShell, /function CPXDiagnosticDetails\(e\)\{return window\.CodexPlus\?\.plugins\?\.get\(`diagnosticErrors`\)\?\.exports\?\.renderDetails\?\.\(e\)\?\?null\}/);
+    assert.match(appShell, /CPXDiagnosticDetails\(\{jsx:Q\.jsx,error:e\.error\}\)/);
+    assert.doesNotMatch(appShell, /max-h-80 max-w-full/);
+    assert.match(errorBoundary, /error:CPX_error,componentStack:CPX_componentStack/);
+    assert.match(errorBoundary, /CPXDiagnosticDetails\(\{jsx:\$\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
+    assert.doesNotMatch(errorBoundary, /CPX_errorText/);
+    assert.doesNotMatch(errorBoundary, /max-h-80 max-w-full/);
+  }
+
+  const diagnosticPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/diagnosticErrors.js"), "utf8");
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.match(diagnosticPlugin, /function diagnosticText/);
+  assert.match(diagnosticPlugin, /function renderDetails/);
+  assert.match(diagnosticPlugin, /max-h-80 max-w-full/);
+  assert.doesNotMatch(commonPatches, /max-h-80 max-w-full/);
 });
 
 test("review patch mounts repository mux before main branch selection", () => {
