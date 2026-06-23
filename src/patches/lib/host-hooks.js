@@ -1,13 +1,5 @@
 const { replaceAllOnce } = require("./replace");
 
-function pluginExportBridge(pluginId, exportName) {
-  return "window.CodexPlus?.plugins?.get(`" + pluginId + "`)?.exports?." + exportName;
-}
-
-function pluginExportsBridge(pluginId) {
-  return "window.CodexPlus?.plugins?.get(`" + pluginId + "`)?.exports";
-}
-
 function exactReplacement(oldText, newText, label) {
   return [oldText, newText, label];
 }
@@ -28,7 +20,5 @@ module.exports = {
   appendImport,
   applyExactReplacements,
   exactReplacement,
-  pluginExportBridge,
-  pluginExportsBridge,
   prependAtAnchor,
 };

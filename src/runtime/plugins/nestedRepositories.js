@@ -437,7 +437,6 @@
       },
       start(api) {
         api.ui.review.wrapBody((props, deps) => ReviewMux(props, deps));
-        api.ui.review.addRepositoryPanel({ id: "codex-plus-nested-repositories" });
         api.modules.registerHostModule("codex-plus:native:repository-targets", {
           request(params) {
             return api.native.request("repository-targets", params);

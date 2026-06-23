@@ -120,13 +120,13 @@ function patchWorker(text) {
 }
 
 const codexPlusReviewHelpers = `
-function CPXReviewMux(e){let t=window.CodexPlus?.plugins?.get(\`nestedRepositories\`)?.exports;if(t?.ReviewMux)return t.ReviewMux(e,{jsx:$.jsx,jsxs:$.jsxs,Fragment:$.Fragment,createElement:Q.createElement,React:Q,useStore:s,useAtom:l,routeAtom:ft,cwdAtom:Or,hostIdAtom:Dr,hostConfigAtom:kr,conversationIdAtom:jr,gitRequest:y,pathValue:B,DefaultReview:of,Button:Y,Tooltip:Ae,Icon:Je,Dropdown:yi,DropdownMenu:vi,BranchPickerDropdownContent:CPXBranchPickerDropdownContent,ReviewToolbar:dp,parseDiff:xr,DiffCard:Ma});return e.mainReviewContent??(0,$.jsx)(of,e)}`;
+function CPXReviewMux(e){let t=e.mainReviewContent??(0,$.jsx)(of,e);return window.CodexPlus?.ui?.review?.renderBody?.({props:e,deps:{jsx:$.jsx,jsxs:$.jsxs,Fragment:$.Fragment,createElement:Q.createElement,React:Q,useStore:s,useAtom:l,routeAtom:ft,cwdAtom:Or,hostIdAtom:Dr,hostConfigAtom:kr,conversationIdAtom:jr,gitRequest:y,pathValue:B,DefaultReview:of,Button:Y,Tooltip:Ae,Icon:Je,Dropdown:yi,DropdownMenu:vi,BranchPickerDropdownContent:CPXBranchPickerDropdownContent,ReviewToolbar:dp,parseDiff:xr,DiffCard:Ma},defaultBody:t})??t}`;
 
 const codexPlusSubrepoDiffHelpers = `
 `;
 
 const codexPlusDiagnosticHelpers = `
-function CPXDiagnosticDetails(e){return window.CodexPlus?.plugins?.get(\`diagnosticErrors\`)?.exports?.renderDetails?.(e)??null}`;
+function CPXDiagnosticDetails(e){return window.CodexPlus?.ui?.errors?.renderDetails?.(e)??null}`;
 
 function patchThreadSidePanelTabs(text) {
   let patched = replaceOnce(
@@ -212,7 +212,7 @@ function patchAppMainProjectColors(text) {
   patched = replaceOnce(
     patched,
     "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o}",
-    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o,dataAttributes:CPX_projectColorDataAttributes(i,!0)}",
+    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o,dataAttributes:CPXHostThreadRowProps(i)}",
     "project thread row color key anchor",
   );
   patched = replaceOnce(
@@ -242,19 +242,14 @@ function patchAppMainProjectColors(text) {
   patched = replaceOnce(
     patched,
     "Ke=(0,Z.jsx)(Oe,{rowAttributes:ke,className:Ae,collapsed:L,contentClassName:je,",
-    "Ke=(0,Z.jsx)(Oe,{rowAttributes:{...ke,...CPX_projectColorDataAttributes(n,!0)},className:Ae,collapsed:L,contentClassName:je,",
+    "Ke=(0,Z.jsx)(Oe,{rowAttributes:{...ke,...CPXHostProjectRowProps(n)},className:Ae,collapsed:L,contentClassName:je,",
     "project header row color attributes anchor",
   );
   return patched;
 }
 
 function patchAppMainSidebarBlur(text) {
-  let patched = replaceOnce(
-    text,
-    "function Pk(e){let t=(0,Q.c)(46),",
-    `${codexPlusSidebarNameBlurHelpers}function Pk(e){let t=(0,Q.c)(46),`,
-    "sidebar blur app main helper insertion anchor",
-  );
+  let patched = text;
   patched = replaceOnce(
     patched,
     "openFolder:$y,toggleSidebar:$i,toggleTerminal:Md,",
@@ -270,18 +265,13 @@ function patchAppMainSidebarBlur(text) {
   return replaceOnce(
     patched,
     "children:[l,u,(0,Z.jsx)(H_,{route:a,children:C})]",
-    "children:[l,u,(0,Z.jsx)(CPXSidebarNameBlurCommand,{}),(0,Z.jsx)(H_,{route:a,children:C})]",
+    "children:[l,u,...(window.CodexPlus?.ui?.commands?.renderMenuItems?.({group:`suggested`,deps:{jsx:Z.jsx,MenuItem:Zy,register:Hp}})??[]),(0,Z.jsx)(H_,{route:a,children:C})]",
     "sidebar name blur command mount anchor",
   );
 }
 
 function patchSidebarProjectHoverCardSourceRows(text) {
-  let patched = replaceOnce(
-    text,
-    "function Ft(e,t,n){",
-    "function CPX_mergeDataAttributes(e,t){return t==null?e:{...e,...t,style:{...e?.style,...t?.style}}}function Ft(e,t,n){",
-    "sidebar row data attribute merge helper anchor",
-  );
+  let patched = text;
   patched = replaceOnce(
     patched,
     "var En=(0,Vt.memo)(function(e){let t=(0,zt.c)(40),{threadKey:n,canPin:r,disableHoverCard:a,floatStatusIconsRight:o,isGrouped:s,hideRemoteHostEnvIcon:c,hideTimestamp:l,locationId:u,onActivateGroup:d,onStartNewConversation:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v}=e,",
@@ -315,19 +305,19 @@ function patchSidebarProjectHoverCardSourceRows(text) {
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})",
-    "dataAttributes:CPX_mergeDataAttributes(ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label}),CPX_rowDataAttributes)",
+    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label}),CPX_rowDataAttributes)",
     "pending worktree sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
-    "dataAttributes:CPX_mergeDataAttributes(ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),CPX_rowDataAttributes)",
+    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),CPX_rowDataAttributes)",
     "remote sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})",
-    "dataAttributes:CPX_mergeDataAttributes(ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x}),CPX_rowDataAttributes)",
+    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x}),CPX_rowDataAttributes)",
     "local sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
@@ -387,73 +377,28 @@ function patchSidebarProjectHoverCardSourceRows(text) {
 }
 
 const codexPlusProjectColorHelpers = `
-function CPX_projectColors(){return window.CodexPlus?.plugins?.get(\`projectColors\`)?.exports}function CPX_projectColorStyle(e){return CPX_projectColors()?.style?.(e)}function CPX_projectColorDataAttributes(e,t){return CPX_projectColors()?.dataAttributes?.(e,t)}`;
+function CPXHostProjectRowProps(e){return window.CodexPlus?.ui?.sidebar?.projectRowProps?.({project:e})}function CPXHostThreadRowProps(e){return window.CodexPlus?.ui?.sidebar?.threadRowProps?.({project:e})}function CPXHostUserBubbleProps(e){return window.CodexPlus?.ui?.message?.userBubbleProps?.(e)}function CPXHostComposerSurfaceProps(e){return window.CodexPlus?.ui?.composer?.surfaceProps?.(e)}`;
 
-const codexPlusSidebarNameBlurHelpers = `
-function CPXSidebarNameBlurCommand(){Hp(\`codexPlusToggleSidebarNameBlur\`,()=>{window.CodexPlus?.commands?.run?.(\`codexPlusToggleSidebarNameBlur\`)},{menuItem:{id:\`codexPlusToggleSidebarNameBlur\`,groupKey:\`suggested\`,render:e=>(0,Z.jsx)(Zy,{value:\`Toggle sidebar blur\`,title:\`Toggle sidebar blur\`,description:\`Blur or show sidebar chat and project names\`,onSelect:()=>{window.CodexPlus?.commands?.run?.(\`codexPlusToggleSidebarNameBlur\`),e?.()}},\`codex-plus-toggle-sidebar-name-blur\`)}});return null}`;
-
-const codexPlusUserBubbleSettingsHelpers = `
-function CPX_userBubbleColors(){return window.CodexPlus?.plugins?.get(\`userBubbleColors\`)?.exports}function CPXUserBubbleColorRow({variant:e,label:t,ariaLabel:n}){return CPX_userBubbleColors()?.renderColorRow?.({React:X,jsx:Z.jsx,SettingRow:J,ColorInput:sn,variant:e,label:t,ariaLabel:n})??null}`;
-
-const codexPlusProjectColorSettingsHelpers = `
-${codexPlusProjectColorHelpers}function CPXProjectColorToggleRow({label:e,ariaLabel:t}){return CPX_projectColors()?.renderToggleRow?.({React:X,jsx:Z.jsx,SettingRow:J,Switch:q,label:e,ariaLabel:t})??null}`;
+const codexPlusAppearanceSettingsHelpers = `
+function CPXAppearanceRows(e){return window.CodexPlus?.ui?.settings?.appearance?.renderRows?.({deps:{React:X,jsx:Z.jsx,SettingRow:J,ColorInput:sn,Switch:q},variant:e})??[]}`;
 
 function patchGeneralSettingsUserBubbleColors(text) {
   let patched = replaceOnce(
     text,
     "function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
-    `${codexPlusUserBubbleSettingsHelpers}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+    `${codexPlusAppearanceSettingsHelpers}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
     "user bubble settings helper insertion anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},pointerCursors:",
-    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},userBubble:{id:`settings.general.appearance.userMessageBubble.short`,defaultMessage:`User bubble`,description:`Short label for the user message bubble color input`},pointerCursors:",
-    "user bubble settings message anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "let r=a(s),i=N(),o=i.formatMessage(Q.chromeThemeAccent),c=i.formatMessage(Q.chromeThemeBackground),l=i.formatMessage(Q.chromeThemeForeground),u=i.formatMessage(Q.chromeThemeContrast),d=i.formatMessage(Q.chromeThemeTranslucentSidebar),",
-    "let r=a(s),i=N(),o=i.formatMessage(Q.chromeThemeAccent),c=i.formatMessage(Q.chromeThemeBackground),l=i.formatMessage(Q.chromeThemeForeground),CPX_userBubbleLabel=i.formatMessage(Q.userBubble),u=i.formatMessage(Q.chromeThemeContrast),d=i.formatMessage(Q.chromeThemeTranslucentSidebar),",
-    "user bubble settings label anchor",
   );
   return replaceOnce(
     patched,
     "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),O.map",
-    "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),(0,Z.jsx)(CPXUserBubbleColorRow,{variant:n,label:CPX_userBubbleLabel,ariaLabel:i.formatMessage({id:`settings.general.appearance.userMessageBubble`,defaultMessage:`{variant} user message bubble color`,description:`Aria label for the user message bubble color input in appearance settings`},{variant:S})}),O.map",
+    "children:[D.map(e=>(0,Z.jsx)(J,{control:(0,Z.jsx)(sn,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),...CPXAppearanceRows(n),O.map",
     "user bubble settings row anchor",
   );
 }
 
-function patchGeneralSettingsProjectColors(text) {
-  let patched = replaceOnce(
-    text,
-    "function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
-    `${codexPlusProjectColorSettingsHelpers}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
-    "project colors settings helper insertion anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "userBubble:{id:`settings.general.appearance.userMessageBubble.short`,defaultMessage:`User bubble`,description:`Short label for the user message bubble color input`},pointerCursors:",
-    "userBubble:{id:`settings.general.appearance.userMessageBubble.short`,defaultMessage:`User bubble`,description:`Short label for the user message bubble color input`},projectColors:{id:`settings.general.appearance.projectColors.short`,defaultMessage:`Project colors`,description:`Short label for the project colors toggle`},pointerCursors:",
-    "project colors settings message anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "CPX_userBubbleLabel=i.formatMessage(Q.userBubble),u=i.formatMessage(Q.chromeThemeContrast),",
-    "CPX_userBubbleLabel=i.formatMessage(Q.userBubble),CPX_projectColorsLabel=i.formatMessage(Q.projectColors),u=i.formatMessage(Q.chromeThemeContrast),",
-    "project colors settings label anchor",
-  );
-  return replaceOnce(
-    patched,
-    "(0,Z.jsx)(CPXUserBubbleColorRow,{variant:n,label:CPX_userBubbleLabel,ariaLabel:i.formatMessage({id:`settings.general.appearance.userMessageBubble`,defaultMessage:`{variant} user message bubble color`,description:`Aria label for the user message bubble color input in appearance settings`},{variant:S})}),O.map",
-    "(0,Z.jsx)(CPXUserBubbleColorRow,{variant:n,label:CPX_userBubbleLabel,ariaLabel:i.formatMessage({id:`settings.general.appearance.userMessageBubble`,defaultMessage:`{variant} user message bubble color`,description:`Aria label for the user message bubble color input in appearance settings`},{variant:S})}),(0,Z.jsx)(CPXProjectColorToggleRow,{label:CPX_projectColorsLabel,ariaLabel:i.formatMessage({id:`settings.general.appearance.projectColors`,defaultMessage:`{variant} project colors`,description:`Aria label for the project colors toggle in appearance settings`},{variant:S})}),O.map",
-    "project colors settings row anchor",
-  );
-}
-
 const codexPlusUserBubbleHelpers = `
-function CPX_installUserBubbleColors(){}CPX_installUserBubbleColors();`;
+${codexPlusProjectColorHelpers}function CPX_installHostSurfaceProps(){}CPX_installHostSurfaceProps();`;
 
 function patchUserMessageAttachmentsBubbleColors(text) {
   let patched = replaceOnce(
@@ -465,7 +410,7 @@ function patchUserMessageAttachmentsBubbleColors(text) {
   patched = replaceOnce(
     patched,
     "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
-    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,\"data-codex-plus-user-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
+    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({}),role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
     "user bubble marker attribute anchor",
   );
   return replaceOnce(
@@ -485,20 +430,14 @@ function patchUserMessageAttachmentsProjectColors(text) {
   );
   patched = replaceOnce(
     patched,
-    "function CPX_installUserBubbleColors(){}CPX_installUserBubbleColors();",
-    `${codexPlusProjectColorHelpers}function CPX_installUserBubbleColors(){}CPX_installUserBubbleColors();`,
-    "user bubble project color helper insertion anchor",
-  );
-  patched = replaceOnce(
-    patched,
     "hasExternalAttachments:b,commentCount:ee,onEditMessage:x,threadId:S,turnId:w,cwd:T,hostId:k}=e,M=a===void 0?!1:a,",
-    "hasExternalAttachments:b,commentCount:ee,onEditMessage:x,threadId:S,turnId:w,cwd:T,hostId:k}=e,CPX_userMessageProjectId=o(CPX_threadProjectId,S==null?null:CPX_localThreadKey(S)),CPX_userMessageProjectStyle=CPX_projectColorStyle(CPX_userMessageProjectId),M=a===void 0?!1:a,",
+    "hasExternalAttachments:b,commentCount:ee,onEditMessage:x,threadId:S,turnId:w,cwd:T,hostId:k}=e,CPX_userMessageProjectId=o(CPX_threadProjectId,S==null?null:CPX_localThreadKey(S)),M=a===void 0?!1:a,",
     "user bubble project assignment style anchor",
   );
   return replaceOnce(
     patched,
-    "\"data-user-message-bubble\":!0,\"data-codex-plus-user-bubble\":!0,role:H?`button`:void 0,",
-    "\"data-user-message-bubble\":!0,\"data-codex-plus-user-bubble\":!0,\"data-codex-plus-project-color\":CPX_userMessageProjectStyle?``:void 0,style:CPX_userMessageProjectStyle,role:H?`button`:void 0,",
+    "\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({}),role:H?`button`:void 0,",
+    "\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({project:CPX_userMessageProjectId}),role:H?`button`:void 0,",
     "user bubble project marker attribute anchor",
   );
 }
@@ -507,13 +446,19 @@ function patchComposerBubbleColors(text) {
   let patched = replaceOnce(
     text,
     "function oh(e){let t=(0,$.c)(13),",
-    `${codexPlusUserBubbleHelpers}function oh(e){let t=(0,$.c)(13),`,
+    `${codexPlusUserBubbleHelpers}function oh(e){let t=(0,$.c)(14),`,
     "composer user bubble helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
+    "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,",
+    "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d,codexPlusProps:CPX_hostSurfaceProps}=e,CPX_surfaceProps=CPX_hostSurfaceProps??CPXHostComposerSurfaceProps({}),",
+    "composer host surface props anchor",
+  );
+  patched = replaceOnce(
+    patched,
     "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,Q.jsx)(Jt.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
-    "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,Q.jsx)(Jt.div,{inert:a,\"data-codex-plus-user-entry\":!0,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
+    "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v||t[12]!==CPX_surfaceProps?(y=(0,Q.jsx)(Jt.div,{inert:a,...CPX_surfaceProps,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=CPX_surfaceProps,t[13]=y):y=t[13],y}",
     "composer user entry marker render anchor",
   );
   return patched;
@@ -528,32 +473,14 @@ function patchComposerProjectColors(text) {
   );
   patched = replaceOnce(
     patched,
-    "function CPX_installUserBubbleColors(){}CPX_installUserBubbleColors();",
-    `${codexPlusProjectColorHelpers}function CPX_installUserBubbleColors(){}CPX_installUserBubbleColors();`,
-    "composer project color helper insertion anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "function oh(e){let t=(0,$.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,",
-    "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d,style:CPX_projectColorInlineStyle}=e,",
-    "composer surface style prop anchor",
-  );
-  patched = replaceOnce(
-    patched,
     anchors.composerProjectStyleCaller,
-    anchors.composerProjectStyleCaller.replace(";return", ",CPX_composerThreadProjectId=a(CPX_threadProjectId,G==null?null:CPX_localThreadKey(G)),CPX_composerProjectStyle=CPX_projectColorStyle(G==null?On?{hostId:On.hostId,path:On.remotePath,projectId:kn,label:On.label??On.name}:x??void 0:CPX_composerThreadProjectId);return"),
+    anchors.composerProjectStyleCaller.replace(";return", ",CPX_composerThreadProjectId=a(CPX_threadProjectId,G==null?null:CPX_localThreadKey(G)),CPX_composerSurfaceProps=CPXHostComposerSurfaceProps({project:G==null?On?{hostId:On.hostId,path:On.remotePath,projectId:kn,label:On.label??On.name}:x??void 0:CPX_composerThreadProjectId});return"),
     "composer project style hook-safe caller anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,Q.jsx)(Jt.div,{inert:a,\"data-codex-plus-user-entry\":!0,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
-    "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v||t[12]!==CPX_projectColorInlineStyle?(y=(0,Q.jsx)(Jt.div,{inert:a,\"data-codex-plus-user-entry\":!0,\"data-codex-plus-project-color\":CPX_projectColorInlineStyle?``:void 0,style:CPX_projectColorInlineStyle,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=CPX_projectColorInlineStyle,t[13]=y):y=t[13],y}",
-    "composer project entry styled render anchor",
   );
   return replaceOnce(
     patched,
     anchors.composerProjectAccentCaller,
-    anchors.composerProjectAccentCaller.replace(",onDragEnter:", ",style:!Ge&&!Hn?CPX_composerProjectStyle:void 0,onDragEnter:"),
+    anchors.composerProjectAccentCaller.replace(",onDragEnter:", ",codexPlusProps:!Ge&&!Hn?CPX_composerSurfaceProps:void 0,onDragEnter:"),
     "composer project accent style caller anchor",
   );
 }
@@ -562,29 +489,17 @@ function patchElectronMenuShortcuts(text) {
   return replaceOnce(
     text,
     "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
-    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:\`codexPlusToggleSidebarNameBlur\`,titleIntlId:`codexPlus.command.toggleSidebarNameBlur`,descriptionIntlId:`codexPlus.commandDescription.toggleSidebarNameBlur`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:\`Toggle sidebar blur\`,menuTitleIntlId:`codexPlus.commandMenuTitle.toggleSidebarNameBlur`,defaultKeybindings:[]}},{id:`toggleBottomPanel`,",
+    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},...(window.CodexPlus?.ui?.commands?.commandMetadata?.()??[]),{id:`toggleBottomPanel`,",
     "sidebar blur command palette metadata anchor",
   );
 }
 
 function patchKeyboardShortcutsSearchInput(text) {
-  let patched = replaceOnce(
-    text,
-    "\"codex.command.toggleSidebar\":{id:`codex.command.toggleSidebar`,defaultMessage:`Toggle sidebar`,description:`Command menu item to toggle the sidebar`},\"codex.command.toggleBottomPanel\":",
-    "\"codex.command.toggleSidebar\":{id:`codex.command.toggleSidebar`,defaultMessage:`Toggle sidebar`,description:`Command menu item to toggle the sidebar`},\"codexPlus.command.toggleSidebarNameBlur\":{id:`codexPlus.command.toggleSidebarNameBlur`,defaultMessage:\`Toggle sidebar blur\`,description:`Command menu item to blur or show sidebar names`},\"codex.command.toggleBottomPanel\":",
-    "sidebar blur command title intl message anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "\"codex.commandMenuTitle.toggleSidebar\":{id:`codex.commandMenuTitle.toggleSidebar`,defaultMessage:`Toggle Sidebar`,description:`Native menu item to toggle the sidebar`},\"codex.commandMenuTitle.toggleBottomPanel\":",
-    "\"codex.commandMenuTitle.toggleSidebar\":{id:`codex.commandMenuTitle.toggleSidebar`,defaultMessage:`Toggle Sidebar`,description:`Native menu item to toggle the sidebar`},\"codexPlus.commandMenuTitle.toggleSidebarNameBlur\":{id:`codexPlus.commandMenuTitle.toggleSidebarNameBlur`,defaultMessage:\`Toggle sidebar blur\`,description:`Native menu item to blur or show sidebar names`},\"codex.commandMenuTitle.toggleBottomPanel\":",
-    "sidebar blur command menu title intl message anchor",
-  );
   return replaceOnce(
-    patched,
-    "\"codex.commandDescription.toggleSidebar\":{id:`codex.commandDescription.toggleSidebar`,defaultMessage:`Show or hide the sidebar`,description:`Description for the Toggle sidebar command`},\"codex.commandDescription.toggleBottomPanel\":",
-    "\"codex.commandDescription.toggleSidebar\":{id:`codex.commandDescription.toggleSidebar`,defaultMessage:`Show or hide the sidebar`,description:`Description for the Toggle sidebar command`},\"codexPlus.commandDescription.toggleSidebarNameBlur\":{id:`codexPlus.commandDescription.toggleSidebarNameBlur`,defaultMessage:\`Blur or show sidebar chat and project names\`,description:`Description for the Toggle sidebar blur command`},\"codex.commandDescription.toggleBottomPanel\":",
-    "sidebar blur command description intl message anchor",
+    text,
+    "function d(e,t){return`titleIntlId`in e?t.formatMessage(c[e.titleIntlId]):t.formatMessage(l[e.electron.menuTitleIntlId])}",
+    "function d(e,t){return`titleIntlId`in e?t.formatMessage(c[e.titleIntlId]):e.title??e.electron?.menuTitle??t.formatMessage(l[e.electron.menuTitleIntlId])}",
+    "generic command metadata title fallback anchor",
   );
 }
 
@@ -598,7 +513,7 @@ function patchLocalTaskRow(text) {
   patched = replaceOnce(
     patched,
     "threadSummary:Ne,dataAttributes:Fe}=e,Ie=g===void 0?!1:g,",
-    "threadSummary:Ne,dataAttributes:Fe}=e,CPX_rowDataAttributes=Fe??CPX_projectColorDataAttributes(Oe,!0),Ie=g===void 0?!1:g,",
+    "threadSummary:Ne,dataAttributes:Fe}=e,CPX_rowDataAttributes=Fe??CPXHostProjectRowProps(Oe),Ie=g===void 0?!1:g,",
     "local task row project assignment anchor",
   );
   patched = replaceOnce(
@@ -668,7 +583,6 @@ return makePatchSet({
       id: "project-colors",
       fileTransforms: [
         [appMainFile, patchAppMainProjectColors],
-        [generalSettingsFile, patchGeneralSettingsProjectColors],
         [sidebarProjectHoverCardSourceRowsFile, patchSidebarProjectHoverCardSourceRows],
         [localTaskRowFile, patchLocalTaskRow],
         [userMessageAttachmentsFile, patchUserMessageAttachmentsProjectColors],

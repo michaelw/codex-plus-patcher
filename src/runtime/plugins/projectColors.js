@@ -133,12 +133,20 @@
         writeEnabled,
       },
       start(api) {
-        api.modules.registerHostModule("codex-plus:project-colors", this.exports);
-        api.ui.settings.appearance.addRow({ id: "codex-plus-project-colors", plugin: "projectColors" });
-        api.ui.sidebar.decorateProjectRow((props) => ({ ...props, ...dataAttributes(props?.project, true) }));
-        api.ui.sidebar.decorateThreadRow((props) => ({ ...props, ...dataAttributes(props?.project, true) }));
-        api.ui.message.decorateUserBubble((props) => ({ ...props, ...dataAttributes(props?.project, false) }));
-        api.ui.composer.decorateSurface((props) => ({ ...props, ...dataAttributes(props?.project, false) }));
+        api.ui.settings.appearance.addRow({
+          id: "codex-plus-project-colors",
+          order: 20,
+          plugin: "projectColors",
+          render: (deps) => renderToggleRow({
+            ...deps,
+            label: "Project colors",
+            ariaLabel: `${deps.variant || "Current"} project colors`,
+          }),
+        });
+        api.ui.sidebar.decorateProjectRow((props) => dataAttributes(props?.project, true));
+        api.ui.sidebar.decorateThreadRow((props) => dataAttributes(props?.project, true));
+        api.ui.message.decorateUserBubble((props) => dataAttributes(props?.project, false));
+        api.ui.composer.decorateSurface((props) => dataAttributes(props?.project, false));
       },
     }),
   );

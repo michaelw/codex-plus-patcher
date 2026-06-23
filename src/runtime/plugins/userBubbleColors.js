@@ -111,9 +111,18 @@
         writeColor,
       },
       start(api) {
-        api.ui.settings.appearance.addRow({ id: "codex-plus-user-bubble-colors", plugin: "userBubbleColors" });
-        api.ui.message.decorateUserBubble((props) => ({ ...props, "data-codex-plus-user-bubble": "" }));
-        api.ui.composer.decorateSurface((props) => ({ ...props, "data-codex-plus-user-entry": "" }));
+        api.ui.settings.appearance.addRow({
+          id: "codex-plus-user-bubble-colors",
+          order: 10,
+          plugin: "userBubbleColors",
+          render: (deps) => renderColorRow({
+            ...deps,
+            label: "User bubble",
+            ariaLabel: `${deps.variant || "Current"} user message bubble color`,
+          }),
+        });
+        api.ui.message.decorateUserBubble(() => ({ "data-codex-plus-user-bubble": "" }));
+        api.ui.composer.decorateSurface(() => ({ "data-codex-plus-user-entry": "" }));
         setVars();
         window.addEventListener(EVENT, setVars);
       },

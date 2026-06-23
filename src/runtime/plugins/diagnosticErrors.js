@@ -8,14 +8,6 @@
     return [base, componentStack].filter(Boolean).join("\n\n");
   }
 
-  function diagnosticSummary(error) {
-    return {
-      name: error?.name || null,
-      message: error?.message || String(error),
-      stack: error?.stack || null,
-    };
-  }
-
   function renderDetails({ jsx, error, componentStack }) {
     if (typeof jsx !== "function") return null;
     const text = diagnosticText(error, componentStack);
@@ -25,7 +17,6 @@
 
   const exportsObject = {
     detailClassName: DETAIL_CLASS,
-    diagnosticSummary,
     diagnosticText,
     renderDetails,
   };
@@ -45,7 +36,7 @@
       required: true,
       exports: exportsObject,
       start(api) {
-        api.ui.errors.decorateBoundary(diagnosticSummary);
+        api.ui.errors.decorateBoundary(renderDetails);
       },
     }),
   );
