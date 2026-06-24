@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.4.1...v0.5.0) (2026-06-24)
+
+
+### Features
+
+* add Mermaid diagram popout viewer ([#36](https://github.com/michaelw/codex-plus-patcher/issues/36)) ([8cd49ad](https://github.com/michaelw/codex-plus-patcher/commit/8cd49ad663b62a69bf7fb3bf374457bdd0e6fa6a))
+
 ## [0.4.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.4.0...v0.4.1) (2026-06-24)
 
 
