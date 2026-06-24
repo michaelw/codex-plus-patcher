@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const roots = ["src", "tests"].map((root) => path.join(repoRoot, root));
+const roots = ["scripts", "src", "tests"].map((root) => path.join(repoRoot, root));
 const ignoredDirectories = new Set([".git", "node_modules", "outputs", "work"]);
 
 function collectJavaScriptFiles(dir, out = []) {

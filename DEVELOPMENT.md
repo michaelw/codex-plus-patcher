@@ -131,6 +131,20 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
   `docs: ...`; release-please uses them to decide which changes belong in the
   generated release. Use the same format for PR titles when squash-merging,
   because GitHub uses the PR title as the squash commit subject.
+- GitHub validates PR titles with `amannn/action-semantic-pull-request`.
+  Do not enable automerge while the title has a non-semantic prefix such as
+  `[codex]`; release-please reads the final squash commit title on `main`.
+- Prefer the guarded automerge helper so the squash subject is the current PR
+  title and the merge is pinned to the inspected head commit:
+
+  ```sh
+  node scripts/safe-automerge-pr.js --dry-run <pr-number-or-url>
+  node scripts/safe-automerge-pr.js <pr-number-or-url>
+  ```
+
+  It runs `gh pr merge --auto --squash --subject "$title" --body "" \
+  --match-head-commit "$headRefOid"` after confirming the current PR title is a
+  Conventional Commit title.
 - Commit source-only changes.
 - Keep generated app bundles and local validation output ignored.
 - For patch ports, prefer one commit for the new versioned patch and registry
