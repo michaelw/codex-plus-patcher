@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.4.0...v0.4.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* restore Codex Plus About dialog ([#34](https://github.com/michaelw/codex-plus-patcher/issues/34)) ([54d56ec](https://github.com/michaelw/codex-plus-patcher/commit/54d56ece384f959fe21bde92ddeddb760615744d))
+
 ## [0.4.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.3.0...v0.4.0) (2026-06-24)
 
 
