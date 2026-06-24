@@ -118,6 +118,20 @@ Host patches aggregate those decorators through:
 Styles should target Codex Plus data attributes installed by these generic host
 surfaces.
 
+### Thread Header
+
+Plugins can add compact thread-header accessories with:
+
+- `CodexPlus.ui.threadHeader.addAccessory(fn)`
+
+Host patches call:
+
+- `CodexPlus.ui.threadHeader.renderAccessories({ context, deps })`
+
+The current header context includes the active `cwd` and `hostId` when Codex
+exposes them for the visible route. Accessories should render nothing when
+metadata is missing.
+
 ### Review
 
 Plugins wrap or extend the Review body with:
@@ -185,6 +199,7 @@ upstream menu items that are only labeled in the native template.
 - `diagnosticErrors`
 - `userBubbleColors`
 - `projectColors`
+- `projectPathHeader`
 - `sidebarNameBlur`
 - `devTools`
 

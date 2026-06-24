@@ -9,6 +9,27 @@
   const styleElements = new Map();
   const settingsListeners = new Map();
   const storagePrefix = "codex-plus:plugin:";
+  const diagnosticEvents = [];
+
+  function diagnosticsEnabled() {
+    try {
+      return globalObject.localStorage?.getItem("codex-plus:diagnostics") === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function diagnose(event, details = {}) {
+    const entry = { event, details, time: new Date().toISOString() };
+    diagnosticEvents.push(entry);
+    if (diagnosticEvents.length > 200) diagnosticEvents.shift();
+    if (diagnosticsEnabled()) {
+      try {
+        console.info("[Codex Plus]", event, details);
+      } catch {}
+    }
+    return entry;
+  }
 
   function safeId(id) {
     if (typeof id !== "string" || id.trim() === "") throw new Error("Codex Plus plugin ids must be non-empty strings");
@@ -258,6 +279,34 @@
     return null;
   }
 
+  function ThreadHeaderAccessoryHost({ accessory, context, deps }) {
+    const rendered = accessory?.({ context, ...deps }) ?? null;
+    diagnose("threadHeader.accessoryHost.render", {
+      accessoryName: accessory?.name || null,
+      cwd: typeof context?.cwd === "string" ? context.cwd : null,
+      rendered: rendered != null,
+    });
+    return rendered;
+  }
+
+  function renderThreadHeaderAccessories({ context, deps } = {}) {
+    const jsx = deps?.jsx;
+    if (typeof jsx !== "function") {
+      diagnose("threadHeader.render.skip", { reason: "missing-jsx" });
+      return null;
+    }
+    diagnose("threadHeader.render", {
+      accessoryCount: CodexPlus.ui.threadHeader.accessories.length,
+      cwd: typeof context?.cwd === "string" ? context.cwd : null,
+      hostId: context?.hostId ?? null,
+      header: context?.header ?? null,
+    });
+    const rendered = CodexPlus.ui.threadHeader.accessories.map((accessory, index) =>
+      jsx(ThreadHeaderAccessoryHost, { accessory, context, deps }, `thread-header-accessory:${index}`),
+    );
+    return rendered.length === 0 ? null : rendered;
+  }
+
   function registerStyle(pluginId, cssText) {
     if (typeof document === "undefined") return null;
     const id = `codex-plus-style-${safeId(pluginId)}`;
@@ -288,6 +337,7 @@
     for (const command of plugin.commands || []) registerCommand({ ...command, plugin: plugin.id });
     if (plugin.styles) registerStyle(plugin.id, plugin.styles);
     if (plugin.required || plugin.enabledByDefault) startPlugin(plugin.id);
+    diagnose("plugin.register", { id: plugin.id, started: startedPlugins.has(plugin.id) });
     return plugin;
   }
 
@@ -296,6 +346,7 @@
     if (!plugin || startedPlugins.has(id)) return;
     plugin.start?.(CodexPlus);
     startedPlugins.add(id);
+    diagnose("plugin.start", { id });
   }
 
   function stopPlugin(id) {
@@ -334,6 +385,15 @@
       composer: { surfaceDecorators: [], decorateSurface(fn) { this.surfaceDecorators.push(fn); return fn; }, surfaceProps(props) { return applyDecorators(props, this.surfaceDecorators); } },
       about: { buildInfo: [], addBuildInfo(fn) { this.buildInfo.push(fn); return fn; } },
       errors: { boundaryDecorators: [], decorateBoundary(fn) { this.boundaryDecorators.push(fn); return fn; }, renderDetails: renderErrorDetails },
+      threadHeader: {
+        accessories: [],
+        addAccessory(fn) {
+          this.accessories.push(fn);
+          diagnose("threadHeader.addAccessory", { accessoryName: fn?.name || null, accessoryCount: this.accessories.length });
+          return fn;
+        },
+        renderAccessories: renderThreadHeaderAccessories,
+      },
       mermaid: {
         diagramDecorators: [],
         decorateDiagram(fn) { this.diagramDecorators.push(fn); return fn; },
@@ -345,9 +405,16 @@
     settings: { define: defineSettings },
     native: { async request(method, params) { return globalObject.codexPlusNative?.request?.(method, params) ?? globalObject.CodexPlusHost?.nativeRequest?.(method, params); } },
     styles: { register: registerStyle, setRootVars },
+    diagnostics: {
+      log: diagnose,
+      snapshot() { return diagnosticEvents.slice(); },
+      clear() { diagnosticEvents.splice(0, diagnosticEvents.length); },
+      enabled: diagnosticsEnabled,
+    },
   };
 
   globalObject.CodexPlus = CodexPlus;
+  globalObject.CodexPlusDiagnostics = CodexPlus.diagnostics;
   globalObject.CodexPlusHost ||= {};
   globalObject.CodexPlusHost.register = registerHostModule;
 
@@ -357,6 +424,7 @@
     "plugins/diagnosticErrors.js",
     "plugins/userBubbleColors.js",
     "plugins/projectColors.js",
+    "plugins/projectPathHeader.js",
     "plugins/sidebarNameBlur.js",
     "plugins/devTools.js",
     "plugins/mermaidFullscreen.js",
@@ -364,12 +432,21 @@
 
   if (typeof document !== "undefined") {
     const base = new URL(".", document.currentScript?.src || globalObject.location?.href || "");
-    for (const file of pluginFiles) {
-      const script = document.createElement("script");
-      script.src = new URL(file, base).href;
-      script.async = false;
-      script.defer = false;
-      document.head?.appendChild(script);
+    if (document.readyState === "loading" && typeof document.write === "function") {
+      diagnose("plugins.load", { mode: "document.write", count: pluginFiles.length });
+      for (const file of pluginFiles) {
+        const src = new URL(file, base).href.replace(/"/g, "&quot;");
+        document.write(`<script src="${src}"><\/script>`);
+      }
+    } else {
+      diagnose("plugins.load", { mode: "appendChild", count: pluginFiles.length });
+      for (const file of pluginFiles) {
+        const script = document.createElement("script");
+        script.src = new URL(file, base).href;
+        script.async = false;
+        script.defer = false;
+        document.head?.appendChild(script);
+      }
     }
   }
 })();
