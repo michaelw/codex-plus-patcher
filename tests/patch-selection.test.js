@@ -31,7 +31,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
 }
 
 function versionedNames(patchSet) {
-  if (patchSet.id === "codex-26.616.71553-4265") {
+  if (patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265") {
     return {
       srcFile: "src-l0hbMZ-p.js",
       threadContextInputsFile: "thread-context-inputs-B6tQCr7t.js",
@@ -921,7 +921,7 @@ test("composer patch applies the user entry marker and shared color variables", 
     const names = versionedNames(patchSet);
     const composerFile = findTransformPath(patchSet, "composer");
     let fakeBundle = fakeComposerBundle.replace("__THREAD_CONTEXT_INPUTS_FILE__", names.threadContextInputsFile);
-    if (patchSet.id === "codex-26.616.71553-4265") {
+    if (patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265") {
       fakeBundle = fakeBundle
         .replace(
           "Il=(0,Q.jsx)(_n,{onOpen:()=>{Bc.prepare(),X.toggleContextSuggestions()}});return",
