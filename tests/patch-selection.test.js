@@ -418,7 +418,9 @@ test("about dialog patch reports Codex Plus patch provenance", () => {
   assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)/);
   assert.match(transformed, /require\("\.\/codex-plus-aboutMetadata\.js"\)\.aboutPayload/);
   assert.match(transformed, /i=CPXAbout\.appDisplayName,o=a\.app\.getVersion\(\)/);
-  assert.match(transformed, /function V0\(e\)\{return CPXAbout\.buildInfoLines\}/);
+  assert.match(transformed, /_=CPXAbout\.buildInfoLines,v=_\.length===0\?h:\[h,``,\.\.\._\]\.join/);
+  assert.match(transformed, /function V0\(e\)\{return\[\]\}/);
+  assert.doesNotMatch(transformed, /function V0\(e\)\{return CPXAbout\.buildInfoLines\}/);
   assert.match(transformed, /codexPlusDisclaimerHeading:CPXAbout\.disclaimerHeading/);
   assert.match(transformed, /codexPlusDisclaimerBody:CPXAbout\.disclaimerBody/);
   assert.match(transformed, /let CPXAboutMetadata=require\("\.\/codex-plus-aboutMetadata\.js"\),q=/);
@@ -520,7 +522,7 @@ test("about dialog patch fails closed when the build information hook changes", 
   const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath === ".vite/build/main-B6erVVHq.js")?.[1];
 
   assert.throws(
-    () => transform(fakeAboutDialogBundle().replace("function V0(e){return[]}", "function V0(e){return[1]}")),
+    () => transform(fakeAboutDialogBundle().replace("g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),v=", "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=[],v=")),
     /Expected one about dialog build information anchor, found 0/,
   );
 });

@@ -50,8 +50,8 @@ function patchAboutDialog(text, context = {}) {
   );
   patched = replaceOnce(
     patched,
-    "function V0(e){return[]}",
-    "function V0(e){return CPXAbout.buildInfoLines}",
+    "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),v=_.length===0?h:[h,``,..._].join(`\n`),",
+    "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=CPXAbout.buildInfoLines,v=_.length===0?h:[h,``,..._].join(`\n`),",
     "about dialog build information anchor",
   );
   patched = replaceOnce(
