@@ -62,6 +62,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
+  codex-plus-patcher menu-diagnostics --asar <path> [--json]
   codex-plus-patcher asar-list --asar <path> [--contains <text>] [--json]
   codex-plus-patcher asar-cat --asar <path> --file <asar-path> [--json]
 
@@ -156,12 +157,101 @@ function readAsarFile({ asar, file }) {
   return { asar, file, size, content };
 }
 
+function readPackedEntry(archive, node) {
+  if (node.unpacked) return null;
+  const size = Number(node.size || 0);
+  const start = archive.dataStart + Number(node.offset || 0);
+  return archive.buffer.subarray(start, start + size).toString("utf8");
+}
+
+function menuDiagnostics({ asar }) {
+  if (!asar) throw new Error("--asar is required");
+  const archive = readAsar(asar);
+  const files = walkFiles(archive.header);
+  const commandId = "codexPlusOpenDevTools";
+  const menuTitle = "Open Developer Tools";
+  const commandMetadataFiles = [];
+  const nativeBridgeFiles = [];
+  const runtimePluginFiles = [];
+  const applicationMenuFiles = [];
+
+  for (const [file, node] of files) {
+    if (!file.endsWith(".js")) continue;
+    const content = readPackedEntry(archive, node);
+    if (content == null) continue;
+    const hasDevToolsCommand = content.includes(commandId);
+    const hasMenuTitle = content.includes(menuTitle);
+    const hasToggleBottomPanel = content.includes("Toggle Bottom Panel") || content.includes("toggleBottomPanel");
+    const hasPanelsGroup = content.includes("commandMenuGroupKey:`panels`") || content.includes('commandMenuGroupKey:"panels"');
+    const hasNativeBridge = content.includes("devtools/open") || content.includes("CPXOpenDevTools");
+    const hasRuntimePlugin = file.endsWith("/devTools.js") || content.includes('id: "devTools"');
+    const hasApplicationMenu = content.includes("Menu.setApplicationMenu") || content.includes("refreshApplicationMenu");
+
+    if (hasPanelsGroup || hasDevToolsCommand || file.includes("electron-menu-shortcuts")) {
+      commandMetadataFiles.push({
+        file,
+        hasDevToolsCommand,
+        hasMenuTitle,
+        hasToggleBottomPanel,
+        hasPanelsGroup,
+      });
+    }
+    if (hasNativeBridge) nativeBridgeFiles.push({ file, hasDevToolsOpenRequest: content.includes("devtools/open"), hasOpenDevToolsCall: content.includes("openDevTools") });
+    if (hasRuntimePlugin) runtimePluginFiles.push({ file, hasDevToolsCommand, hasDevToolsOpenRequest: content.includes("devtools/open") });
+    if (hasApplicationMenu) applicationMenuFiles.push({ file, hasDiagnosticsHook: content.includes("CPXLogMenuDiagnostics"), hasDevToolsCommand });
+  }
+
+  return {
+    asar,
+    commandId,
+    menuTitle,
+    commandMetadataFiles,
+    nativeBridgeFiles,
+    runtimePluginFiles,
+    applicationMenuFiles,
+    summary: {
+      commandMetadataFilesWithCommand: commandMetadataFiles.filter((entry) => entry.hasDevToolsCommand).map((entry) => entry.file),
+      nativeBridgeFilesWithRequest: nativeBridgeFiles.filter((entry) => entry.hasDevToolsOpenRequest).map((entry) => entry.file),
+      runtimePluginFilesWithCommand: runtimePluginFiles.filter((entry) => entry.hasDevToolsCommand).map((entry) => entry.file),
+      applicationMenuFilesWithDiagnostics: applicationMenuFiles.filter((entry) => entry.hasDiagnosticsHook).map((entry) => entry.file),
+    },
+  };
+}
+
 function formatAsarListResult(result) {
   return result.files.length > 0 ? `${result.files.join("\n")}\n` : "";
 }
 
 function formatAsarCatResult(result) {
   return result.content;
+}
+
+function formatMenuDiagnosticsResult(result) {
+  const lines = [
+    `ASAR: ${result.asar}`,
+    `Command: ${result.commandId}`,
+    "",
+    "Command metadata bundles:",
+    ...result.commandMetadataFiles.map((entry) =>
+      `- ${entry.file}: command=${entry.hasDevToolsCommand ? "yes" : "no"}, title=${entry.hasMenuTitle ? "yes" : "no"}, bottomPanel=${entry.hasToggleBottomPanel ? "yes" : "no"}, panels=${entry.hasPanelsGroup ? "yes" : "no"}`,
+    ),
+    "",
+    "Native bridge bundles:",
+    ...result.nativeBridgeFiles.map((entry) =>
+      `- ${entry.file}: request=${entry.hasDevToolsOpenRequest ? "yes" : "no"}, openDevTools=${entry.hasOpenDevToolsCall ? "yes" : "no"}`,
+    ),
+    "",
+    "Runtime plugin bundles:",
+    ...result.runtimePluginFiles.map((entry) =>
+      `- ${entry.file}: command=${entry.hasDevToolsCommand ? "yes" : "no"}, request=${entry.hasDevToolsOpenRequest ? "yes" : "no"}`,
+    ),
+    "",
+    "Application menu bundles:",
+    ...result.applicationMenuFiles.map((entry) =>
+      `- ${entry.file}: diagnosticsHook=${entry.hasDiagnosticsHook ? "yes" : "no"}, command=${entry.hasDevToolsCommand ? "yes" : "no"}`,
+    ),
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 function formatError(error, { debug = false } = {}) {
@@ -232,6 +322,11 @@ async function main() {
     process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatAsarCatResult(result));
     return;
   }
+  if (args.command === "menu-diagnostics") {
+    const result = menuDiagnostics(args);
+    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatMenuDiagnosticsResult(result));
+    return;
+  }
   if (args.command !== "apply") throw new Error(`Unknown command: ${args.command}`);
 
   const patchSets = await loadPatchSets(args);
@@ -266,10 +361,12 @@ module.exports = {
   formatAsarCatResult,
   formatAsarListResult,
   formatError,
+  formatMenuDiagnosticsResult,
   formatResult,
   helpText,
   listAsarFiles,
   loadPatchSets,
+  menuDiagnostics,
   parseArgs,
   readAsarFile,
   requirePatchSetModule,

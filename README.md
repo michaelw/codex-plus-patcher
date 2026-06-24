@@ -30,6 +30,7 @@ patches plus readable runtime plugins:
 - add user-message bubble color controls in Appearance settings
 - add adaptive project colors for sidebar projects, grouped threads, pinned threads, user-message accents, and the composer
 - add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
+- add an `Open Developer Tools` panels command for opening the current Codex window's DevTools
 - add a fullscreen Mermaid diagram viewer with zoom controls
 
 The generated app includes a readable Codex Plus runtime under
@@ -110,6 +111,13 @@ Print the machine-readable result:
 
 ```bash
 codex-plus-patcher apply --dry-run --json
+```
+
+Inspect menu-related patch markers in a generated app:
+
+```bash
+codex-plus-patcher menu-diagnostics \
+  --asar "~/Applications/Codex Plus.app/Contents/Resources/app.asar"
 ```
 
 For local development of the CLI wrapper:

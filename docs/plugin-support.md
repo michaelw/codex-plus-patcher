@@ -151,10 +151,32 @@ copy, disclaimer, build-info lines, and styles belong to the plugin.
 `CodexPlus.native.request(method, params)` forwards to host or worker-backed
 requests exposed by Codex Plus patches. Current public methods are:
 
+- `CodexPlus.native.request("devtools/open")`
 - `CodexPlus.native.request("repository-targets", params)`
 - `CodexPlus.native.request("codex-plus-trace", params)`
 
 Worker patches should only allowlist and delegate.
+
+### Native Menus
+
+Plugins can add native application menu items with:
+
+```js
+CodexPlus.nativeMenus.registerItem({
+  id: "codexPlusOpenDevTools",
+  menuId: "view-menu",
+  afterLabel: "Find",
+  label: "Open Developer Tools",
+  nativeRequest: { method: "devtools/open" },
+});
+```
+
+The runtime forwards menu registrations through
+`CodexPlus.native.request("native-menu/register-item", item)`. The main-process
+patch owns insertion into Electron menus, reapplying registered items after menu
+refreshes, and dispatching allowed native requests when a menu item is clicked.
+Use `afterId` when the target item has a stable id; use `afterLabel` for
+upstream menu items that are only labeled in the native template.
 
 ## Built-In Plugins
 
@@ -164,6 +186,7 @@ Worker patches should only allowlist and delegate.
 - `userBubbleColors`
 - `projectColors`
 - `sidebarNameBlur`
+- `devTools`
 
 ## Patch Rules
 

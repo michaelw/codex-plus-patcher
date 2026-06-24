@@ -305,6 +305,10 @@
     startedPlugins.delete(id);
   }
 
+  function registerNativeMenuItem(item) {
+    return CodexPlus.native.request("native-menu/register-item", item).catch(() => ({ ok: false }));
+  }
+
   const CodexPlus = {
     definePlugin,
     registerPlugin,
@@ -337,6 +341,7 @@
       },
     },
     commands: { register: registerCommand, run: runCommand, all: () => Array.from(commands.values()), menuItems: (group) => Array.from(commands.values()).filter((command) => commandGroups(command).includes(group)) },
+    nativeMenus: { registerItem: registerNativeMenuItem },
     settings: { define: defineSettings },
     native: { async request(method, params) { return globalObject.codexPlusNative?.request?.(method, params) ?? globalObject.CodexPlusHost?.nativeRequest?.(method, params); } },
     styles: { register: registerStyle, setRootVars },
@@ -353,6 +358,7 @@
     "plugins/userBubbleColors.js",
     "plugins/projectColors.js",
     "plugins/sidebarNameBlur.js",
+    "plugins/devTools.js",
     "plugins/mermaidFullscreen.js",
   ];
 

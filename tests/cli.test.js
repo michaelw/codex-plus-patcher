@@ -10,9 +10,11 @@ const {
   formatAsarCatResult,
   formatAsarListResult,
   formatError,
+  formatMenuDiagnosticsResult,
   formatResult,
   helpText,
   listAsarFiles,
+  menuDiagnostics,
   parseArgs,
   readAsarFile,
   shouldShowApplyProgress,
@@ -26,6 +28,7 @@ test("help documents codex-plus-patcher as the only command", () => {
   const output = helpText();
 
   assert.match(output, /codex-plus-patcher apply/);
+  assert.match(output, /codex-plus-patcher menu-diagnostics/);
   assert.match(output, /codex-plus-patcher asar-list/);
   assert.match(output, /codex-plus-patcher asar-cat/);
   assert.doesNotMatch(output, /codex-plus apply/);
@@ -68,6 +71,11 @@ test("asar commands parse readback flags", () => {
   assert.equal(catArgs.command, "asar-cat");
   assert.equal(catArgs.asar, path.join(os.homedir(), "tmp", "app.asar"));
   assert.equal(catArgs.file, "webview/assets/codex-plus/runtime.js");
+
+  const diagnosticsArgs = parseArgs(["menu-diagnostics", "--asar", "~/tmp/app.asar", "--json"]);
+  assert.equal(diagnosticsArgs.command, "menu-diagnostics");
+  assert.equal(diagnosticsArgs.asar, path.join(os.homedir(), "tmp", "app.asar"));
+  assert.equal(diagnosticsArgs.json, true);
 });
 
 test("formatResult prints a concise open command for created apps", () => {
@@ -118,8 +126,11 @@ function writeFixtureAsar() {
     asarPath,
     makeAsar({
       "webview/assets/codex-plus/runtime.js": "window.CodexPlus={};",
+      "webview/assets/codex-plus/plugins/devTools.js": 'id: "devTools"; codexPlusOpenDevTools; devtools/open;',
       "webview/assets/codex-plus/plugins/nestedRepositories.js": "function ReviewMux(){}",
       ".vite/build/thread-side-panel-tabs.js": "CPXReviewMux",
+      ".vite/build/src-menu.js": "{id:`codexPlusOpenDevTools`,title:`Open Developer Tools`,commandMenuGroupKey:`panels`},{id:`toggleBottomPanel`,electron:{menuTitle:`Toggle Bottom Panel`}}",
+      ".vite/build/main.js": "CPXOpenDevTools; devtools/open; openDevTools; Menu.setApplicationMenu; refreshApplicationMenu; CPXLogMenuDiagnostics;",
     }),
   );
   return asarPath;
@@ -144,15 +155,44 @@ test("asar-list lists files and filters by substring", () => {
 
   assert.deepEqual(listAsarFiles({ asar }).files, [
     "webview/assets/codex-plus/runtime.js",
+    "webview/assets/codex-plus/plugins/devTools.js",
     "webview/assets/codex-plus/plugins/nestedRepositories.js",
     ".vite/build/thread-side-panel-tabs.js",
+    ".vite/build/src-menu.js",
+    ".vite/build/main.js",
   ]);
   assert.deepEqual(listAsarFiles({ asar, contains: "codex-plus/plugins" }), {
     asar,
-    files: ["webview/assets/codex-plus/plugins/nestedRepositories.js"],
+    files: [
+      "webview/assets/codex-plus/plugins/devTools.js",
+      "webview/assets/codex-plus/plugins/nestedRepositories.js",
+    ],
   });
   assert.equal(formatAsarListResult({ files: ["a", "b"] }), "a\nb\n");
   assert.equal(formatAsarListResult({ files: [] }), "");
+});
+
+test("menu-diagnostics reports command metadata, native bridge, runtime plugin, and menu hooks", () => {
+  const asar = writeFixtureAsar();
+  const result = menuDiagnostics({ asar });
+
+  assert.deepEqual(result.summary.commandMetadataFilesWithCommand, [
+    "webview/assets/codex-plus/plugins/devTools.js",
+    ".vite/build/src-menu.js",
+  ]);
+  assert.deepEqual(result.summary.nativeBridgeFilesWithRequest, [
+    "webview/assets/codex-plus/plugins/devTools.js",
+    ".vite/build/main.js",
+  ]);
+  assert.deepEqual(result.summary.runtimePluginFilesWithCommand, ["webview/assets/codex-plus/plugins/devTools.js"]);
+  assert.deepEqual(result.summary.applicationMenuFilesWithDiagnostics, [".vite/build/main.js"]);
+
+  const output = formatMenuDiagnosticsResult(result);
+  assert.match(output, /Command metadata bundles:/);
+  assert.match(output, /\.vite\/build\/src-menu\.js: command=yes/);
+  assert.match(output, /Native bridge bundles:/);
+  assert.match(output, /\.vite\/build\/main\.js: request=yes, openDevTools=yes/);
+  assert.throws(() => menuDiagnostics({}), /--asar is required/);
 });
 
 test("asar-cat extracts packed file content", () => {

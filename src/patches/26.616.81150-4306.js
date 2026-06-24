@@ -7,6 +7,7 @@ module.exports = buildCodexPlusPatchSet({
   "asarSha256": "7f45c6a6bad9c6fabe2226e8f7e0aae3792eca8c59f24305b5f2996ee4b37e40",
   "files": {
     "main": ".vite/build/main-dSxbxAhH.js",
+    "electronCommandSource": ".vite/build/src-DBVh5FZA.js",
     "appMain": "webview/assets/app-main-Dldh3K_n.js",
     "appShell": "webview/assets/app-shell-0b-x_r3Z.js",
     "errorBoundary": "webview/assets/error-boundary-BOla93vo.js",
