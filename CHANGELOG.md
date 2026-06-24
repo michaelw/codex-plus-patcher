@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.3.0...v0.4.0) (2026-06-24)
+
+
+### Features
+
+* support Codex 26.616.81150 ([#30](https://github.com/michaelw/codex-plus-patcher/issues/30)) ([5ced644](https://github.com/michaelw/codex-plus-patcher/commit/5ced644248e3faffb721e3f2780d9419e1ebdb18))
+
+
+### Bug Fixes
+
+* **ui:** highlight selected project threads ([#20](https://github.com/michaelw/codex-plus-patcher/issues/20)) ([1c5becd](https://github.com/michaelw/codex-plus-patcher/commit/1c5becd20ee6579464d4990adcfed28150d230fd))
+
 ## [0.3.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.2.1...v0.3.0) (2026-06-23)
 
 
