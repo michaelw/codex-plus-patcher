@@ -7,6 +7,7 @@ function buildCodexPlusPatchSet(config) {
   const newTitle = '<title>Codex Plus</title><script src="./assets/codex-plus/runtime.js"></script>';
   const titleFile = "webview/index.html";
   const workerFile = ".vite/build/worker.js";
+  const preloadFile = ".vite/build/preload.js";
   const files = config.files;
   const anchors = config.anchors;
   const mainFile = files.main;
@@ -19,6 +20,7 @@ function buildCodexPlusPatchSet(config) {
   const userMessageAttachmentsFile = files.userMessageAttachments;
   const composerFile = files.composer;
   const localTaskRowFile = files.localTaskRow;
+  const mermaidDiagramShellFile = files.mermaidDiagramShell;
   const electronMenuShortcutsFile = files.electronMenuShortcuts;
   const keyboardShortcutsSearchInputFile = files.keyboardShortcutsSearchInput;
   const srcFile = files.src;
@@ -127,6 +129,12 @@ const codexPlusSubrepoDiffHelpers = `
 
 const codexPlusDiagnosticHelpers = `
 function CPXDiagnosticDetails(e){return window.CodexPlus?.ui?.errors?.renderDetails?.(e)??null}`;
+
+const codexPlusMermaidHelpers = `
+function CPXMermaidDiagramProps(e){return window.CodexPlus?.ui?.mermaid?.diagramProps?.(e)}`;
+
+const codexPlusNativeMainHelpers = `
+function CPXOpenMermaidViewer(e){let t=e?.html;if(typeof t!==\`string\`||t.length===0)return{ok:!1};let n=(0,s.join)((0,o.tmpdir)(),\`codex-plus-mermaid-\${(0,u.randomUUID)()}.html\`);(0,l.writeFileSync)(n,t,\`utf8\`);let r=new a.BrowserWindow({height:900,resizable:!0,show:!0,title:\`Mermaid diagram viewer\`,webPreferences:{contextIsolation:!0,nodeIntegration:!1,sandbox:!0},width:1400});return r.webContents.setWindowOpenHandler(e=>{try{let t=new URL(e.url);if(t.protocol===\`https:\`&&t.hostname===\`mermaid.live\`)a.shell.openExternal(e.url)}catch{}return{action:\`deny\`}}),r.on(\`closed\`,()=>{try{(0,l.unlinkSync)(n)}catch{}}),r.loadURL((0,S.pathToFileURL)(n).toString()).catch(()=>{}),{ok:!0}}function CPXRegisterNativeRequest(e){return a.ipcMain.handle(\`codex_plus:native-request\`,async(t,n)=>{if(!e.isTrustedIpcEvent(t))return{ok:!1};switch(n?.method){case\`mermaid/openViewer\`:return CPXOpenMermaidViewer(n.params);default:return{ok:!1}}})}`;
 
 function patchThreadSidePanelTabs(text) {
   let patched = replaceOnce(
@@ -536,6 +544,45 @@ function patchLocalTaskRow(text) {
   );
 }
 
+function patchMermaidDiagramShell(text) {
+  let patched = replaceOnce(
+    text,
+    "function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,",
+    `${codexPlusMermaidHelpers}function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,`,
+    "mermaid diagram shell helper insertion anchor",
+  );
+  return replaceOnce(
+    patched,
+    "O=(0,c.jsx)(`div`,{className:T,\"data-wide-markdown-block\":E,\"data-wide-markdown-block-kind\":p,children:D})",
+    "O=(0,c.jsx)(`div`,{className:T,...CPXMermaidDiagramProps({code:i}),\"data-wide-markdown-block\":E,\"data-wide-markdown-block-kind\":p,children:D})",
+    "mermaid diagram shell host props anchor",
+  );
+}
+
+function patchPreloadNativeBridge(text) {
+  return replaceOnce(
+    text,
+    "e.contextBridge.exposeInMainWorld(`codexWindowType`,m),e.contextBridge.exposeInMainWorld(`electronBridge`,D),typeof window<`u`",
+    "e.contextBridge.exposeInMainWorld(`codexWindowType`,m),e.contextBridge.exposeInMainWorld(`electronBridge`,D),e.contextBridge.exposeInMainWorld(`codexPlusNative`,{request:(t,n)=>e.ipcRenderer.invoke(`codex_plus:native-request`,{method:t,params:n})}),typeof window<`u`",
+    "codex plus native preload bridge anchor",
+  );
+}
+
+function patchMainNativeBridge(text) {
+  let patched = replaceOnce(
+    text,
+    "function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{",
+    `${codexPlusNativeMainHelpers}function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{`,
+    "codex plus native main helper insertion anchor",
+  );
+  return replaceOnce(
+    patched,
+    "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),a.ipcMain.on(kl,",
+    "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),CPXRegisterNativeRequest({isTrustedIpcEvent:te}),a.ipcMain.on(kl,",
+    "codex plus native main registration anchor",
+  );
+}
+
 return makePatchSet({
     id: config.id,
     codexVersion: config.codexVersion,
@@ -597,6 +644,17 @@ return makePatchSet({
         [keyboardShortcutsSearchInputFile, patchKeyboardShortcutsSearchInput],
       ],
     },
+    ...(mermaidDiagramShellFile ? [{
+      id: "codex-plus-native-bridge",
+      fileTransforms: [
+        [preloadFile, patchPreloadNativeBridge],
+        [mainFile, patchMainNativeBridge],
+      ],
+    }] : []),
+    ...(mermaidDiagramShellFile ? [{
+      id: "mermaid-fullscreen-viewer",
+      fileTransforms: [[mermaidDiagramShellFile, patchMermaidDiagramShell]],
+    }] : []),
     ],
   });
 }

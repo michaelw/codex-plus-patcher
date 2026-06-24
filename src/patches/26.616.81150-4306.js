@@ -16,6 +16,7 @@ module.exports = buildCodexPlusPatchSet({
     "userMessageAttachments": "webview/assets/user-message-attachments-5G1ZKim-.js",
     "composer": "webview/assets/composer-DlMDPaCL.js",
     "localTaskRow": "webview/assets/local-task-row-CoPNn6SW.js",
+    "mermaidDiagramShell": "webview/assets/mermaid-diagram-shell-BO-t9BGx.js",
     "keyboardShortcutsSearchInput": "webview/assets/keyboard-shortcuts-search-input-C1dmntOi.js",
     "src": "src-l0hbMZ-p.js",
     "sidebarThreadKeys": "sidebar-thread-keys-Ch_amVKz.js",

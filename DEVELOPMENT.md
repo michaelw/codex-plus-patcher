@@ -134,6 +134,9 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 - GitHub validates PR titles with `amannn/action-semantic-pull-request`.
   Do not enable automerge while the title has a non-semantic prefix such as
   `[codex]`; release-please reads the final squash commit title on `main`.
+- When a PR should close a tracked issue, include a GitHub closing keyword such
+  as `Closes #123` in the PR body so the issue closes automatically when the PR
+  merges.
 - Prefer the guarded automerge helper so the squash subject is the current PR
   title and the merge is pinned to the inspected head commit:
 

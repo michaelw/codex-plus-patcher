@@ -30,6 +30,7 @@ patches plus readable runtime plugins:
 - add user-message bubble color controls in Appearance settings
 - add adaptive project colors for sidebar projects, grouped threads, pinned threads, user-message accents, and the composer
 - add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
+- add a fullscreen Mermaid diagram viewer with zoom controls
 
 The generated app includes a readable Codex Plus runtime under
 `webview/assets/codex-plus/`. Versioned ASAR patches install the runtime,
