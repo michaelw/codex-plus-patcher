@@ -12,6 +12,7 @@ const runtimeFiles = [
   ["webview/assets/codex-plus/plugins/userBubbleColors.js", "plugins/userBubbleColors.js"],
   ["webview/assets/codex-plus/plugins/projectColors.js", "plugins/projectColors.js"],
   ["webview/assets/codex-plus/plugins/sidebarNameBlur.js", "plugins/sidebarNameBlur.js"],
+  ["webview/assets/codex-plus/plugins/mermaidFullscreen.js", "plugins/mermaidFullscreen.js"],
 ];
 
 function codexPlusRuntimeAssets() {

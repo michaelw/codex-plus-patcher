@@ -330,10 +330,15 @@
       composer: { surfaceDecorators: [], decorateSurface(fn) { this.surfaceDecorators.push(fn); return fn; }, surfaceProps(props) { return applyDecorators(props, this.surfaceDecorators); } },
       about: { buildInfo: [], addBuildInfo(fn) { this.buildInfo.push(fn); return fn; } },
       errors: { boundaryDecorators: [], decorateBoundary(fn) { this.boundaryDecorators.push(fn); return fn; }, renderDetails: renderErrorDetails },
+      mermaid: {
+        diagramDecorators: [],
+        decorateDiagram(fn) { this.diagramDecorators.push(fn); return fn; },
+        diagramProps(props) { return applyDecorators(props, this.diagramDecorators); },
+      },
     },
     commands: { register: registerCommand, run: runCommand, all: () => Array.from(commands.values()), menuItems: (group) => Array.from(commands.values()).filter((command) => commandGroups(command).includes(group)) },
     settings: { define: defineSettings },
-    native: { async request(method, params) { return globalObject.CodexPlusHost?.nativeRequest?.(method, params); } },
+    native: { async request(method, params) { return globalObject.codexPlusNative?.request?.(method, params) ?? globalObject.CodexPlusHost?.nativeRequest?.(method, params); } },
     styles: { register: registerStyle, setRootVars },
   };
 
@@ -348,6 +353,7 @@
     "plugins/userBubbleColors.js",
     "plugins/projectColors.js",
     "plugins/sidebarNameBlur.js",
+    "plugins/mermaidFullscreen.js",
   ];
 
   if (typeof document !== "undefined") {

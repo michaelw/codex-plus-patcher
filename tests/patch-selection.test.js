@@ -101,6 +101,7 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/userBubbleColors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectColors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/sidebarNameBlur.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/mermaidFullscreen.js"));
   }
 });
 
@@ -349,6 +350,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
         instance.ui.composer.decorateSurface(() => ({ "data-sample-composer": "" }));
         instance.ui.review.wrapBody((props) => `wrapped:${props.mainReviewContent}`);
         instance.ui.errors.decorateBoundary(({ jsx, error }) => jsx("pre", { children: error.message }, "error"));
+        instance.ui.mermaid.decorateDiagram(() => ({ "data-sample-mermaid": "" }));
       },
     }),
   );
@@ -383,6 +385,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.deepEqual(plain(api.ui.sidebar.threadRowProps({ project: "x" })), { "data-sample-thread": "" });
   assert.deepEqual(plain(api.ui.message.userBubbleProps({ project: "x" })), { "data-sample-message": "" });
   assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), { "data-sample-composer": "" });
+  assert.deepEqual(plain(api.ui.mermaid.diagramProps({ code: "graph TD;A-->B" })), { "data-sample-mermaid": "" });
   assert.equal(api.ui.review.renderBody({ defaultBody: "body", props: {}, deps: {} }), "wrapped:body");
   assert.equal(api.ui.errors.renderDetails({ jsx, error: new Error("boom") }).props.children, "boom");
   assert.deepEqual(api.modules.findByProps("marker"), { marker: true });
@@ -477,6 +480,7 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(readme, /user-message bubble color controls/);
   assert.match(readme, /adaptive project colors/);
   assert.match(readme, /Toggle sidebar blur/);
+  assert.match(readme, /fullscreen Mermaid diagram viewer/);
   assert.match(readme, /Runtime Plugin Support\]\(docs\/plugin-support\.md\)/);
   assert.match(readme, /Versioned ASAR patches install the runtime,\s+built-in plugins/);
   assert.match(development, /If a patch or runtime plugin is added, removed, or renamed/);
@@ -494,6 +498,143 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(pluginSupport, /sidebarNameBlur/);
   assert.match(pluginSupport, /third-party plugin marketplace/);
   assert.equal(packageJson.scripts.check, "node scripts/check-syntax.js");
+});
+
+test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", () => {
+  const fakeBundle = [
+    "function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,",
+    "D=(0,c.jsx)(`div`,{className:a(`transition-opacity duration-[180ms] ease-[cubic-bezier(0.23,1,0.32,1)]`,S?`opacity-100 delay-300 motion-reduce:delay-0`:`pointer-events-none opacity-0 delay-0`),children:(0,c.jsx)(u.Suspense",
+    "return t[13]!==T||t[14]!==E||t[15]!==D||t[16]!==p?(O=(0,c.jsx)(`div`,{className:T,\"data-wide-markdown-block\":E,\"data-wide-markdown-block-kind\":p,children:D}),t[13]=T,t[14]=E,t[15]=D,t[16]=p,t[17]=O):O=t[17],O}",
+  ].join("");
+
+  for (const patchSet of patchSets.filter((patchSet) => patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265")) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath.includes("mermaid-diagram-shell"),
+    )?.[1];
+    assert.equal(typeof transform, "function", `${patchSet.id} has mermaid shell transform`);
+
+    const transformed = transform(fakeBundle);
+    assert.match(transformed, /function CPXMermaidDiagramProps\(e\)\{return window\.CodexPlus\?\.ui\?\.mermaid\?\.diagramProps\?\.\(e\)\}/);
+    assert.match(transformed, /\.\.\.CPXMermaidDiagramProps\(\{code:i\}\),"data-wide-markdown-block":E/);
+    assert.doesNotMatch(transformed, /"data-codex-plus-mermaid-content":""/);
+    assert.doesNotMatch(transformed, /codex-plus-mermaid-modal/);
+
+    const transforms = collectFileTransforms(patchSet);
+    const preloadTransform = transforms.find(([filePath]) => filePath === ".vite/build/preload.js")?.[1];
+    assert.equal(typeof preloadTransform, "function", `${patchSet.id} has preload transform`);
+    const preload = preloadTransform(
+      "e.contextBridge.exposeInMainWorld(`codexWindowType`,m),e.contextBridge.exposeInMainWorld(`electronBridge`,D),typeof window<`u`",
+    );
+    assert.match(preload, /exposeInMainWorld\(`codexPlusNative`,\{request:\(t,n\)=>e\.ipcRenderer\.invoke\(`codex_plus:native-request`,\{method:t,params:n\}\)\}\)/);
+
+    const fakeMain = [
+      "function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{",
+      "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),a.ipcMain.on(kl,",
+    ].join("");
+    const main = transforms
+      .filter(([filePath]) => filePath.startsWith(".vite/build/main-"))
+      .map(([, transform]) => {
+        try {
+          return transform(fakeMain);
+        } catch {
+          return fakeMain;
+        }
+      })
+      .find((text) => text.includes("CPXOpenMermaidViewer"));
+    assert.equal(typeof main, "string", `${patchSet.id} has native bridge main transform`);
+    assert.match(main, /function CPXOpenMermaidViewer\(e\)/);
+    assert.match(main, /new a\.BrowserWindow\(\{height:900,resizable:!0,show:!0,title:`Mermaid diagram viewer`/);
+    assert.match(main, /codex-plus-mermaid-\$\{\(0,u\.randomUUID\)\(\)\}\.html/);
+    assert.match(main, /r\.loadURL\(\(0,S\.pathToFileURL\)\(n\)\.toString\(\)\)/);
+    assert.match(main, /codex_plus:native-request/);
+    assert.match(main, /CPXRegisterNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
+  }
+
+  for (const patchSet of patchSets.filter((patchSet) => patchSet.id === "codex-26.616.51431-4212" || patchSet.id === "codex-26.616.41845-4198")) {
+    assert.equal(
+      collectFileTransforms(patchSet).some(([filePath]) => filePath.includes("mermaid-diagram-shell")),
+      false,
+      `${patchSet.id} does not guess an unverified mermaid shell chunk`,
+    );
+  }
+
+  const pluginSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/mermaidFullscreen.js"), "utf8");
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.match(pluginSource, /function openViewer/);
+  assert.match(pluginSource, /CodexPlus\.native\.request\("mermaid\/openViewer", \{ html \}\)/);
+  assert.match(pluginSource, /window\.open\(liveUrl, "_blank", "noopener"\)/);
+  assert.match(commonPatches, /a\.shell\.openExternal\(e\.url\)/);
+  assert.match(commonPatches, /t\.hostname===\\`mermaid\.live\\`/);
+  assert.doesNotMatch(pluginSource, /container\.querySelector\("svg"\)/);
+  assert.doesNotMatch(pluginSource, /data-codex-plus-mermaid-content/);
+  assert.doesNotMatch(pluginSource, /function isMermaidSvg/);
+  assert.doesNotMatch(pluginSource, /function isDiagramSvg/);
+  assert.doesNotMatch(pluginSource, /function waitForRenderedNode/);
+  assert.doesNotMatch(pluginSource, /function svgTelemetry/);
+  assert.doesNotMatch(pluginSource, /selectedStrategy/);
+  assert.doesNotMatch(pluginSource, /Mermaid viewer SVG selection/);
+  assert.match(pluginSource, /function assetUrl\(assetPath\)/);
+  assert.match(pluginSource, /new URL\(assetPath, new URL\("\.", appScript\.src\)\)\.href/);
+  assert.match(pluginSource, /new URL\(`assets\/\$\{assetPath\}`,\s*document\.baseURI\)\.href/);
+  assert.doesNotMatch(pluginSource, /assetPath\.replace/);
+  assert.doesNotMatch(pluginSource, /const originalRoot = renderedDiagramRoot\(original\)/);
+  assert.doesNotMatch(pluginSource, /inlineComputedStyles/);
+  assert.match(pluginSource, /id="render-status"/);
+  assert.match(pluginSource, /Rendered from Mermaid source/);
+  assert.match(pluginSource, /localStorage\.getItem\("codexPlusMermaidDebug"\) === "1"/);
+  assert.doesNotMatch(pluginSource, /Fallback: cloned Codex SVG/);
+  assert.doesNotMatch(pluginSource, /sourceLength: source\.length/);
+  assert.doesNotMatch(pluginSource, /themedSourcePreview/);
+  assert.doesNotMatch(pluginSource, /renderDetailsBody/);
+  assert.match(pluginSource, /mermaid\.initialize\(\{/);
+  assert.match(pluginSource, /function sourceForTheme\(\)/);
+  assert.match(pluginSource, /function themeDirective\(\)/);
+  assert.match(pluginSource, /String\.fromCharCode\(10\)/);
+  assert.match(pluginSource, /directive\.startsWith\("%%\{init:"\)/);
+  assert.match(pluginSource, /\[9, 10, 13, 32\]\.includes\(rest\.charCodeAt\(0\)\)/);
+  assert.doesNotMatch(pluginSource, /source\.replace\(\/\^\\s\*%%/);
+  assert.doesNotMatch(pluginSource, /const themedSource = sourceForTheme\(\)/);
+  assert.match(pluginSource, /await mermaid\.render\("codex-plus-mermaid-viewer-" \+ String\(renderCount \+= 1\), sourceForTheme\(\)\)/);
+  assert.match(pluginSource, /function renderFromSource\(\)/);
+  assert.match(pluginSource, /let renderInFlight = false/);
+  assert.match(pluginSource, /let renderQueued = false/);
+  assert.match(pluginSource, /if \(renderInFlight\) \{/);
+  assert.match(pluginSource, /themeToggle\.disabled = true/);
+  assert.match(pluginSource, /themeToggle\.disabled = false/);
+  assert.match(pluginSource, /if \(renderQueued\) \{/);
+  assert.match(pluginSource, /function applyThemeChrome\(\)/);
+  assert.match(pluginSource, /document\.documentElement\.dataset\.theme = darkTheme \? "dark" : "light"/);
+  assert.match(pluginSource, /theme: darkTheme \? "dark" : "default"/);
+  assert.doesNotMatch(pluginSource, /themeVariables/);
+  assert.doesNotMatch(pluginSource, /falling back to cloned SVG/);
+  assert.match(pluginSource, /id="theme-toggle"/);
+  assert.match(pluginSource, /themeToggle\.addEventListener\("click", \(\) => \{ darkTheme = !darkTheme; applyThemeChrome\(\); renderQueued = true; renderFromSource\(\); \}\)/);
+  assert.match(pluginSource, /id="open-live"/);
+  assert.match(pluginSource, /https:\/\/mermaid\.live\/edit#base64:/);
+  assert.match(pluginSource, /assetUrl\("mermaid\.core-eIokQLcr\.js"\)/);
+  assert.doesNotMatch(pluginSource, /assetUrl\("assets\/mermaid\.core-eIokQLcr\.js"\)/);
+  assert.doesNotMatch(pluginSource, /property\.startsWith\("--"\)/);
+  assert.doesNotMatch(pluginSource, /function collectMermaidCssRules/);
+  assert.doesNotMatch(pluginSource, /<svg aria-hidden/);
+  assert.doesNotMatch(pluginSource, /BUTTON_CLASS} svg/);
+  assert.doesNotMatch(pluginSource, /clone\.removeAttribute\("style"\)/);
+  assert.doesNotMatch(pluginSource, /bestArea/);
+  assert.match(pluginSource, /id="zoom-fit"/);
+  assert.match(pluginSource, /id="zoom-width"/);
+  assert.match(pluginSource, /id="zoom-height"/);
+  assert.match(pluginSource, /<button id="zoom-out"[\s\S]*<button id="zoom-reset"[\s\S]*<button id="zoom-in"/);
+  assert.match(pluginSource, /let fitMode = "fit"/);
+  assert.match(pluginSource, /applyFit\(fitMode \|\| "fit"\)/);
+  assert.match(pluginSource, /function fitScale\(mode\)/);
+  assert.match(pluginSource, /window\.addEventListener\("resize"/);
+  assert.doesNotMatch(pluginSource, /toneMapDarkNodes/);
+  assert.doesNotMatch(pluginSource, /normalizeConnectorContrast/);
+  assert.doesNotMatch(pluginSource, /color-mix\(in oklab/);
+  assert.match(pluginSource, /svg\.style\.width = Math\.round\(base\.width \* scale\) \+ "px"/);
+  assert.doesNotMatch(pluginSource, /codex-plus-mermaid-modal/);
+  assert.match(pluginSource, /Escape/);
+  assert.doesNotMatch(commonPatches, /codex-plus-mermaid-modal/);
+  assert.doesNotMatch(commonPatches, /window\.open/);
 });
 
 test("about dialog applied patch examples stay aligned with the active patch queue", () => {
