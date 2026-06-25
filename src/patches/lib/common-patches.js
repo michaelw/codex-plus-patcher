@@ -11,6 +11,7 @@ function buildCodexPlusPatchSet(config) {
   const files = config.files;
   const anchors = config.anchors;
   const mainFile = files.main;
+  const electronCommandSourceFile = files.electronCommandSource;
   const appMainFile = files.appMain;
   const appShellFile = files.appShell;
   const errorBoundaryFile = files.errorBoundary;
@@ -134,7 +135,7 @@ const codexPlusMermaidHelpers = `
 function CPXMermaidDiagramProps(e){return window.CodexPlus?.ui?.mermaid?.diagramProps?.(e)}`;
 
 const codexPlusNativeMainHelpers = `
-function CPXOpenMermaidViewer(e){let t=e?.html;if(typeof t!==\`string\`||t.length===0)return{ok:!1};let n=(0,s.join)((0,o.tmpdir)(),\`codex-plus-mermaid-\${(0,u.randomUUID)()}.html\`);(0,l.writeFileSync)(n,t,\`utf8\`);let r=new a.BrowserWindow({height:900,resizable:!0,show:!0,title:\`Mermaid diagram viewer\`,webPreferences:{contextIsolation:!0,nodeIntegration:!1,sandbox:!0},width:1400});return r.webContents.setWindowOpenHandler(e=>{try{let t=new URL(e.url);if(t.protocol===\`https:\`&&t.hostname===\`mermaid.live\`)a.shell.openExternal(e.url)}catch{}return{action:\`deny\`}}),r.on(\`closed\`,()=>{try{(0,l.unlinkSync)(n)}catch{}}),r.loadURL((0,S.pathToFileURL)(n).toString()).catch(()=>{}),{ok:!0}}function CPXRegisterNativeRequest(e){return a.ipcMain.handle(\`codex_plus:native-request\`,async(t,n)=>{if(!e.isTrustedIpcEvent(t))return{ok:!1};switch(n?.method){case\`mermaid/openViewer\`:return CPXOpenMermaidViewer(n.params);default:return{ok:!1}}})}`;
+let CPXNativeMenuItems=[],CPXRefreshApplicationMenu=null;function CPXMenuSnapshot(e){return e?.items?.map(e=>({id:e.id,label:e.label,enabled:e.enabled,visible:e.visible,accelerator:e.accelerator,submenu:CPXMenuSnapshot(e.submenu)}))}function CPXLogMenuDiagnostics(){try{let e=CPXMenuSnapshot(a.Menu.getApplicationMenu())??[],t=JSON.stringify(e),n=t.includes(\`codexPlusOpenDevTools\`)||t.includes(\`Open Developer Tools\`);if(process.env.CODEX_PLUS_MENU_DIAGNOSTICS===\`1\`||!n)console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({hasOpenDeveloperTools:n,menu:e})}\`)}catch(e){console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({error:String(e?.message??e)})}\`)}}function CPXOpenDevTools(e){try{let t=e?.sender;if(typeof t?.openDevTools!==\`function\`)return{ok:!1};return t.openDevTools(),{ok:!0}}catch{return{ok:!1}}}function CPXFocusedEvent(){let e=a.BrowserWindow.getFocusedWindow();return e&&!e.isDestroyed()?{sender:e.webContents}:null}function CPXRunNativeMenuRequest(e){switch(e?.method){case\`devtools/open\`:return CPXOpenDevTools(CPXFocusedEvent());default:return{ok:!1}}}function CPXNativeMenuTemplateItems(e){return CPXNativeMenuItems.filter(t=>t.menuId===e).map(e=>({id:e.id,label:e.label,click:()=>{CPXRunNativeMenuRequest(e.nativeRequest)}}))}function CPXRegisterNativeMenuItem(e){if(e?.id==null||e?.menuId==null||e?.label==null||e?.nativeRequest?.method==null)return{ok:!1};let t={id:String(e.id),menuId:String(e.menuId),label:String(e.label),nativeRequest:{method:String(e.nativeRequest.method),params:e.nativeRequest.params},afterId:e.afterId==null?null:String(e.afterId),afterLabel:e.afterLabel==null?null:String(e.afterLabel)};CPXNativeMenuItems=CPXNativeMenuItems.filter(e=>e.id!==t.id),CPXNativeMenuItems.push(t);try{CPXRefreshApplicationMenu?.()}catch{}return CPXLogMenuDiagnostics(),{ok:!0}}function CPXOpenMermaidViewer(e){let t=e?.html;if(typeof t!==\`string\`||t.length===0)return{ok:!1};let n=(0,s.join)((0,o.tmpdir)(),\`codex-plus-mermaid-\${(0,u.randomUUID)()}.html\`);(0,l.writeFileSync)(n,t,\`utf8\`);let r=new a.BrowserWindow({height:900,resizable:!0,show:!0,title:\`Mermaid diagram viewer\`,webPreferences:{contextIsolation:!0,nodeIntegration:!1,sandbox:!0},width:1400});return r.webContents.setWindowOpenHandler(e=>{try{let t=new URL(e.url);if(t.protocol===\`https:\`&&t.hostname===\`mermaid.live\`)a.shell.openExternal(e.url)}catch{}return{action:\`deny\`}}),r.on(\`closed\`,()=>{try{(0,l.unlinkSync)(n)}catch{}}),r.loadURL((0,S.pathToFileURL)(n).toString()).catch(()=>{}),{ok:!0}}function CPXRegisterNativeRequest(e){return a.ipcMain.handle(\`codex_plus:native-request\`,async(t,n)=>{if(!e.isTrustedIpcEvent(t))return{ok:!1};switch(n?.method){case\`native-menu/register-item\`:return CPXRegisterNativeMenuItem(n.params);case\`devtools/open\`:return CPXOpenDevTools(t);case\`mermaid/openViewer\`:return CPXOpenMermaidViewer(n.params);default:return{ok:!1}}})}`;
 
 function patchThreadSidePanelTabs(text) {
   let patched = replaceOnce(
@@ -583,6 +584,27 @@ function patchMainNativeBridge(text) {
   );
 }
 
+function patchMainMenuDiagnostics(text) {
+  let patched = replaceOnce(
+    text,
+    "He={...b(`toggleSidePanel`),click:async()=>{let e=await y();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},Ue=",
+    "He={...b(`toggleSidePanel`),click:async()=>{let e=await y();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},Ue=",
+    "codex plus menu template helper presence anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "He,We,{type:`separator`}",
+    "He,We,...CPXNativeMenuTemplateItems(`view-menu`),{type:`separator`}",
+    "codex plus view menu template items anchor",
+  );
+  return replaceOnce(
+    patched,
+    "me.refreshApplicationMenu(),w(`application menu refreshed`,A),",
+    "CPXRefreshApplicationMenu=()=>me.refreshApplicationMenu(),me.refreshApplicationMenu(),CPXLogMenuDiagnostics(),w(`application menu refreshed`,A),",
+    "codex plus menu diagnostics refresh anchor",
+  );
+}
+
 return makePatchSet({
     id: config.id,
     codexVersion: config.codexVersion,
@@ -644,11 +666,12 @@ return makePatchSet({
         [keyboardShortcutsSearchInputFile, patchKeyboardShortcutsSearchInput],
       ],
     },
-    ...(mermaidDiagramShellFile ? [{
+    ...(mainFile ? [{
       id: "codex-plus-native-bridge",
       fileTransforms: [
         [preloadFile, patchPreloadNativeBridge],
         [mainFile, patchMainNativeBridge],
+        ...(electronCommandSourceFile ? [[mainFile, patchMainMenuDiagnostics]] : []),
       ],
     }] : []),
     ...(mermaidDiagramShellFile ? [{

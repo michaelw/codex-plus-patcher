@@ -33,6 +33,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
 function versionedNames(patchSet) {
   if (patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265") {
     return {
+      electronCommandSourceFile: patchSet.id === "codex-26.616.81150-4306" ? ".vite/build/src-DBVh5FZA.js" : null,
       srcFile: "src-l0hbMZ-p.js",
       threadContextInputsFile: "thread-context-inputs-B6tQCr7t.js",
       sidebarThreadKeysFile: "sidebar-thread-keys-Ch_amVKz.js",
@@ -41,6 +42,7 @@ function versionedNames(patchSet) {
     };
   }
   return {
+    electronCommandSourceFile: null,
     srcFile: "src-C7fSIbpz.js",
     threadContextInputsFile: "thread-context-inputs-CF11za43.js",
     sidebarThreadKeysFile: "sidebar-thread-keys-xpkHnzZL.js",
@@ -101,7 +103,76 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/userBubbleColors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectColors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/sidebarNameBlur.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/devTools.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/mermaidFullscreen.js"));
+  }
+});
+
+test("native bridge patch exposes the DevTools request for patch sets with a main bundle", () => {
+  const fakeMain = [
+    "function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{",
+    "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),a.ipcMain.on(kl,",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transforms = collectFileTransforms(patchSet);
+    const mainTransforms = transforms.filter(([filePath]) => filePath.startsWith(".vite/build/main-"));
+    if (mainTransforms.length === 0) continue;
+
+    const preloadTransform = transforms.find(([filePath]) => filePath === ".vite/build/preload.js")?.[1];
+    assert.equal(typeof preloadTransform, "function", `${patchSet.id} has native preload transform`);
+
+    const preload = preloadTransform(
+      "e.contextBridge.exposeInMainWorld(`codexWindowType`,m),e.contextBridge.exposeInMainWorld(`electronBridge`,D),typeof window<`u`",
+    );
+    const main = mainTransforms
+      .map(([, transform]) => {
+        try {
+          return transform(fakeMain);
+        } catch {
+          return fakeMain;
+        }
+      })
+      .find((text) => text.includes("CPXOpenDevTools"));
+    assert.equal(typeof main, "string", `${patchSet.id} has native main transform`);
+
+    assert.match(preload, /exposeInMainWorld\(`codexPlusNative`,\{request:\(t,n\)=>e\.ipcRenderer\.invoke\(`codex_plus:native-request`,\{method:t,params:n\}\)\}\)/);
+    assert.match(main, /function CPXMenuSnapshot\(e\)/);
+    assert.match(main, /function CPXLogMenuDiagnostics\(\)/);
+    assert.match(main, /function CPXRegisterNativeMenuItem\(e\)/);
+    assert.match(main, /CPXRefreshApplicationMenu=null/);
+    assert.match(main, /function CPXNativeMenuTemplateItems\(e\)/);
+    assert.doesNotMatch(main, /function CPXApplyNativeMenuItems\(\)/);
+    assert.doesNotMatch(main, /setApplicationMenu\(null\)/);
+    assert.match(main, /case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\)/);
+    assert.match(main, /CODEX_PLUS_MENU_DIAGNOSTICS/);
+    assert.match(main, /function CPXOpenDevTools\(e\)/);
+    assert.match(main, /typeof t\?\.openDevTools!==`function`/);
+    assert.match(main, /t\.openDevTools\(\),\{ok:!0\}/);
+    assert.match(main, /if\(!e\.isTrustedIpcEvent\(t\)\)return\{ok:!1\};switch\(n\?\.method\)\{case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\);case`devtools\/open`:return CPXOpenDevTools\(t\)/);
+    assert.match(main, /CPXRegisterNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
+
+    if (versionedNames(patchSet).electronCommandSourceFile) {
+      const mainFilePath = mainTransforms[0][0];
+      const fakeMenuMain = [
+        "function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{",
+        "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),a.ipcMain.on(kl,",
+        "He={...b(`toggleSidePanel`),click:async()=>{let e=await y();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},Ue=",
+        "let mt=[He,We,{type:`separator`}];",
+        "me.refreshApplicationMenu(),w(`application menu refreshed`,A),",
+      ].join("");
+      const menuPatch = collectFileTransforms(patchSet)
+        .filter(([filePath]) => filePath === mainFilePath)
+        .reduce((current, [, transform]) => {
+          try {
+            return transform(current);
+          } catch {
+            return current;
+          }
+        }, fakeMenuMain);
+      assert.match(menuPatch, /He,We,\.\.\.CPXNativeMenuTemplateItems\(`view-menu`\),\{type:`separator`\}/);
+      assert.match(menuPatch, /CPXRefreshApplicationMenu=\(\)=>me\.refreshApplicationMenu\(\),me\.refreshApplicationMenu\(\),CPXLogMenuDiagnostics\(\),w\(`application menu refreshed`,A\),/);
+    }
   }
 });
 
@@ -270,10 +341,11 @@ test("patchAsar inserts new runtime files and integrity metadata", () => {
   assert.equal(files.get("webview/assets/codex-plus/runtime.js").integrity.algorithm, "SHA256");
 });
 
-test("runtime API registers plugins, settings, commands, styles, modules, and patches", () => {
+test("runtime API registers plugins, settings, commands, styles, modules, and patches", async () => {
   const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
   const styles = [];
   const storage = new Map();
+  const nativeRequests = [];
   const window = {
     location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
     localStorage: {
@@ -282,6 +354,12 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
       },
       setItem(key, value) {
         storage.set(key, value);
+      },
+    },
+    codexPlusNative: {
+      request(method, params) {
+        nativeRequests.push({ method, params });
+        return Promise.resolve({ ok: true });
       },
     },
   };
@@ -359,6 +437,21 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.equal(api.commands.run("sample.command"), "ok");
   assert.deepEqual(Array.from(api.commands.menuItems("suggested").map((command) => command.id)), ["sample.command"]);
   assert.deepEqual(Array.from(api.ui.commands.commandMetadata().map((command) => command.id)), ["sample.command"]);
+  await api.nativeMenus.registerItem({
+    id: "sample.menu",
+    menuId: "view-menu",
+    label: "Sample menu",
+    nativeRequest: { method: "sample/run" },
+  });
+  assert.deepEqual(nativeRequests, [{
+    method: "native-menu/register-item",
+    params: {
+      id: "sample.menu",
+      menuId: "view-menu",
+      label: "Sample menu",
+      nativeRequest: { method: "sample/run" },
+    },
+  }]);
   const menuItems = api.ui.commands.renderMenuItems({
     group: "suggested",
     deps: {
@@ -391,6 +484,53 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.deepEqual(api.modules.findByProps("marker"), { marker: true });
   assert.equal(api.patches.apply("hello world"), "hi world");
   assert.equal(styles.some((element) => element.id === "codex-plus-style-sample"), true);
+});
+
+test("dev tools plugin registers an Open Developer Tools panels command", async () => {
+  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
+  const plugin = fs.readFileSync("src/runtime/plugins/devTools.js", "utf8");
+  const nativeRequests = [];
+  const window = {
+    location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+    codexPlusNative: {
+      request(method, params) {
+        nativeRequests.push({ method, params });
+        return Promise.resolve({ ok: true });
+      },
+    },
+  };
+  const context = { window, globalThis: window, URL };
+
+  vm.runInNewContext(runtime, context);
+  vm.runInNewContext(plugin, context);
+
+  const api = window.CodexPlus;
+  const command = api.commands.all().find((candidate) => candidate.id === "codexPlusOpenDevTools");
+  assert.equal(command.title, "Open Developer Tools");
+  assert.deepEqual(Array.from(command.menu.groups), ["panels"]);
+  assert.deepEqual(Array.from(command.shortcut.defaultKeybindings), []);
+
+  const metadata = api.ui.commands.commandMetadata().find((candidate) => candidate.id === "codexPlusOpenDevTools");
+  assert.equal(metadata.commandMenuGroupKey, "panels");
+  assert.deepEqual(Array.from(metadata.defaultKeybindings), []);
+
+  await api.commands.run("codexPlusOpenDevTools");
+  assert.deepEqual(nativeRequests.map((request) => ({
+    method: request.method,
+    params: request.params == null ? request.params : JSON.parse(JSON.stringify(request.params)),
+  })), [
+    {
+      method: "native-menu/register-item",
+      params: {
+        id: "codexPlusOpenDevTools",
+        menuId: "view-menu",
+        afterLabel: "Find",
+        label: "Open Developer Tools",
+        nativeRequest: { method: "devtools/open" },
+      },
+    },
+    { method: "devtools/open", params: undefined },
+  ]);
 });
 
 function fakeAboutDialogBundle() {
@@ -542,10 +682,16 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
       })
       .find((text) => text.includes("CPXOpenMermaidViewer"));
     assert.equal(typeof main, "string", `${patchSet.id} has native bridge main transform`);
+    assert.match(main, /function CPXMenuSnapshot\(e\)/);
+    assert.match(main, /function CPXLogMenuDiagnostics\(\)/);
+    assert.match(main, /function CPXOpenDevTools\(e\)/);
+    assert.match(main, /typeof t\?\.openDevTools!==`function`/);
+    assert.match(main, /t\.openDevTools\(\),\{ok:!0\}/);
     assert.match(main, /function CPXOpenMermaidViewer\(e\)/);
     assert.match(main, /new a\.BrowserWindow\(\{height:900,resizable:!0,show:!0,title:`Mermaid diagram viewer`/);
     assert.match(main, /codex-plus-mermaid-\$\{\(0,u\.randomUUID\)\(\)\}\.html/);
     assert.match(main, /r\.loadURL\(\(0,S\.pathToFileURL\)\(n\)\.toString\(\)\)/);
+    assert.match(main, /if\(!e\.isTrustedIpcEvent\(t\)\)return\{ok:!1\};switch\(n\?\.method\)\{case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\);case`devtools\/open`:return CPXOpenDevTools\(t\)/);
     assert.match(main, /codex_plus:native-request/);
     assert.match(main, /CPXRegisterNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
   }
@@ -914,27 +1060,36 @@ test("local task row patch colors standalone rows from row project context", () 
   }
 });
 
-test("command palette metadata exposes the sidebar blur command without a shortcut", () => {
+test("command metadata insertion stays runtime driven and includes Open Developer Tools", () => {
   const fakeElectronMenuShortcutsBundle = [
     "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
   ].join("");
+  const devToolsPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/devTools.js"), "utf8");
+
+  assert.match(devToolsPlugin, /id: "codexPlusOpenDevTools"/);
+  assert.match(devToolsPlugin, /title: "Open Developer Tools"/);
+  assert.match(devToolsPlugin, /menu: \{ groups: \["panels"\] \}/);
+  assert.match(devToolsPlugin, /shortcut: \{ defaultKeybindings: \[\] \}/);
+  assert.match(devToolsPlugin, /CodexPlus\.native\.request\("devtools\/open"\)/);
 
   for (const patchSet of patchSets) {
-    const transform = collectFileTransforms(patchSet).find(
-      ([filePath]) => filePath === "webview/assets/electron-menu-shortcuts-j6UKqTX5.js",
-    )?.[1];
+    const expectedFiles = ["webview/assets/electron-menu-shortcuts-j6UKqTX5.js"];
+    const transforms = collectFileTransforms(patchSet).filter(([filePath]) => expectedFiles.includes(filePath));
 
-    assert.equal(typeof transform, "function", `${patchSet.id} has command metadata transform`);
+    assert.equal(transforms.length, expectedFiles.length, `${patchSet.id} patches known command metadata bundles`);
 
-    const transformed = transform(fakeElectronMenuShortcutsBundle);
-    const commandStart = transformed.indexOf("window.CodexPlus?.ui?.commands?.commandMetadata");
-    const commandEnd = transformed.indexOf("},{id:`toggleBottomPanel`");
-    const commandMetadata = transformed.slice(commandStart, commandEnd);
+    for (const [filePath, transform] of transforms) {
+      const transformed = transform(fakeElectronMenuShortcutsBundle);
+      const commandStart = transformed.indexOf("window.CodexPlus?.ui?.commands?.commandMetadata");
+      const commandEnd = transformed.indexOf("},{id:`toggleBottomPanel`");
+      const commandMetadata = transformed.slice(commandStart, commandEnd);
 
-    assert.notEqual(commandStart, -1);
-    assert.match(commandMetadata, /commandMetadata\?\.\(\)\?\?\[\]/);
-    assert.doesNotMatch(commandMetadata, /codexPlusToggleSidebarNameBlur/);
-    assert.doesNotMatch(commandMetadata, /localStorage/);
+      assert.notEqual(commandStart, -1, `${filePath} inserts runtime command metadata`);
+      assert.match(commandMetadata, /window\.CodexPlus\?\.ui\?\.commands\?\.commandMetadata\?\.\(\)\?\?\[\]/);
+      assert.doesNotMatch(commandMetadata, /id:`codexPlusOpenDevTools`/);
+      assert.doesNotMatch(commandMetadata, /codexPlusToggleSidebarNameBlur/);
+      assert.doesNotMatch(commandMetadata, /localStorage/);
+    }
   }
 });
 

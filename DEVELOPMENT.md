@@ -74,6 +74,26 @@ after workspace-local app applies, when confirming runtime/plugin assets were
 inserted, when checking patched chunks contain host hooks, and when verifying
 moved feature bodies are no longer inside versioned chunks.
 
+## Runtime Diagnostics
+
+Generated Codex Plus apps expose **View > Open Developer Tools**. Use DevTools
+to inspect runtime plugin loading, console errors, and `window.CodexPlus` when
+diagnosing app-only behavior that tests or ASAR readback cannot prove.
+
+For native menu issues, launch the workspace app with menu diagnostics enabled:
+
+```sh
+CODEX_PLUS_MENU_DIAGNOSTICS=1 \
+  "work/Codex Plus <version>.app/Contents/MacOS/Codex"
+```
+
+You can also inspect a generated ASAR for menu-related patch markers:
+
+```sh
+rtk codex-plus-patcher menu-diagnostics \
+  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar"
+```
+
 ## Runtime Plugin Shape
 
 Prefer new user-facing additions as readable runtime plugins backed by generic
