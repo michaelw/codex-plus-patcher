@@ -21,7 +21,9 @@
   ],
   "scripts": {
     "test": "node --test",
-    "check": "node scripts/check-syntax.js"
+    "check": "node scripts/check-syntax.js",
+    "check:pr": "node scripts/safe-automerge-pr.js --check",
+    "pr:automerge": "node scripts/safe-automerge-pr.js"
   },
   "engines": {
     "node": ">=20"
