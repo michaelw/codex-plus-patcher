@@ -32,6 +32,7 @@ patches plus readable runtime plugins:
 - show the active project path in the thread header with a copy action
 - add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
 - add an `Open Developer Tools` panels command for opening the current Codex window's DevTools
+- add the `Focus project selector` command and `CmdOrCtrl+.` shortcut for new-chat project selection
 - add a fullscreen Mermaid diagram viewer with zoom controls
 
 The generated app includes a readable Codex Plus runtime under

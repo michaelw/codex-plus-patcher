@@ -427,6 +427,8 @@
     "plugins/projectPathHeader.js",
     "plugins/sidebarNameBlur.js",
     "plugins/devTools.js",
+    "vendor/fzf.umd.js",
+    "plugins/projectSelectorShortcut.js",
     "plugins/mermaidFullscreen.js",
   ];
 
