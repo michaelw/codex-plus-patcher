@@ -102,6 +102,7 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/diagnosticErrors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/userBubbleColors.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectColors.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectPathHeader.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/sidebarNameBlur.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/devTools.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/mermaidFullscreen.js"));
@@ -396,6 +397,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   vm.runInNewContext(runtime, context);
 
   const api = window.CodexPlus;
+  assert.equal(window.CodexPlusDiagnostics, api.diagnostics);
   const jsx = (type, props, key) => ({ type, props, key });
   const plain = (value) => JSON.parse(JSON.stringify(value));
   const registeredMenus = [];
@@ -428,6 +430,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
         instance.ui.composer.decorateSurface(() => ({ "data-sample-composer": "" }));
         instance.ui.review.wrapBody((props) => `wrapped:${props.mainReviewContent}`);
         instance.ui.errors.decorateBoundary(({ jsx, error }) => jsx("pre", { children: error.message }, "error"));
+        instance.ui.threadHeader.addAccessory(({ context, jsx }) => jsx("span", { children: context.cwd }, "path"));
         instance.ui.mermaid.decorateDiagram(() => ({ "data-sample-mermaid": "" }));
       },
     }),
@@ -481,9 +484,46 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.deepEqual(plain(api.ui.mermaid.diagramProps({ code: "graph TD;A-->B" })), { "data-sample-mermaid": "" });
   assert.equal(api.ui.review.renderBody({ defaultBody: "body", props: {}, deps: {} }), "wrapped:body");
   assert.equal(api.ui.errors.renderDetails({ jsx, error: new Error("boom") }).props.children, "boom");
+  const headerAccessories = api.ui.threadHeader.renderAccessories({ context: { cwd: "/tmp/example" }, deps: { jsx } });
+  assert.equal(headerAccessories.length, 1);
+  assert.equal(headerAccessories[0].type(headerAccessories[0].props).type, "span");
+  assert.equal(headerAccessories[0].type(headerAccessories[0].props).props.children, "/tmp/example");
   assert.deepEqual(api.modules.findByProps("marker"), { marker: true });
   assert.equal(api.patches.apply("hello world"), "hi world");
   assert.equal(styles.some((element) => element.id === "codex-plus-style-sample"), true);
+  assert.ok(api.diagnostics.snapshot().some((entry) => entry.event === "threadHeader.addAccessory"));
+  assert.ok(api.diagnostics.snapshot().some((entry) => entry.event === "threadHeader.render" && entry.details.cwd === "/tmp/example"));
+});
+
+test("runtime loads built-in plugins before the app entrypoint while parsing", () => {
+  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
+  const writes = [];
+  const window = {
+    location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+    },
+  };
+  const context = {
+    window,
+    globalThis: window,
+    URL,
+    document: {
+      readyState: "loading",
+      currentScript: { src: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+      documentElement: { style: { setProperty() {}, removeProperty() {} } },
+      head: { appendChild() { throw new Error("plugins should load synchronously while parsing"); } },
+      createElement(tag) { return { tag }; },
+      getElementById() { return null; },
+      write(html) { writes.push(html); },
+    },
+  };
+
+  vm.runInNewContext(runtime, context);
+
+  assert.ok(writes.some((html) => html.includes("plugins/projectPathHeader.js")));
+  assert.ok(writes.every((html) => /^<script src="https:\/\/example\.invalid\/webview\/assets\/codex-plus\/plugins\/.+"><\/script>$/.test(html)));
 });
 
 test("dev tools plugin registers an Open Developer Tools panels command", async () => {
@@ -610,6 +650,148 @@ test("title patch loads the Codex Plus runtime bootstrap", () => {
   }
 });
 
+test("project path header plugin formats, hides, and copies paths", () => {
+  const originalNavigator = globalThis.navigator;
+  const originalCodexPlus = globalThis.CodexPlus;
+  const copied = [];
+  const diagnosticEvents = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { clipboard: { writeText: (value) => copied.push(value) } },
+  });
+
+  try {
+    const plugin = require("../src/runtime/plugins/projectPathHeader.js");
+    globalThis.CodexPlus = {
+      diagnostics: {
+        log(event, details) {
+          diagnosticEvents.push({ event, details });
+        },
+      },
+    };
+    const longPath = "/Users/example/src/similarly-named-project/worktrees/generated-thread";
+    const jsx = (type, props, key) => ({ type, props, key });
+    const jsxs = jsx;
+    const Tooltip = function Tooltip(props) { return props.children; };
+
+    assert.equal(plugin.pathFromContext({ cwd: "  /tmp/project  " }), "/tmp/project");
+    assert.equal(plugin.pathFromContext({ cwd: "   " }), "");
+    assert.equal(plugin.pathFromContext({}), "");
+
+    const shortened = plugin.formatPathLabel(longPath, 60);
+    assert.equal(shortened, "…/similarly-named-project/worktrees/generated-thread");
+    assert.equal(plugin.formatPathLabel(longPath, 30), "…/worktrees/generated-thread");
+
+    const rendered = plugin.ProjectPathAccessory({ context: { cwd: longPath }, jsx, jsxs, Tooltip });
+    assert.equal(rendered.type, Tooltip);
+    assert.equal(rendered.props.tooltipContent, longPath);
+    const chip = rendered.props.children;
+    assert.equal(chip.props.title, longPath);
+    assert.equal(chip.props.style.flexShrink, 999);
+    assert.equal(chip.props.style.maxWidth, "min(24rem, 28vw)");
+    assert.equal(chip.props.children[0].props.children, plugin.formatPathLabel(longPath));
+    assert.ok(!chip.props.children[0].props.className.includes("font-vscode-editor"));
+    assert.equal(chip.props.children[1].props.children.type, "svg");
+    chip.props.children[1].props.onClick({
+      preventDefault() {},
+      stopPropagation() {},
+    });
+    assert.deepEqual(copied, [longPath]);
+
+    assert.equal(plugin.ProjectPathAccessory({ context: { cwd: "" }, jsx, jsxs, Tooltip }), null);
+    assert.ok(diagnosticEvents.some((entry) => entry.event === "projectPathHeader.render.chip" && entry.details.path === longPath));
+    assert.ok(diagnosticEvents.some((entry) => entry.event === "projectPathHeader.render.skip" && entry.details.reason === "missing-cwd"));
+  } finally {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: originalNavigator,
+    });
+    globalThis.CodexPlus = originalCodexPlus;
+  }
+});
+
+test("header patch renders project path accessories from thread context", () => {
+  const fakeHeaderBundle = [
+    'import{Z as r,a as i,s as a}from"./app-scope-CWE-zIhQ.js";',
+    'import{t as ee}from"./tooltip-B-u9JAuV.js";',
+    'import{t as _e}from"./dock-DAmmeMut.js";',
+    "function lt(e){let t=(0,Z.c)(68),{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o}=e,s=O(),c=a??dt,l=s.pathname===`/`,u=ut;",
+    "let S;t[33]!==a||t[34]!==!1?(S=null,t[33]=a,t[34]=!1,t[35]=S):S=t[35];",
+    "let C;t[36]!==c||t[37]!==g||t[38]!==i?(C=(0,Q.jsx)(`div`,{className:`mr-3 line-clamp-1 flex min-w-0 flex-1 items-center gap-1 truncate`,style:{viewTransitionName:`header-title`},children:i?(0,Q.jsxs)(`div`,{className:`flex min-w-0 flex-1 items-center gap-1`,children:[(0,Q.jsx)(mt,{onClick:c}),(0,Q.jsx)(x,{color:`ghostActive`,type:`button`,onClick:u,className:`min-w-0 flex-1 truncate !px-0 !py-0 text-left text-sm text-token-foreground hover:!bg-transparent hover:opacity-80 electron:font-medium`,children:(0,Q.jsx)(`span`,{className:`truncate`,children:i})})]}):(0,Q.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,Q.jsx)(pt,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[36]=c,t[37]=g,t[38]=i,t[39]=C):C=t[39];",
+    "let w;t[40]===Symbol.for(`react.memo_cache_sentinel`)?(w=(0,Q.jsx)(ot,{}),t[40]=w):w=t[40];",
+    "let A;t[50]!==k||t[51]!==o?(A=(0,Q.jsxs)(`div`,{className:`flex flex-shrink-0 items-center gap-1`,children:[o,k]}),t[50]=k,t[51]=o,t[52]=A):A=t[52];",
+    "let M;t[53]!==A||t[54]!==b||t[55]!==S||t[56]!==C?(M=(0,Q.jsxs)(`div`,{className:b,children:[S,C,A]}),t[53]=A,t[54]=b,t[55]=S,t[56]=C,t[57]=M):M=t[57];",
+    "return M}",
+  ].join("");
+  const fakeThreadPageHeaderBundle = [
+    'import{t as e}from"./jsx-runtime-DXKlqYIQ.js";',
+    'import{Z as t}from"./app-scope-CWE-zIhQ.js";',
+    'import{a as n,n as r,r as i,t as a}from"./thread-env-icon-DQJ4XJ-k.js";',
+    "var o=t(),s=e();function c(e){let t=(0,o.c)(21),{start:c,startActions:l,env:u,secondary:d,trailing:f,hostConfig:p}=e,m;",
+    "t[0]===Symbol.for(`react.memo_cache_sentinel`)?(m=[],t[0]=m):m=t[0];let h=m,g=h.length>0,_=f!=null&&g,v;",
+    "t[1]===c?v=t[2]:(v=c?(0,s.jsx)(`div`,{className:`max-w-[320px] min-w-0 truncate`,children:c}):null,t[1]=c,t[2]=v);",
+    "let y;t[3]!==u||t[4]!==p?(y=u===`remote`?p==null?null:(0,s.jsx)(i,{hostId:p.id}):u===`worktree`?(0,s.jsx)(n,{}):u===`cloud`?(0,s.jsx)(a,{}):u?(0,s.jsx)(r,{}):null,t[3]=u,t[4]=p,t[5]=y):y=t[5];",
+    "let b;t[6]===d?b=t[7]:(b=d?(0,s.jsx)(`div`,{className:`flex min-w-0 truncate leading-[18px] font-normal text-token-description-foreground`,children:d}):null,t[6]=d,t[7]=b);",
+    "let x;t[8]!==l||t[9]!==v||t[10]!==y||t[11]!==b?(x=(0,s.jsxs)(`div`,{className:`text-md flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[v,y,b,l]}),t[8]=l,t[9]=v,t[10]=y,t[11]=b,t[12]=x):x=t[12];",
+    "return x}export{c as t};",
+  ].join("");
+  const fakeLocalConversationPageBundle = [
+    "function Tt(e){let t=(0,Y.c)(42),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:a,title:o,titleSuffix:s,cwd:c,canPin:l,hideProjectMetadata:d,hideForkActions:f}=e,p=l===void 0?!0:l,m=d===void 0?!1:d,h=A(),g;",
+    "t[0]===c?g=t[1]:(g=c?N(c):null,t[0]=c,t[1]=g);let _=gt(g,u(i(O,n)).id),v;",
+    "let F,I,L,R;t[37]===Symbol.for(`react.memo_cache_sentinel`)?(R=null,t[37]=R):R=t[37];let z;",
+    "return t[38]!==F||t[39]!==I||t[40]!==L?(z=(0,Z.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[F,I,L,R]})}),t[38]=F,t[39]=I,t[40]=L,t[41]=z):z=t[41],z}",
+  ].join("");
+
+  for (const patchSet of patchSets.filter((patchSet) => patchSet.patches.some((patch) => patch.id === "project-path-header"))) {
+    const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("header-DgzE38hF"))?.[1];
+    assert.equal(typeof transform, "function", `${patchSet.id} has header transform`);
+
+    const transformed = transform(fakeHeaderBundle);
+    assert.match(transformed, /from"\.\/thread-context-B0hBrRyZ\.js"/);
+    assert.match(transformed, /a as CPX_readAtom/);
+    assert.match(transformed, /t as CPX_Tooltip/);
+    assert.match(transformed, /function CPXThreadHeaderAccessories\(e\)/);
+    assert.match(transformed, /threadHeader\?\.renderAccessories/);
+    assert.match(transformed, /CPX_headerContext=\{cwd:CPX_readAtom\(CPX_headerCwd\),hostId:CPX_readAtom\(CPX_headerHostId\)\}/);
+    assert.match(transformed, /deps:\{jsx:Q\.jsx,jsxs:Q\.jsxs,Tooltip:CPX_Tooltip\}/);
+    assert.match(transformed, /children:\[\(0,Q\.jsx\)\(mt,\{onClick:c\}\),\(0,Q\.jsx\)\(x,\{color:`ghostActive`/);
+    assert.match(transformed, /\}\),CPX_headerAccessories\]\}\):\(0,Q\.jsx\)\(`span`/);
+    assert.match(transformed, /children:\[S,C,A\]/);
+    assert.match(transformed, /t\[68\]!==CPX_headerAccessories/);
+
+    const threadPageTransform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("thread-page-header-D_hZ50OA"))?.[1];
+    assert.equal(typeof threadPageTransform, "function", `${patchSet.id} has thread page header transform`);
+    const transformedThreadPageHeader = threadPageTransform(fakeThreadPageHeaderBundle);
+    assert.doesNotMatch(transformedThreadPageHeader, /thread-context-B0hBrRyZ/);
+    assert.doesNotMatch(transformedThreadPageHeader, /CPX_readAtom/);
+    assert.match(transformedThreadPageHeader, /function CPXThreadHeaderAccessories\(e\)/);
+    assert.match(transformedThreadPageHeader, /cwd:CPX_headerCwd/);
+    assert.match(transformedThreadPageHeader, /hostId:p\?\.id\?\?null/);
+    assert.match(transformedThreadPageHeader, /header:\{env:u,hostDisplayName:p\?\.display_name\?\?null/);
+    assert.match(transformedThreadPageHeader, /deps:\{jsx:s\.jsx,jsxs:s\.jsxs\}/);
+    assert.match(transformedThreadPageHeader, /children:\[v,y,b,CPX_headerAccessories,l\]/);
+    assert.match(transformedThreadPageHeader, /t\[21\]!==CPX_headerAccessories/);
+
+    const localConversationTransform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("local-conversation-page-dVDt8SxG"))?.[1];
+    assert.equal(typeof localConversationTransform, "function", `${patchSet.id} has local conversation header transform`);
+    const transformedLocalConversation = localConversationTransform(fakeLocalConversationPageBundle);
+    assert.match(transformedLocalConversation, /function CPXThreadHeaderAccessories\(e\)/);
+    assert.match(transformedLocalConversation, /CPX_headerContext=\{cwd:c,hostId:u\(i\(O,n\)\)\.id/);
+    assert.match(transformedLocalConversation, /surface:`local-conversation`/);
+    assert.match(transformedLocalConversation, /deps:\{jsx:Z\.jsx,jsxs:Z\.jsxs\}/);
+    assert.match(transformedLocalConversation, /children:\[F,I,L,CPX_headerAccessories,R\]/);
+    assert.match(transformedLocalConversation, /t\[42\]!==CPX_headerAccessories/);
+  }
+
+  for (const patchSet of patchSets.filter((patchSet) => !patchSet.patches.some((patch) => patch.id === "project-path-header"))) {
+    assert.equal(
+      collectFileTransforms(patchSet).some(([filePath]) => filePath.includes("header-")),
+      false,
+      `${patchSet.id} does not guess an unverified header chunk`,
+    );
+  }
+});
+
 test("documentation mentions current patches and contributor sync rule", () => {
   const readme = fs.readFileSync("README.md", "utf8");
   const development = fs.readFileSync("DEVELOPMENT.md", "utf8");
@@ -619,6 +801,7 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(readme, /diagnostic detail/);
   assert.match(readme, /user-message bubble color controls/);
   assert.match(readme, /adaptive project colors/);
+  assert.match(readme, /active project path/);
   assert.match(readme, /Toggle sidebar blur/);
   assert.match(readme, /fullscreen Mermaid diagram viewer/);
   assert.match(readme, /Runtime Plugin Support\]\(docs\/plugin-support\.md\)/);
@@ -636,6 +819,7 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(pluginSupport, /CodexPlus\.registerPlugin/);
   assert.match(pluginSupport, /aboutMetadata/);
   assert.match(pluginSupport, /sidebarNameBlur/);
+  assert.match(pluginSupport, /threadHeader/);
   assert.match(pluginSupport, /third-party plugin marketplace/);
   assert.equal(packageJson.scripts.check, "node scripts/check-syntax.js");
 });

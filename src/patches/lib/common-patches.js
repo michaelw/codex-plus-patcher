@@ -17,6 +17,11 @@ function buildCodexPlusPatchSet(config) {
   const errorBoundaryFile = files.errorBoundary;
   const generalSettingsFile = files.generalSettings;
   const sidebarProjectHoverCardSourceRowsFile = files.sidebarProjectHoverCardSourceRows;
+  const headerFile = files.header;
+  const threadPageHeaderFile = files.threadPageHeader;
+  const localConversationPageFile = files.localConversationPage;
+  const threadContextFile = files.threadContext;
+  const threadContextImportFile = threadContextFile?.split("/").pop();
   const threadSidePanelTabsFile = files.threadSidePanelTabs;
   const userMessageAttachmentsFile = files.userMessageAttachments;
   const composerFile = files.composer;
@@ -133,6 +138,9 @@ function CPXDiagnosticDetails(e){return window.CodexPlus?.ui?.errors?.renderDeta
 
 const codexPlusMermaidHelpers = `
 function CPXMermaidDiagramProps(e){return window.CodexPlus?.ui?.mermaid?.diagramProps?.(e)}`;
+
+const codexPlusThreadHeaderHelpers = `
+function CPXThreadHeaderAccessories(e){return window.CodexPlus?.ui?.threadHeader?.renderAccessories?.(e)??null}`;
 
 const codexPlusNativeMainHelpers = `
 let CPXNativeMenuItems=[],CPXRefreshApplicationMenu=null;function CPXMenuSnapshot(e){return e?.items?.map(e=>({id:e.id,label:e.label,enabled:e.enabled,visible:e.visible,accelerator:e.accelerator,submenu:CPXMenuSnapshot(e.submenu)}))}function CPXLogMenuDiagnostics(){try{let e=CPXMenuSnapshot(a.Menu.getApplicationMenu())??[],t=JSON.stringify(e),n=t.includes(\`codexPlusOpenDevTools\`)||t.includes(\`Open Developer Tools\`);if(process.env.CODEX_PLUS_MENU_DIAGNOSTICS===\`1\`||!n)console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({hasOpenDeveloperTools:n,menu:e})}\`)}catch(e){console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({error:String(e?.message??e)})}\`)}}function CPXOpenDevTools(e){try{let t=e?.sender;if(typeof t?.openDevTools!==\`function\`)return{ok:!1};return t.openDevTools(),{ok:!0}}catch{return{ok:!1}}}function CPXFocusedEvent(){let e=a.BrowserWindow.getFocusedWindow();return e&&!e.isDestroyed()?{sender:e.webContents}:null}function CPXRunNativeMenuRequest(e){switch(e?.method){case\`devtools/open\`:return CPXOpenDevTools(CPXFocusedEvent());default:return{ok:!1}}}function CPXNativeMenuTemplateItems(e){return CPXNativeMenuItems.filter(t=>t.menuId===e).map(e=>({id:e.id,label:e.label,click:()=>{CPXRunNativeMenuRequest(e.nativeRequest)}}))}function CPXRegisterNativeMenuItem(e){if(e?.id==null||e?.menuId==null||e?.label==null||e?.nativeRequest?.method==null)return{ok:!1};let t={id:String(e.id),menuId:String(e.menuId),label:String(e.label),nativeRequest:{method:String(e.nativeRequest.method),params:e.nativeRequest.params},afterId:e.afterId==null?null:String(e.afterId),afterLabel:e.afterLabel==null?null:String(e.afterLabel)};CPXNativeMenuItems=CPXNativeMenuItems.filter(e=>e.id!==t.id),CPXNativeMenuItems.push(t);try{CPXRefreshApplicationMenu?.()}catch{}return CPXLogMenuDiagnostics(),{ok:!0}}function CPXOpenMermaidViewer(e){let t=e?.html;if(typeof t!==\`string\`||t.length===0)return{ok:!1};let n=(0,s.join)((0,o.tmpdir)(),\`codex-plus-mermaid-\${(0,u.randomUUID)()}.html\`);(0,l.writeFileSync)(n,t,\`utf8\`);let r=new a.BrowserWindow({height:900,resizable:!0,show:!0,title:\`Mermaid diagram viewer\`,webPreferences:{contextIsolation:!0,nodeIntegration:!1,sandbox:!0},width:1400});return r.webContents.setWindowOpenHandler(e=>{try{let t=new URL(e.url);if(t.protocol===\`https:\`&&t.hostname===\`mermaid.live\`)a.shell.openExternal(e.url)}catch{}return{action:\`deny\`}}),r.on(\`closed\`,()=>{try{(0,l.unlinkSync)(n)}catch{}}),r.loadURL((0,S.pathToFileURL)(n).toString()).catch(()=>{}),{ok:!0}}function CPXRegisterNativeRequest(e){return a.ipcMain.handle(\`codex_plus:native-request\`,async(t,n)=>{if(!e.isTrustedIpcEvent(t))return{ok:!1};switch(n?.method){case\`native-menu/register-item\`:return CPXRegisterNativeMenuItem(n.params);case\`devtools/open\`:return CPXOpenDevTools(t);case\`mermaid/openViewer\`:return CPXOpenMermaidViewer(n.params);default:return{ok:!1}}})}`;
@@ -383,6 +391,91 @@ function patchSidebarProjectHoverCardSourceRows(text) {
     "function Rn(e){let t=(0,zt.c)(44),",
     "thread list memo cache size anchor",
   );
+}
+
+function patchHeader(text) {
+  let patched = replaceOnce(
+    text,
+    `import{Z as r,a as i,s as a}from"./app-scope-CWE-zIhQ.js";`,
+    `import{Z as r,a as i,a as CPX_readAtom,s as a}from"./app-scope-CWE-zIhQ.js";`,
+    "thread header atom reader alias import anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    `import{t as ee}from"./tooltip-B-u9JAuV.js";`,
+    `import{t as ee,t as CPX_Tooltip}from"./tooltip-B-u9JAuV.js";`,
+    "thread header tooltip alias import anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    `import{t as _e}from"./dock-DAmmeMut.js";`,
+    `import{t as _e}from"./dock-DAmmeMut.js";import{n as CPX_headerCwd,i as CPX_headerHostId}from"./${threadContextImportFile}";`,
+    "thread header context import anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "function lt(e){let t=(0,Z.c)(68),",
+    `${codexPlusThreadHeaderHelpers}function lt(e){let t=(0,Z.c)(72),`,
+    "thread header accessory helper insertion anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "let C;t[36]!==c||t[37]!==g||t[38]!==i?(C=(0,Q.jsx)(`div`,{className:`mr-3 line-clamp-1 flex min-w-0 flex-1 items-center gap-1 truncate`,style:{viewTransitionName:`header-title`},children:i?(0,Q.jsxs)(`div`,{className:`flex min-w-0 flex-1 items-center gap-1`,children:[(0,Q.jsx)(mt,{onClick:c}),(0,Q.jsx)(x,{color:`ghostActive`,type:`button`,onClick:u,className:`min-w-0 flex-1 truncate !px-0 !py-0 text-left text-sm text-token-foreground hover:!bg-transparent hover:opacity-80 electron:font-medium`,children:(0,Q.jsx)(`span`,{className:`truncate`,children:i})})]}):(0,Q.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,Q.jsx)(pt,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[36]=c,t[37]=g,t[38]=i,t[39]=C):C=t[39];",
+    "let CPX_headerContext={cwd:CPX_readAtom(CPX_headerCwd),hostId:CPX_readAtom(CPX_headerHostId)},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:Q.jsx,jsxs:Q.jsxs,Tooltip:CPX_Tooltip}});let C;t[36]!==c||t[37]!==g||t[38]!==i||t[68]!==CPX_headerAccessories?(C=(0,Q.jsx)(`div`,{className:`mr-3 line-clamp-1 flex min-w-0 flex-1 items-center gap-1 truncate`,style:{viewTransitionName:`header-title`},children:i?(0,Q.jsxs)(`div`,{className:`flex min-w-0 flex-1 items-center gap-1`,children:[(0,Q.jsx)(mt,{onClick:c}),(0,Q.jsx)(x,{color:`ghostActive`,type:`button`,onClick:u,className:`min-w-0 flex-1 truncate !px-0 !py-0 text-left text-sm text-token-foreground hover:!bg-transparent hover:opacity-80 electron:font-medium`,children:(0,Q.jsx)(`span`,{className:`truncate`,children:i})}),CPX_headerAccessories]}):(0,Q.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,Q.jsx)(pt,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[36]=c,t[37]=g,t[38]=i,t[68]=CPX_headerAccessories,t[39]=C):C=t[39];",
+    "thread header accessory render anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "t[53]!==A||t[54]!==b||t[55]!==S||t[56]!==C?(M=(0,Q.jsxs)(`div`,{className:b,children:[S,C,A]}),t[53]=A,t[54]=b,t[55]=S,t[56]=C,t[57]=M):M=t[57]",
+    "t[53]!==A||t[54]!==b||t[55]!==S||t[56]!==C?(M=(0,Q.jsxs)(`div`,{className:b,children:[S,C,A]}),t[53]=A,t[54]=b,t[55]=S,t[56]=C,t[57]=M):M=t[57]",
+    "thread header accessory mount anchor",
+  );
+  return patched;
+}
+
+function patchThreadPageHeader(text) {
+  let patched = text;
+  patched = replaceOnce(
+    patched,
+    "function c(e){let t=(0,o.c)(21),",
+    `${codexPlusThreadHeaderHelpers}function c(e){let t=(0,o.c)(24),`,
+    "thread page header helper insertion anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "let t=(0,o.c)(24),{start:c,startActions:l,env:u,secondary:d,trailing:f,hostConfig:p}=e,m;",
+    "let t=(0,o.c)(24),{start:c,startActions:l,env:u,secondary:d,trailing:f,hostConfig:p,cwd:CPX_headerCwd}=e,CPX_headerContext={cwd:CPX_headerCwd,hostId:p?.id??null,header:{env:u,hostDisplayName:p?.display_name??null,startText:typeof c==`string`?c:null,secondaryText:typeof d==`string`?d:null,hasTrailing:f!=null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:s.jsx,jsxs:s.jsxs}}),m;",
+    "thread page header accessory render anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "t[8]!==l||t[9]!==v||t[10]!==y||t[11]!==b?(x=(0,s.jsxs)(`div`,{className:`text-md flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[v,y,b,l]}),t[8]=l,t[9]=v,t[10]=y,t[11]=b,t[12]=x):x=t[12]",
+    "t[8]!==l||t[9]!==v||t[10]!==y||t[11]!==b||t[21]!==CPX_headerAccessories?(x=(0,s.jsxs)(`div`,{className:`text-md flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[v,y,b,CPX_headerAccessories,l]}),t[8]=l,t[9]=v,t[10]=y,t[11]=b,t[21]=CPX_headerAccessories,t[12]=x):x=t[12]",
+    "thread page header accessory mount anchor",
+  );
+  return patched;
+}
+
+function patchLocalConversationPageHeader(text) {
+  let patched = replaceOnce(
+    text,
+    "function Tt(e){let t=(0,Y.c)(42),",
+    `${codexPlusThreadHeaderHelpers}function Tt(e){let t=(0,Y.c)(45),`,
+    "local conversation header helper insertion anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "let t=(0,Y.c)(45),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:a,title:o,titleSuffix:s,cwd:c,canPin:l,hideProjectMetadata:d,hideForkActions:f}=e,p=l===void 0?!0:l,m=d===void 0?!1:d,h=A(),g;",
+    "let t=(0,Y.c)(45),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:a,title:o,titleSuffix:s,cwd:c,canPin:l,hideProjectMetadata:d,hideForkActions:f}=e,CPX_headerContext={cwd:c,hostId:u(i(O,n)).id,header:{surface:`local-conversation`,titleText:typeof o==`string`?o:null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:Z.jsx,jsxs:Z.jsxs}}),p=l===void 0?!0:l,m=d===void 0?!1:d,h=A(),g;",
+    "local conversation header accessory render anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "t[38]!==F||t[39]!==I||t[40]!==L?(z=(0,Z.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[F,I,L,R]})}),t[38]=F,t[39]=I,t[40]=L,t[41]=z):z=t[41]",
+    "t[38]!==F||t[39]!==I||t[40]!==L||t[42]!==CPX_headerAccessories?(z=(0,Z.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[F,I,L,CPX_headerAccessories,R]})}),t[38]=F,t[39]=I,t[40]=L,t[42]=CPX_headerAccessories,t[41]=z):z=t[41]",
+    "local conversation header accessory mount anchor",
+  );
+  return patched;
 }
 
 const codexPlusProjectColorHelpers = `
@@ -658,6 +751,14 @@ return makePatchSet({
         [composerFile, patchComposerProjectColors],
       ],
     },
+    ...(headerFile ? [{
+      id: "project-path-header",
+      fileTransforms: [
+        [headerFile, patchHeader],
+        ...(threadPageHeaderFile ? [[threadPageHeaderFile, patchThreadPageHeader]] : []),
+        ...(localConversationPageFile ? [[localConversationPageFile, patchLocalConversationPageHeader]] : []),
+      ],
+    }] : []),
     {
       id: "sidebar-name-blur",
       fileTransforms: [

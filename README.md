@@ -29,6 +29,7 @@ patches plus readable runtime plugins:
 - add diagnostic detail for selected app-shell errors
 - add user-message bubble color controls in Appearance settings
 - add adaptive project colors for sidebar projects, grouped threads, pinned threads, user-message accents, and the composer
+- show the active project path in the thread header with a copy action
 - add the `Toggle sidebar blur` command palette entry to blur sidebar chat and project names for the current session
 - add an `Open Developer Tools` panels command for opening the current Codex window's DevTools
 - add a fullscreen Mermaid diagram viewer with zoom controls
