@@ -42,6 +42,72 @@ function runRuntimeApiAndHosts(context) {
   }
 }
 
+function compactLength(text) {
+  return String(text).replace(/\s+/g, "").length;
+}
+
+function changedReplacementFragment(oldText, newText) {
+  let prefixLength = 0;
+  while (
+    prefixLength < oldText.length &&
+    prefixLength < newText.length &&
+    oldText[prefixLength] === newText[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < oldText.length - prefixLength &&
+    suffixLength < newText.length - prefixLength &&
+    oldText[oldText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  return newText.slice(prefixLength, newText.length - suffixLength);
+}
+
+function assertReplacementFragmentsWithinBudget(replacements, compactLimit) {
+  for (const { label, oldText, newText } of replacements) {
+    const fragment = changedReplacementFragment(oldText, newText);
+    const length = compactLength(fragment);
+    assert.ok(length <= compactLimit, `${label} adds ${length} compact characters`);
+  }
+}
+
+function projectSelectorShortcutReplacements() {
+  const replacePath = require.resolve("../src/patches/lib/replace");
+  const patchPath = require.resolve("../src/patches/lib/project-selector-shortcut-patch");
+  const originalReplaceCache = require.cache[replacePath];
+  const originalPatchCache = require.cache[patchPath];
+  const replacements = [];
+
+  require.cache[replacePath] = {
+    ...originalReplaceCache,
+    exports: {
+      replaceOnce(text, oldText, newText, label) {
+        replacements.push({ label, oldText, newText });
+        return text;
+      },
+    },
+  };
+  delete require.cache[patchPath];
+
+  try {
+    const patch = require(patchPath);
+    patch.patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut("");
+    patch.patchRunCommandProjectSelectorShortcut("");
+  } finally {
+    if (originalReplaceCache) require.cache[replacePath] = originalReplaceCache;
+    else delete require.cache[replacePath];
+    if (originalPatchCache) require.cache[patchPath] = originalPatchCache;
+    else delete require.cache[patchPath];
+  }
+
+  return replacements;
+}
+
 function versionedNames(patchSet) {
   if (patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265") {
     return {
@@ -179,9 +245,23 @@ test("hook builders stay within the compact glue budget", () => {
     const hooks = require(path.join(hookDir, fileName));
     for (const [name, hook] of Object.entries(hooks)) {
       const snippet = hook(...(argsByExport[name] || []));
-      const compactLength = String(snippet).replace(/\s+/g, "").length;
-      assert.ok(compactLength <= 180, `${fileName}:${name} is ${compactLength} compact characters`);
+      const length = compactLength(snippet);
+      assert.ok(length <= 180, `${fileName}:${name} is ${length} compact characters`);
     }
+  }
+});
+
+test("project selector shortcut replacements stay within the compact behavior budget", () => {
+  assertReplacementFragmentsWithinBudget(projectSelectorShortcutReplacements(), 180);
+});
+
+test("project selector shortcut replacements do not add cache dependency checks", () => {
+  for (const { label, oldText, newText } of projectSelectorShortcutReplacements()) {
+    assert.doesNotMatch(
+      changedReplacementFragment(oldText, newText),
+      /\bt\[\d+\]!==[A-Za-z_$][\w$]*/,
+      `${label} must not add React compiler cache dependencies`,
+    );
   }
 });
 
@@ -906,7 +986,9 @@ test("local active workspace root dropdown exposes only the final selector trigg
 
     assert.equal(typeof transform, "function", `${patchSet.id} has local active workspace root dropdown transform`);
 
+    const originalCacheDependencies = fakeDropdownBundle.match(/\bt\[\d+\]!==[A-Za-z_$][\w$]*/g) || [];
     const transformed = transform(fakeDropdownBundle);
+    const transformedCacheDependencies = transformed.match(/\bt\[\d+\]!==[A-Za-z_$][\w$]*/g) || [];
 
     assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
     assert.doesNotMatch(transformed, /CPXF=/);
@@ -924,6 +1006,9 @@ test("local active workspace root dropdown exposes only the final selector trigg
     assert.doesNotMatch(transformed, /t\[72\]!==g/);
     assert.match(transformed, /triggerButton:e,onStartFromScratch:U/);
     assert.doesNotMatch(transformed, /className:`contents`/);
+    assert.doesNotMatch(transformed, /codexPlusCloseProjectSelector/);
+    assert.doesNotMatch(transformed, /t\[72\]!==g/);
+    assert.deepEqual(transformedCacheDependencies, originalCacheDependencies);
     assert.equal(transformed.match(/CPXPST/g)?.length, 2);
   }
 });
