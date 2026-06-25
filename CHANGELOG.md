@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.6.0...v0.7.0) (2026-06-25)
+
+
+### Features
+
+* refactor runtime architecture ([#43](https://github.com/michaelw/codex-plus-patcher/issues/43)) ([292bcf6](https://github.com/michaelw/codex-plus-patcher/commit/292bcf68cc8acfe1a9d590dcfd30549cac3793fe))
+
+
+### Bug Fixes
+
+* close project picker after enter selection ([#45](https://github.com/michaelw/codex-plus-patcher/issues/45)) ([b5b7832](https://github.com/michaelw/codex-plus-patcher/commit/b5b78320339fd6cf920b8676d060fdbc71901f93))
+
 ## [0.6.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.5.0...v0.6.0) (2026-06-25)
 
 
