@@ -36,9 +36,21 @@ Patches only install the adapters.
 - If code knows Codex internals, it is host adapter code, not plugin code.
 - A hook builder may reference minified names and exact anchors, but only to
   establish extension points, pass host dependencies, or call a host adapter.
+- Minified transforms may replace a narrow expression, call, or prop value.
+  They must not rewrite React compiler cache branches or carry feature
+  behavior.
+- If a fix needs branching, fallback behavior, DOM events, or state handling,
+  put that logic in `src/runtime/host/*` or `src/runtime/plugins/*`.
 - The 180-character glue rule is strict: hook snippets must stay at or below
   180 compact characters. If a snippet wants to grow, move the logic into
   `runtime/host/*`.
+
+## Patch Review Checklist
+
+- Is the minified patch readable at a glance?
+- Does it only install an adapter call?
+- Is all behavior in readable runtime code?
+- Did tests assert the unwanted minified shape is absent?
 
 ## Examples
 
