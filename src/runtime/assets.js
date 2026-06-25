@@ -14,6 +14,8 @@ const runtimeFiles = [
   ["webview/assets/codex-plus/plugins/projectPathHeader.js", "plugins/projectPathHeader.js"],
   ["webview/assets/codex-plus/plugins/sidebarNameBlur.js", "plugins/sidebarNameBlur.js"],
   ["webview/assets/codex-plus/plugins/devTools.js", "plugins/devTools.js"],
+  ["webview/assets/codex-plus/vendor/fzf.umd.js", "../../node_modules/fzf/dist/fzf.umd.js"],
+  ["webview/assets/codex-plus/plugins/projectSelectorShortcut.js", "plugins/projectSelectorShortcut.js"],
   ["webview/assets/codex-plus/plugins/mermaidFullscreen.js", "plugins/mermaidFullscreen.js"],
 ];
 

@@ -1,6 +1,10 @@
 const { codexPlusRuntimeAssets } = require("../../runtime/assets");
 const { replaceOnce } = require("./replace");
 const { makePatchSet } = require("./make-patch-set");
+const {
+  patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut,
+  patchRunCommandProjectSelectorShortcut,
+} = require("./project-selector-shortcut-patch");
 
 function buildCodexPlusPatchSet(config) {
   const oldTitle = "<title>Codex</title>";
@@ -25,6 +29,8 @@ function buildCodexPlusPatchSet(config) {
   const threadSidePanelTabsFile = files.threadSidePanelTabs;
   const userMessageAttachmentsFile = files.userMessageAttachments;
   const composerFile = files.composer;
+  const localActiveWorkspaceRootDropdownFile = files.localActiveWorkspaceRootDropdown;
+  const runCommandFile = files.runCommand;
   const localTaskRowFile = files.localTaskRow;
   const mermaidDiagramShellFile = files.mermaidDiagramShell;
   const electronMenuShortcutsFile = files.electronMenuShortcuts;
@@ -591,7 +597,7 @@ function patchElectronMenuShortcuts(text) {
   return replaceOnce(
     text,
     "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
-    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},...(window.CodexPlus?.ui?.commands?.commandMetadata?.()??[]),{id:`toggleBottomPanel`,",
+    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`codexPlus.focusProjectSelector`,title:`Focus project selector`,description:`Focus or open the new chat project selector`,commandMenuGroupKey:`workspace`,commandMenu:!0,electron:{menuTitle:`Focus project selector`,defaultKeybindings:[{key:`CmdOrCtrl+.`}]}},...(window.CodexPlus?.ui?.commands?.commandMetadata?.()?.filter?.(e=>e.id!==`codexPlus.focusProjectSelector`)??[]),{id:`toggleBottomPanel`,",
     "sidebar blur command palette metadata anchor",
   );
 }
@@ -765,6 +771,13 @@ return makePatchSet({
         [appMainFile, patchAppMainSidebarBlur],
         [electronMenuShortcutsFile, patchElectronMenuShortcuts],
         [keyboardShortcutsSearchInputFile, patchKeyboardShortcutsSearchInput],
+      ],
+    },
+    {
+      id: "project-selector-shortcut",
+      fileTransforms: [
+        [localActiveWorkspaceRootDropdownFile, patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut],
+        [runCommandFile, patchRunCommandProjectSelectorShortcut],
       ],
     },
     ...(mainFile ? [{

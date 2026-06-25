@@ -105,7 +105,13 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectPathHeader.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/sidebarNameBlur.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/devTools.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/vendor/fzf.umd.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/projectSelectorShortcut.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/mermaidFullscreen.js"));
+    assert.ok(
+      addedFiles.indexOf("webview/assets/codex-plus/vendor/fzf.umd.js") <
+      addedFiles.indexOf("webview/assets/codex-plus/plugins/projectSelectorShortcut.js"),
+    );
   }
 });
 
@@ -177,14 +183,16 @@ test("native bridge patch exposes the DevTools request for patch sets with a mai
   }
 });
 
-test("current patch queues expose project colors and sidebar blur separately from bubble colors", () => {
+test("current patch queues expose project colors and project selector shortcut separately from bubble colors", () => {
   for (const patchSet of patchSets) {
     const patchIds = patchSet.patches.map((patch) => patch.id);
     assert.ok(patchIds.includes("user-message-bubble-colors"));
     assert.ok(patchIds.includes("project-colors"));
     assert.ok(patchIds.includes("sidebar-name-blur"));
+    assert.ok(patchIds.includes("project-selector-shortcut"));
     assert.ok(patchIds.indexOf("user-message-bubble-colors") < patchIds.indexOf("project-colors"));
     assert.ok(patchIds.indexOf("project-colors") < patchIds.indexOf("sidebar-name-blur"));
+    assert.ok(patchIds.indexOf("sidebar-name-blur") < patchIds.indexOf("project-selector-shortcut"));
   }
 });
 
@@ -523,7 +531,9 @@ test("runtime loads built-in plugins before the app entrypoint while parsing", (
   vm.runInNewContext(runtime, context);
 
   assert.ok(writes.some((html) => html.includes("plugins/projectPathHeader.js")));
-  assert.ok(writes.every((html) => /^<script src="https:\/\/example\.invalid\/webview\/assets\/codex-plus\/plugins\/.+"><\/script>$/.test(html)));
+  assert.ok(writes.some((html) => html.includes("vendor/fzf.umd.js")));
+  assert.ok(writes.indexOf(writes.find((html) => html.includes("vendor/fzf.umd.js"))) < writes.indexOf(writes.find((html) => html.includes("plugins/projectSelectorShortcut.js"))));
+  assert.ok(writes.every((html) => /^<script src="https:\/\/example\.invalid\/webview\/assets\/codex-plus\/(?:plugins|vendor)\/.+"><\/script>$/.test(html)));
 });
 
 test("dev tools plugin registers an Open Developer Tools panels command", async () => {
@@ -571,6 +581,320 @@ test("dev tools plugin registers an Open Developer Tools panels command", async 
     },
     { method: "devtools/open", params: undefined },
   ]);
+});
+
+test("project selector shortcut command focuses and opens the mounted selector trigger", () => {
+  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
+  const plugin = fs.readFileSync("src/runtime/plugins/projectSelectorShortcut.js", "utf8");
+  const storage = new Map();
+  const focused = [];
+  const dispatchedEvents = [];
+  const keydownListeners = [];
+  let mountedTriggers = [];
+  const fzfCalls = [];
+  class FakeFzf {
+    constructor(items, options = {}) {
+      this.items = items;
+      this.options = options;
+      fzfCalls.push({ items, options });
+    }
+
+    find(query) {
+      return this.items.map((item) => {
+        const text = this.options.selector?.(item) ?? item;
+        const positions = new Set();
+        let fromIndex = 0;
+        for (const char of query.toLowerCase()) {
+          const index = String(text).toLowerCase().indexOf(char, fromIndex);
+          if (index < 0) return null;
+          positions.add(index);
+          fromIndex = index + 1;
+        }
+        return { item, positions, score: positions.size };
+      }).filter(Boolean);
+    }
+  }
+  const window = {
+    location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+    fzf: { Fzf: FakeFzf },
+    localStorage: {
+      getItem(key) {
+        return storage.get(key) || null;
+      },
+      setItem(key, value) {
+        storage.set(key, value);
+      },
+    },
+    HTMLElement: class HTMLElement {},
+    MouseEvent: class MouseEvent {
+      constructor(type, options) {
+        this.type = type;
+        this.options = options;
+      }
+    },
+    PointerEvent: class PointerEvent {
+      constructor(type, options) {
+        this.type = type;
+        this.options = options;
+      }
+    },
+  };
+  class FakeElement extends window.HTMLElement {
+    constructor(id = "trigger", rect = { height: 20, left: 0, top: 0, width: 80 }, variant = "default") {
+      super();
+      this.id = id;
+      this.rect = rect;
+      this.variant = variant;
+    }
+
+    matches() {
+      return false;
+    }
+
+    querySelector() {
+      return null;
+    }
+
+    getAttribute(name) {
+      if (name === "data-codex-plus-project-selector-variant") return this.variant;
+      return null;
+    }
+
+    getBoundingClientRect() {
+      return this.rect;
+    }
+
+    focus() {
+      focused.push(this.id);
+    }
+
+    dispatchEvent(event) {
+      dispatchedEvents.push({ target: this.id, type: event.type, options: event.options });
+      return true;
+    }
+  }
+  const context = {
+    window,
+    globalThis: window,
+    HTMLElement: window.HTMLElement,
+    URL,
+    document: {
+      documentElement: { style: { setProperty() {}, removeProperty() {} } },
+      head: { appendChild() {} },
+      createElement(tag) {
+        return { tag };
+      },
+      getElementById() {
+        return null;
+      },
+      querySelectorAll(selector) {
+        assert.equal(selector, "[data-codex-plus-project-selector-trigger]");
+        return mountedTriggers;
+      },
+      addEventListener(type, listener, options) {
+        keydownListeners.push({ type, listener, options });
+      },
+      removeEventListener(type, listener, options) {
+        const index = keydownListeners.findIndex(
+          (entry) => entry.type === type && entry.listener === listener && entry.options === options,
+        );
+        if (index !== -1) keydownListeners.splice(index, 1);
+      },
+    },
+  };
+
+  vm.runInNewContext(runtime, context);
+  vm.runInNewContext(plugin, context);
+
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  const command = window.CodexPlus.commands.all().find((command) => command.id === "codexPlus.focusProjectSelector");
+  assert.equal(command.title, "Focus project selector");
+  assert.equal(command.description, "Focus or open the new chat project selector");
+  assert.deepEqual(plain(command.menu.groups), ["suggested", "workspace"]);
+  assert.deepEqual(plain(command.palette), { enabled: true, keywords: ["project", "selector", "new chat"] });
+  assert.deepEqual(plain(command.shortcut.defaultKeybindings), [{ key: "CmdOrCtrl+." }]);
+  const projects = [
+    { projectId: "a", label: "codex-plus-patcher", path: "/tmp/codex-plus-patcher" },
+    { projectId: "b", label: "hassio-dev", path: "/tmp/hassio-dev" },
+    { projectId: "c", label: "homeassistant-config-aus00", path: "/tmp/homeassistant-config-aus00" },
+  ];
+  assert.deepEqual(
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "codex   plus").map((project) => project.projectId),
+    ["a"],
+  );
+  assert.deepEqual(
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "hdev").map((project) => project.projectId),
+    ["b"],
+  );
+  assert.ok(fzfCalls.length >= 2);
+  delete window.fzf;
+  assert.deepEqual(
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "codex plus").map((project) => project.projectId),
+    ["a"],
+  );
+  window.fzf = { Fzf: FakeFzf };
+  const jsx = (type, props, key) => ({ type, props, key });
+  const normalize = (value) => JSON.parse(JSON.stringify(value));
+  assert.deepEqual(
+    normalize(window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "codex-plus", query: "cp", jsx })),
+    [
+      {
+        type: "strong",
+        props: {
+          className: "font-semibold",
+          style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
+          children: "c",
+        },
+        key: 0,
+      },
+      "odex-",
+      {
+        type: "strong",
+        props: {
+          className: "font-semibold",
+          style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
+          children: "p",
+        },
+        key: 1,
+      },
+      "lus",
+    ],
+  );
+  assert.equal(keydownListeners.length, 1);
+  assert.deepEqual({ type: keydownListeners[0].type, options: keydownListeners[0].options }, { type: "keydown", options: true });
+  assert.equal(window.CodexPlus.commands.run("codexPlus.focusProjectSelector"), false);
+
+  const absentKeydown = { key: ".", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  keydownListeners[0].listener(absentKeydown);
+  assert.equal(absentKeydown.defaultPrevented, false);
+
+  mountedTriggers = [
+    new FakeElement("title", { height: 24, left: 575, top: 360, width: 48 }, "hero"),
+    new FakeElement("composer", { height: 24, left: 125, top: 315, width: 80 }, "default"),
+  ];
+  assert.equal(window.CodexPlus.commands.run("codexPlus.focusProjectSelector"), true);
+  const presentKeydown = { key: ".", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  keydownListeners[0].listener(presentKeydown);
+  assert.equal(presentKeydown.defaultPrevented, true);
+  assert.deepEqual(focused, ["composer", "composer"]);
+  assert.deepEqual(dispatchedEvents.map((event) => event.type), [
+    "pointerdown",
+    "mousedown",
+    "mouseup",
+    "click",
+    "pointerdown",
+    "mousedown",
+    "mouseup",
+    "click",
+  ]);
+  assert.deepEqual(dispatchedEvents.map((event) => event.target), [
+    "composer",
+    "composer",
+    "composer",
+    "composer",
+    "composer",
+    "composer",
+    "composer",
+    "composer",
+  ]);
+  assert.equal(dispatchedEvents[0].options.bubbles, true);
+  assert.equal(dispatchedEvents[0].options.cancelable, true);
+  assert.equal(dispatchedEvents[0].options.button, 0);
+  assert.equal(dispatchedEvents[0].options.ctrlKey, false);
+});
+
+test("local active workspace root dropdown exposes only the final selector trigger to Codex Plus", () => {
+  const fakeDropdownBundle = [
+    "Ne=r();function Pe(e){let t=(0,Ne.c)(42),{groups:n,selectedProjectIds:r,onSelectProjectId:i,keepOpenOnSelect:a,projectlessActionLabel:o,onSelectProjectless:s,footerItems:c,onAddLocalProject:l,onAddRemoteProject:u,emptyMessage:te}=e,ne=a===void 0?!1:a,p=ee(),m=s!=null&&o!=null,[h,re]=(0,Me.useState)(``),_,v,y,b,x,S;if(t[0]!==m||t[1]!==c||t[2]!==n||t[3]!==p||t[4]!==ne||t[5]!==l||t[6]!==u||t[7]!==i||t[8]!==h||t[9]!==r){let e=h.trim().toLowerCase();v=n.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let a=new Map;n.forEach(e=>{if(e.path==null)return;let t=a.get(e.label);if(t==null){a.set(e.label,[e.path]);return}t.push(e.path)}),y=m||c!=null||l!=null||u!=null;let o;t[16]===Symbol.for(`react.memo_cache_sentinel`)?(o=e=>{re(e.target.value)},t[16]=o):o=t[16];let s;t[17]===p?s=t[18]:(s=p.formatMessage({id:`composer.localCwdDropdown.searchPlaceholder`,defaultMessage:`Search projects`,description:`Placeholder for searching the workspace root dropdown`}),t[17]=p,t[18]=s),t[19]!==h||t[20]!==s?(S=(0,H.jsx)(ve,{value:h,onChange:o,placeholder:s,className:`mb-1`}),t[19]=h,t[20]=s,t[21]=S):S=t[21],_=I.Section,b=`flex max-h-[calc((1lh+var(--padding-row-y)*2)*5)] flex-col overflow-y-auto text-sm [--edge-fade-distance:1.5rem]`,x=v.map(e=>{let t=e.repositoryData?.rootFolder,n=t&&t!==e.label,o=!!e.isCodexWorktree,s=a.get(e.label)??[],c=s.length>1&&e.path!=null?g(e.path,s):null;return(0,H.jsx)(`div`,{className:`flex flex-col`,children:(0,H.jsxs)(F,{RightIcon:r.includes(e.projectId)?f:void 0,tooltipText:c??void 0,tooltipAlign:`center`,onSelect:t=>{ne&&t.preventDefault(),i(e.projectId)},children:[(0,H.jsx)(I.ItemIcon,{size:`xs`,children:(0,H.jsx)(we,{className:`icon-xs`,isCodexWorktree:o,isGitRepository:e.repositoryData!=null,isRemoteProject:e.projectKind===`remote`})}),(0,H.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,H.jsx)(`span`,{className:`truncate`,children:e.label}),e.hostDisplayName==null?null:(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:e.hostDisplayName}),n?(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:t}):null]})]})},e.projectId)}),t[0]=m,t[1]=c,t[2]=n,t[3]=p,t[4]=ne,t[5]=l,t[6]=u,t[7]=i,t[8]=h,t[9]=r,t[10]=_,t[11]=v,t[12]=y,t[13]=b,t[14]=x,t[15]=S}else _=t[10],v=t[11],y=t[12],b=t[13],x=t[14],S=t[15];return null}",
+    "function Ie(e){let t=(0,Ne.c)(81),{activeProjectIdOverride:n,allowRemoteProjects:r,disabled:i,hideLabel:a,onWorkspaceRootSelected:u,variant:ee,isOpen:f,onOpenChange:g,triggerButton:E}=e,",
+    "if(Ue){let e;t[37]!==J||t[38]!==E?(e=E??J(),t[37]=J,t[38]=E,t[39]=e):e=t[39];let n;t[40]!==R||t[41]!==ze?(n=R?(0,H.jsxs)(H.Fragment,{children:[(0,H.jsx)(I.Separator,{}),(0,H.jsx)(I.Item,{LeftIcon:xe,onSelect:ze,children:(0,H.jsx)(d,{id:`sidebarElectron.addRemoteProject`,defaultMessage:`Remote project`,description:`Dropdown item for adding a remote project from the sidebar`})})]}):null,t[40]=R,t[41]=ze,t[42]=n):n=t[42];let r;return t[43]!==B||t[44]!==U||t[45]!==f||t[46]!==g||t[47]!==P||t[48]!==e||t[49]!==n?(r=(0,H.jsx)(Ee,{localProjectSourcesEnabled:P,open:f,onOpenChange:g,triggerButton:e,onStartFromScratch:U,onUseExistingFolder:B,children:n}),t[43]=B,t[44]=U,t[45]=f,t[46]=g,t[47]=P,t[48]=e,t[49]=n,t[50]=r):r=t[50],r}",
+    "let X=E??(k===`hero`?et():k===`home`?J():Ze()),$=(0,H.jsx)(Pe,{groups:M});let at;return t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80],at}",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath === findTransformPath(patchSet, "local-active-workspace-root-dropdown"),
+    )?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has local active workspace root dropdown transform`);
+
+    const transformed = transform(fakeDropdownBundle);
+
+    assert.match(transformed, /function CPXProjectSelectorFuzzyFilter\(e,t\)/);
+    assert.match(transformed, /window\.CodexPlus\?\.ui\?\.projectSelector\?\.fuzzyFilter\?\.\(e,t\)/);
+    assert.match(transformed, /function CPXProjectSelectorFuzzyHighlight\(e,t\)/);
+    assert.match(transformed, /window\.CodexPlus\?\.ui\?\.projectSelector\?\.fuzzyHighlight\?\.\(\{text:e,query:t,jsx:H\.jsx\}\)/);
+    assert.match(transformed, /function CPXProjectSelectorAcceptFirst\(e,t,n,r\)/);
+    assert.match(transformed, /v=CPXProjectSelectorFuzzyFilter\(n,h\)/);
+    assert.match(transformed, /onKeyDown:e=>CPXProjectSelectorAcceptFirst\(e,v,i,h\)/);
+    assert.match(transformed, /children:CPXProjectSelectorFuzzyHighlight\(e\.label,h\)/);
+    assert.doesNotMatch(transformed, /toLowerCase\(\)\.includes\(e\)/);
+    assert.doesNotMatch(transformed, /function fuzzyIndices/);
+    assert.doesNotMatch(transformed, /function CPXFuzzyIndices/);
+    assert.match(transformed, /function CPXProjectSelectorTrigger\(e,t\)/);
+    assert.match(transformed, /Me\.isValidElement\(e\)\?Me\.cloneElement\(e,\{\.\.\.e\.props,"data-codex-plus-project-selector-trigger":!0,"data-codex-plus-project-selector-variant":t\}\):e/);
+    assert.match(transformed, /triggerButton:CPXProjectSelectorTrigger\(X,k\)/);
+    assert.match(transformed, /triggerButton:e,onStartFromScratch:U/);
+    assert.doesNotMatch(transformed, /className:`contents`/);
+    assert.equal(transformed.match(/data-codex-plus-project-selector-trigger/g)?.length, 1);
+    assert.equal(transformed.match(/data-codex-plus-project-selector-variant/g)?.length, 1);
+  }
+});
+
+test("project selector Enter key adapter accepts only the first searched match", () => {
+  const fakeDropdownBundle = [
+    "Ne=r();function Pe(e){let t=(0,Ne.c)(42),{groups:n,selectedProjectIds:r,onSelectProjectId:i,keepOpenOnSelect:a,projectlessActionLabel:o,onSelectProjectless:s,footerItems:c,onAddLocalProject:l,onAddRemoteProject:u,emptyMessage:te}=e,ne=a===void 0?!1:a,p=ee(),m=s!=null&&o!=null,[h,re]=(0,Me.useState)(``),_,v,y,b,x,S;if(t[0]!==m||t[1]!==c||t[2]!==n||t[3]!==p||t[4]!==ne||t[5]!==l||t[6]!==u||t[7]!==i||t[8]!==h||t[9]!==r){let e=h.trim().toLowerCase();v=n.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let a=new Map;n.forEach(e=>{if(e.path==null)return;let t=a.get(e.label);if(t==null){a.set(e.label,[e.path]);return}t.push(e.path)}),y=m||c!=null||l!=null||u!=null;let o;t[16]===Symbol.for(`react.memo_cache_sentinel`)?(o=e=>{re(e.target.value)},t[16]=o):o=t[16];let s;t[17]===p?s=t[18]:(s=p.formatMessage({id:`composer.localCwdDropdown.searchPlaceholder`,defaultMessage:`Search projects`,description:`Placeholder for searching the workspace root dropdown`}),t[17]=p,t[18]=s),t[19]!==h||t[20]!==s?(S=(0,H.jsx)(ve,{value:h,onChange:o,placeholder:s,className:`mb-1`}),t[19]=h,t[20]=s,t[21]=S):S=t[21],_=I.Section,b=`flex max-h-[calc((1lh+var(--padding-row-y)*2)*5)] flex-col overflow-y-auto text-sm [--edge-fade-distance:1.5rem]`,x=v.map(e=>{let t=e.repositoryData?.rootFolder,n=t&&t!==e.label,o=!!e.isCodexWorktree,s=a.get(e.label)??[],c=s.length>1&&e.path!=null?g(e.path,s):null;return(0,H.jsx)(`div`,{className:`flex flex-col`,children:(0,H.jsxs)(F,{RightIcon:r.includes(e.projectId)?f:void 0,tooltipText:c??void 0,tooltipAlign:`center`,onSelect:t=>{ne&&t.preventDefault(),i(e.projectId)},children:[(0,H.jsx)(I.ItemIcon,{size:`xs`,children:(0,H.jsx)(we,{className:`icon-xs`,isCodexWorktree:o,isGitRepository:e.repositoryData!=null,isRemoteProject:e.projectKind===`remote`})}),(0,H.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,H.jsx)(`span`,{className:`truncate`,children:e.label}),e.hostDisplayName==null?null:(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:e.hostDisplayName}),n?(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:t}):null]})]})},e.projectId)}),t[0]=m,t[1]=c,t[2]=n,t[3]=p,t[4]=ne,t[5]=l,t[6]=u,t[7]=i,t[8]=h,t[9]=r,t[10]=_,t[11]=v,t[12]=y,t[13]=b,t[14]=x,t[15]=S}else _=t[10],v=t[11],y=t[12],b=t[13],x=t[14],S=t[15];return null}",
+    "function Ie(e){let t=(0,Ne.c)(81),",
+    "at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$})",
+  ].join("");
+  const transform = collectFileTransforms(patchSets[0]).find(
+    ([filePath]) => filePath === findTransformPath(patchSets[0], "local-active-workspace-root-dropdown"),
+  )?.[1];
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(fakeDropdownBundle);
+  const helperSource = transformed.match(/function CPXProjectSelectorAcceptFirst[\s\S]*?function Pe/)?.[0];
+  assert.ok(helperSource, "transformed dropdown exposes Enter adapter source");
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(`${helperSource.replace(/function Pe$/, "")};this.CPXProjectSelectorAcceptFirst=CPXProjectSelectorAcceptFirst;`, sandbox);
+
+  const selected = [];
+  const events = [];
+  const makeEvent = (key) => ({
+    key,
+    preventDefault() { events.push("preventDefault"); },
+    stopPropagation() { events.push("stopPropagation"); },
+  });
+
+  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [{ projectId: "first" }, { projectId: "second" }], (projectId) => selected.push(projectId), "codex");
+  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [{ projectId: "empty-query" }], (projectId) => selected.push(projectId), "   ");
+  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [], (projectId) => selected.push(projectId), "codex");
+  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("ArrowDown"), [{ projectId: "arrow" }], (projectId) => selected.push(projectId), "codex");
+
+  assert.deepEqual(selected, ["first"]);
+  assert.deepEqual(events, ["preventDefault", "stopPropagation"]);
+});
+
+test("run command patch bridges the native project selector shortcut to the runtime command", () => {
+  const fakeRunCommandBundle = [
+    "import{f as e}from\"./vscode-api-Cc4BqLmp.js\";",
+    "var i=new Map([[`newThread`,()=>{}],[`openFolder`,()=>{r()}],[`toggleSidebar`,()=>{}]]),a=new Map;",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const transform = collectFileTransforms(patchSet).find(
+      ([filePath]) => filePath === findTransformPath(patchSet, "run-command"),
+    )?.[1];
+
+    assert.equal(typeof transform, "function", `${patchSet.id} has run command transform`);
+
+    const transformed = transform(fakeRunCommandBundle);
+
+    assert.match(transformed, /\[`codexPlus\.focusProjectSelector`,\(\)=>\{window\.CodexPlus\?\.commands\?\.run\?\.\(`codexPlus\.focusProjectSelector`\)\}\]/);
+    assert.match(transformed, /\[`codexPlus\.focusProjectSelector`[\s\S]*\[`openFolder`/);
+    assert.equal(transformed.match(/codexPlus\.focusProjectSelector/g)?.length, 2);
+  }
 });
 
 function fakeAboutDialogBundle() {
@@ -1244,7 +1568,7 @@ test("local task row patch colors standalone rows from row project context", () 
   }
 });
 
-test("command metadata insertion stays runtime driven and includes Open Developer Tools", () => {
+test("command metadata exposes static project selector shortcut and runtime DevTools command", () => {
   const fakeElectronMenuShortcutsBundle = [
     "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
   ].join("");
@@ -1269,7 +1593,14 @@ test("command metadata insertion stays runtime driven and includes Open Develope
       const commandMetadata = transformed.slice(commandStart, commandEnd);
 
       assert.notEqual(commandStart, -1, `${filePath} inserts runtime command metadata`);
-      assert.match(commandMetadata, /window\.CodexPlus\?\.ui\?\.commands\?\.commandMetadata\?\.\(\)\?\?\[\]/);
+      assert.match(transformed, /id:`codexPlus\.focusProjectSelector`/);
+      assert.match(transformed, /title:`Focus project selector`/);
+      assert.match(transformed, /description:`Focus or open the new chat project selector`/);
+      assert.match(transformed, /commandMenuGroupKey:`workspace`/);
+      assert.match(transformed, /menuTitle:`Focus project selector`/);
+      assert.match(transformed, /defaultKeybindings:\[\{key:`CmdOrCtrl\+\.`\}\]/);
+      assert.ok(commandMetadata.includes("window.CodexPlus?.ui?.commands?.commandMetadata?.()?.filter?."));
+      assert.match(commandMetadata, /filter\?\.\(e=>e\.id!==`codexPlus\.focusProjectSelector`\)/);
       assert.doesNotMatch(commandMetadata, /id:`codexPlusOpenDevTools`/);
       assert.doesNotMatch(commandMetadata, /codexPlusToggleSidebarNameBlur/);
       assert.doesNotMatch(commandMetadata, /localStorage/);

@@ -15,6 +15,8 @@ module.exports = buildCodexPlusPatchSet({
     "threadSidePanelTabs": "webview/assets/thread-side-panel-tabs-D0dd27Zf.js",
     "userMessageAttachments": "webview/assets/user-message-attachments-CgyXEK9U.js",
     "composer": "webview/assets/composer-CCuv6v-2.js",
+    "localActiveWorkspaceRootDropdown": "webview/assets/local-active-workspace-root-dropdown-ymhXI2RF.js",
+    "runCommand": "webview/assets/run-command-D6apgII3.js",
     "localTaskRow": "webview/assets/local-task-row-vTrSC6Rc.js",
     "keyboardShortcutsSearchInput": "webview/assets/keyboard-shortcuts-search-input-DjVpifwp.js",
     "src": "src-C7fSIbpz.js",

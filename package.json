@@ -28,6 +28,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
+    "fzf": "0.5.2",
     "ora": "^9.4.0"
   }
 }
