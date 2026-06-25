@@ -128,7 +128,7 @@ function writeFixtureAsar() {
       "webview/assets/codex-plus/runtime.js": "window.CodexPlus={};",
       "webview/assets/codex-plus/plugins/devTools.js": 'id: "devTools"; codexPlusOpenDevTools; devtools/open;',
       "webview/assets/codex-plus/plugins/nestedRepositories.js": "function ReviewMux(){}",
-      ".vite/build/thread-side-panel-tabs.js": "CPXReviewMux",
+      ".vite/build/thread-side-panel-tabs.js": "CPXRM",
       ".vite/build/src-menu.js": "{id:`codexPlusOpenDevTools`,title:`Open Developer Tools`,commandMenuGroupKey:`panels`},{id:`toggleBottomPanel`,electron:{menuTitle:`Toggle Bottom Panel`}}",
       ".vite/build/main.js": "CPXOpenDevTools; devtools/open; openDevTools; Menu.setApplicationMenu; refreshApplicationMenu; CPXLogMenuDiagnostics;",
     }),

@@ -7,6 +7,9 @@ assets and install the Codex host hooks needed by the plugins.
 This is current internal plugin support, not a third-party plugin marketplace.
 Plugins are packaged as built-in runtime assets today.
 
+For the layer rules that keep plugins, public APIs, host adapters, and patch
+hooks separate, see [Plugin Architecture](plugin-architecture.md).
+
 ## Boundary
 
 - Runtime plugins own feature intent, UI bodies, CSS, settings, commands, and

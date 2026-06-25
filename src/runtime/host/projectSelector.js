@@ -1,0 +1,44 @@
+(function () {
+  const globalObject = typeof window !== "undefined" ? window : globalThis;
+
+  function fuzzyFilter(projects, query) {
+    const needle = String(query ?? "").trim().toLowerCase();
+    return globalObject.CodexPlus?.ui?.projectSelector?.fuzzyFilter?.(projects, query) ??
+      (needle
+        ? projects.filter((project) =>
+            [project.label, project.repositoryData?.rootFolder ?? "", project.path ?? "", project.hostDisplayName ?? ""].some((value) =>
+              String(value ?? "").toLowerCase().includes(needle),
+            ),
+          )
+        : projects);
+  }
+
+  function fuzzyHighlight(text, query, jsx) {
+    return globalObject.CodexPlus?.ui?.projectSelector?.fuzzyHighlight?.({ text, query, jsx }) ?? text;
+  }
+
+  function acceptFirst(event, projects, selectProjectId, query) {
+    const project = projects?.[0];
+    if (event?.key !== "Enter" || String(query ?? "").trim().length === 0 || project == null) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    selectProjectId(project.projectId);
+  }
+
+  function trigger(element, variant, React) {
+    return React.isValidElement(element)
+      ? React.cloneElement(element, {
+          ...element.props,
+          "data-codex-plus-project-selector-trigger": true,
+          "data-codex-plus-project-selector-variant": variant,
+        })
+      : element;
+  }
+
+  globalObject.CodexPlusHost.adapters.projectSelector = {
+    acceptFirst,
+    fuzzyFilter,
+    fuzzyHighlight,
+    trigger,
+  };
+})();
