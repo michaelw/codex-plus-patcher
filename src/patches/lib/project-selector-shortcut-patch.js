@@ -11,19 +11,19 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
   patched = replaceOnce(
     patched,
     "let e=h.trim().toLowerCase();v=n.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
-    "v=CPXPSF(n,h);",
+    "v=CPXP.fuzzyFilter(n,h);",
     "project selector fuzzy search filter anchor",
   );
   patched = replaceOnce(
     patched,
     "S=(0,H.jsx)(ve,{value:h,onChange:o,placeholder:s,className:`mb-1`})",
-    "S=(0,H.jsx)(ve,{value:h,onChange:o,onKeyDown:e=>CPXPSA(e,v,i,h),placeholder:s,className:`mb-1`})",
+    "S=(0,H.jsx)(ve,{value:h,onChange:o,onKeyDown:e=>CPXP.acceptFirst(e,v,i,h),placeholder:s,className:`mb-1`})",
     "project selector accept first match keydown anchor",
   );
   patched = replaceOnce(
     patched,
     "(0,H.jsx)(`span`,{className:`truncate`,children:e.label})",
-    "(0,H.jsx)(`span`,{className:`truncate`,children:CPXPSH(e.label,h)})",
+    "(0,H.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,h,H.jsx)})",
     "project selector fuzzy search highlight anchor",
   );
   patched = replaceOnce(
