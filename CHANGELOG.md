@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.5.0...v0.6.0) (2026-06-25)
+
+
+### Features
+
+* add devtools menu plugin API ([#38](https://github.com/michaelw/codex-plus-patcher/issues/38)) ([bd96d2a](https://github.com/michaelw/codex-plus-patcher/commit/bd96d2afe95d7061a5a3029e8ff913cc0604cbca))
+* add project selector shortcut ([#41](https://github.com/michaelw/codex-plus-patcher/issues/41)) ([80369f3](https://github.com/michaelw/codex-plus-patcher/commit/80369f31fc819a53d1ef6848dfbdbf742b8a2275))
+* show active project path in thread header ([#40](https://github.com/michaelw/codex-plus-patcher/issues/40)) ([021ead1](https://github.com/michaelw/codex-plus-patcher/commit/021ead1438041ddccf109601b2c184962f913a23))
+
 ## [0.5.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.4.1...v0.5.0) (2026-06-24)
 
 
