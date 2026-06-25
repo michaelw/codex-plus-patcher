@@ -17,12 +17,26 @@
     return globalObject.CodexPlus?.ui?.projectSelector?.fuzzyHighlight?.({ text, query, jsx }) ?? text;
   }
 
+  function closeDropdown(event) {
+    const KeyboardEventConstructor = globalObject.KeyboardEvent;
+    if (typeof KeyboardEventConstructor !== "function") return;
+
+    const target = event?.target;
+    const dispatchTarget = typeof target?.dispatchEvent === "function" ? target : globalObject.document;
+    dispatchTarget?.dispatchEvent?.(new KeyboardEventConstructor("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Escape",
+    }));
+  }
+
   function acceptFirst(event, projects, selectProjectId, query) {
     const project = projects?.[0];
     if (event?.key !== "Enter" || String(query ?? "").trim().length === 0 || project == null) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     selectProjectId(project.projectId);
+    closeDropdown(event);
   }
 
   function trigger(element, variant, React) {

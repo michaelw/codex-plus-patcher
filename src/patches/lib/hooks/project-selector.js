@@ -1,5 +1,5 @@
 function projectSelectorSearchHook() {
-  return "let CPXP=window.CodexPlusHost.adapters.projectSelector,CPXPSF=(e,t)=>CPXP.fuzzyFilter(e,t),CPXPSH=(e,t)=>CPXP.fuzzyHighlight(e,t,H.jsx),CPXPSA=(e,t,n,r)=>CPXP.acceptFirst(e,t,n,r);";
+  return "let CPXP=window.CodexPlusHost.adapters.projectSelector;";
 }
 
 function projectSelectorTriggerHook() {

@@ -896,7 +896,7 @@ test("local active workspace root dropdown exposes only the final selector trigg
     "Ne=r();function Pe(e){let t=(0,Ne.c)(42),{groups:n,selectedProjectIds:r,onSelectProjectId:i,keepOpenOnSelect:a,projectlessActionLabel:o,onSelectProjectless:s,footerItems:c,onAddLocalProject:l,onAddRemoteProject:u,emptyMessage:te}=e,ne=a===void 0?!1:a,p=ee(),m=s!=null&&o!=null,[h,re]=(0,Me.useState)(``),_,v,y,b,x,S;if(t[0]!==m||t[1]!==c||t[2]!==n||t[3]!==p||t[4]!==ne||t[5]!==l||t[6]!==u||t[7]!==i||t[8]!==h||t[9]!==r){let e=h.trim().toLowerCase();v=n.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let a=new Map;n.forEach(e=>{if(e.path==null)return;let t=a.get(e.label);if(t==null){a.set(e.label,[e.path]);return}t.push(e.path)}),y=m||c!=null||l!=null||u!=null;let o;t[16]===Symbol.for(`react.memo_cache_sentinel`)?(o=e=>{re(e.target.value)},t[16]=o):o=t[16];let s;t[17]===p?s=t[18]:(s=p.formatMessage({id:`composer.localCwdDropdown.searchPlaceholder`,defaultMessage:`Search projects`,description:`Placeholder for searching the workspace root dropdown`}),t[17]=p,t[18]=s),t[19]!==h||t[20]!==s?(S=(0,H.jsx)(ve,{value:h,onChange:o,placeholder:s,className:`mb-1`}),t[19]=h,t[20]=s,t[21]=S):S=t[21],_=I.Section,b=`flex max-h-[calc((1lh+var(--padding-row-y)*2)*5)] flex-col overflow-y-auto text-sm [--edge-fade-distance:1.5rem]`,x=v.map(e=>{let t=e.repositoryData?.rootFolder,n=t&&t!==e.label,o=!!e.isCodexWorktree,s=a.get(e.label)??[],c=s.length>1&&e.path!=null?g(e.path,s):null;return(0,H.jsx)(`div`,{className:`flex flex-col`,children:(0,H.jsxs)(F,{RightIcon:r.includes(e.projectId)?f:void 0,tooltipText:c??void 0,tooltipAlign:`center`,onSelect:t=>{ne&&t.preventDefault(),i(e.projectId)},children:[(0,H.jsx)(I.ItemIcon,{size:`xs`,children:(0,H.jsx)(we,{className:`icon-xs`,isCodexWorktree:o,isGitRepository:e.repositoryData!=null,isRemoteProject:e.projectKind===`remote`})}),(0,H.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,H.jsx)(`span`,{className:`truncate`,children:e.label}),e.hostDisplayName==null?null:(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:e.hostDisplayName}),n?(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:t}):null]})]})},e.projectId)}),t[0]=m,t[1]=c,t[2]=n,t[3]=p,t[4]=ne,t[5]=l,t[6]=u,t[7]=i,t[8]=h,t[9]=r,t[10]=_,t[11]=v,t[12]=y,t[13]=b,t[14]=x,t[15]=S}else _=t[10],v=t[11],y=t[12],b=t[13],x=t[14],S=t[15];return null}",
     "function Ie(e){let t=(0,Ne.c)(81),{activeProjectIdOverride:n,allowRemoteProjects:r,disabled:i,hideLabel:a,onWorkspaceRootSelected:u,variant:ee,isOpen:f,onOpenChange:g,triggerButton:E}=e,",
     "if(Ue){let e;t[37]!==J||t[38]!==E?(e=E??J(),t[37]=J,t[38]=E,t[39]=e):e=t[39];let n;t[40]!==R||t[41]!==ze?(n=R?(0,H.jsxs)(H.Fragment,{children:[(0,H.jsx)(I.Separator,{}),(0,H.jsx)(I.Item,{LeftIcon:xe,onSelect:ze,children:(0,H.jsx)(d,{id:`sidebarElectron.addRemoteProject`,defaultMessage:`Remote project`,description:`Dropdown item for adding a remote project from the sidebar`})})]}):null,t[40]=R,t[41]=ze,t[42]=n):n=t[42];let r;return t[43]!==B||t[44]!==U||t[45]!==f||t[46]!==g||t[47]!==P||t[48]!==e||t[49]!==n?(r=(0,H.jsx)(Ee,{localProjectSourcesEnabled:P,open:f,onOpenChange:g,triggerButton:e,onStartFromScratch:U,onUseExistingFolder:B,children:n}),t[43]=B,t[44]=U,t[45]=f,t[46]=g,t[47]=P,t[48]=e,t[49]=n,t[50]=r):r=t[50],r}",
-    "let X=E??(k===`hero`?et():k===`home`?J():Ze()),$=(0,H.jsx)(Pe,{groups:M});let at;return t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80],at}",
+    "let X=E??(k===`hero`?et():k===`home`?J():Ze()),Z;t[59]===W?Z=t[60]:(Z=W?[W]:[],t[59]=W,t[60]=Z);let nt;t[61]===Symbol.for(`react.memo_cache_sentinel`)?(nt=(0,H.jsx)(d,{id:`composer.localCwdDropdown.clearProject`,defaultMessage:`Don't work in a project`,description:`Menu item that clears the selected project and starts projectless chats`}),t[61]=nt):nt=t[61];let rt=He?Ve:void 0,Q;t[62]!==B||t[63]!==Ye||t[64]!==P?(Q=P?(0,H.jsx)(I.Item,{LeftIcon:Te,onSelect:()=>{j.current=!0},children:(0,H.jsx)(d,{id:`projectSetup.addProjectMenu.localProject`,defaultMessage:`Local project`,description:`Menu item that opens the local project creation flow`})}):(0,H.jsxs)(I.FlyoutSubmenuItem,{LeftIcon:Te,label:Ye,children:[(0,H.jsx)(I.Item,{LeftIcon:m,onSelect:()=>{j.current=!0},children:(0,H.jsx)(d,{id:`projectSetup.addProjectMenu.startFromScratch`,defaultMessage:`Start from scratch`,description:`Menu item that creates a new local project folder`})}),(0,H.jsx)(I.Item,{LeftIcon:oe,onSelect:B,children:(0,H.jsx)(d,{id:`projectSetup.addProjectMenu.useExistingFolder`,defaultMessage:`Use an existing folder`,description:`Menu item that opens the existing folder picker`})})]}),t[62]=B,t[63]=Ye,t[64]=P,t[65]=Q):Q=t[65];let it=R?ze:void 0,$;t[66]!==M||t[67]!==je||t[68]!==Z||t[69]!==rt||t[70]!==Q||t[71]!==it?($=(0,H.jsx)(Pe,{groups:M,selectedProjectIds:Z,onSelectProjectId:je,projectlessActionLabel:nt,onSelectProjectless:rt,footerItems:Q,onAddRemoteProject:it}),t[66]=M,t[67]=je,t[68]=Z,t[69]=rt,t[70]=Q,t[71]=it,t[72]=$):$=t[72];let at;return t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80],at}",
   ].join("");
 
   for (const patchSet of patchSets) {
@@ -909,17 +909,19 @@ test("local active workspace root dropdown exposes only the final selector trigg
     const transformed = transform(fakeDropdownBundle);
 
     assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
-    assert.match(transformed, /CPXPSF=\(e,t\)=>CPXP\.fuzzyFilter\(e,t\)/);
-    assert.match(transformed, /CPXPSH=\(e,t\)=>CPXP\.fuzzyHighlight\(e,t,H\.jsx\)/);
-    assert.match(transformed, /CPXPSA=\(e,t,n,r\)=>CPXP\.acceptFirst\(e,t,n,r\)/);
-    assert.match(transformed, /v=CPXPSF\(n,h\)/);
-    assert.match(transformed, /onKeyDown:e=>CPXPSA\(e,v,i,h\)/);
-    assert.match(transformed, /children:CPXPSH\(e\.label,h\)/);
+    assert.doesNotMatch(transformed, /CPXF=/);
+    assert.doesNotMatch(transformed, /CPXH=/);
+    assert.doesNotMatch(transformed, /CPXA=/);
+    assert.match(transformed, /v=CPXP\.fuzzyFilter\(n,h\)/);
+    assert.doesNotMatch(transformed, /codexPlusCloseProjectSelector/);
+    assert.match(transformed, /onKeyDown:e=>CPXP\.acceptFirst\(e,v,i,h\)/);
+    assert.match(transformed, /children:CPXP\.fuzzyHighlight\(e\.label,h,H\.jsx\)/);
     assert.doesNotMatch(transformed, /toLowerCase\(\)\.includes\(e\)/);
     assert.doesNotMatch(transformed, /function fuzzyIndices/);
     assert.doesNotMatch(transformed, /function CPXFuzzyIndices/);
     assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,Me\)\}/);
     assert.match(transformed, /triggerButton:CPXPST\(X,k\)/);
+    assert.doesNotMatch(transformed, /t\[72\]!==g/);
     assert.match(transformed, /triggerButton:e,onStartFromScratch:U/);
     assert.doesNotMatch(transformed, /className:`contents`/);
     assert.equal(transformed.match(/CPXPST/g)?.length, 2);
@@ -930,7 +932,7 @@ test("project selector Enter key adapter accepts only the first searched match",
   const fakeDropdownBundle = [
     "Ne=r();function Pe(e){let t=(0,Ne.c)(42),{groups:n,selectedProjectIds:r,onSelectProjectId:i,keepOpenOnSelect:a,projectlessActionLabel:o,onSelectProjectless:s,footerItems:c,onAddLocalProject:l,onAddRemoteProject:u,emptyMessage:te}=e,ne=a===void 0?!1:a,p=ee(),m=s!=null&&o!=null,[h,re]=(0,Me.useState)(``),_,v,y,b,x,S;if(t[0]!==m||t[1]!==c||t[2]!==n||t[3]!==p||t[4]!==ne||t[5]!==l||t[6]!==u||t[7]!==i||t[8]!==h||t[9]!==r){let e=h.trim().toLowerCase();v=n.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let a=new Map;n.forEach(e=>{if(e.path==null)return;let t=a.get(e.label);if(t==null){a.set(e.label,[e.path]);return}t.push(e.path)}),y=m||c!=null||l!=null||u!=null;let o;t[16]===Symbol.for(`react.memo_cache_sentinel`)?(o=e=>{re(e.target.value)},t[16]=o):o=t[16];let s;t[17]===p?s=t[18]:(s=p.formatMessage({id:`composer.localCwdDropdown.searchPlaceholder`,defaultMessage:`Search projects`,description:`Placeholder for searching the workspace root dropdown`}),t[17]=p,t[18]=s),t[19]!==h||t[20]!==s?(S=(0,H.jsx)(ve,{value:h,onChange:o,placeholder:s,className:`mb-1`}),t[19]=h,t[20]=s,t[21]=S):S=t[21],_=I.Section,b=`flex max-h-[calc((1lh+var(--padding-row-y)*2)*5)] flex-col overflow-y-auto text-sm [--edge-fade-distance:1.5rem]`,x=v.map(e=>{let t=e.repositoryData?.rootFolder,n=t&&t!==e.label,o=!!e.isCodexWorktree,s=a.get(e.label)??[],c=s.length>1&&e.path!=null?g(e.path,s):null;return(0,H.jsx)(`div`,{className:`flex flex-col`,children:(0,H.jsxs)(F,{RightIcon:r.includes(e.projectId)?f:void 0,tooltipText:c??void 0,tooltipAlign:`center`,onSelect:t=>{ne&&t.preventDefault(),i(e.projectId)},children:[(0,H.jsx)(I.ItemIcon,{size:`xs`,children:(0,H.jsx)(we,{className:`icon-xs`,isCodexWorktree:o,isGitRepository:e.repositoryData!=null,isRemoteProject:e.projectKind===`remote`})}),(0,H.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,H.jsx)(`span`,{className:`truncate`,children:e.label}),e.hostDisplayName==null?null:(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:e.hostDisplayName}),n?(0,H.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:t}):null]})]})},e.projectId)}),t[0]=m,t[1]=c,t[2]=n,t[3]=p,t[4]=ne,t[5]=l,t[6]=u,t[7]=i,t[8]=h,t[9]=r,t[10]=_,t[11]=v,t[12]=y,t[13]=b,t[14]=x,t[15]=S}else _=t[10],v=t[11],y=t[12],b=t[13],x=t[14],S=t[15];return null}",
     "function Ie(e){let t=(0,Ne.c)(81),",
-    "at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$})",
+    "t[66]!==M||t[67]!==je||t[68]!==Z||t[69]!==rt||t[70]!==Q||t[71]!==it?($=(0,H.jsx)(Pe,{groups:M,selectedProjectIds:Z,onSelectProjectId:je,projectlessActionLabel:nt,onSelectProjectless:rt,footerItems:Q,onAddRemoteProject:it}),t[66]=M,t[67]=je,t[68]=Z,t[69]=rt,t[70]=Q,t[71]=it,t[72]=$):$=t[72];let at;return t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80],at}",
   ].join("");
   const transform = collectFileTransforms(patchSets[0]).find(
     ([filePath]) => filePath === findTransformPath(patchSets[0], "local-active-workspace-root-dropdown"),
@@ -938,16 +940,27 @@ test("project selector Enter key adapter accepts only the first searched match",
 
   assert.equal(typeof transform, "function");
   const transformed = transform(fakeDropdownBundle);
-  assert.match(transformed, /CPXPSA=\(e,t,n,r\)=>CPXP\.acceptFirst\(e,t,n,r\)/);
-  const window = { location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" } };
+  assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /onKeyDown:e=>CPXP\.acceptFirst\(e,v,i,h\)/);
+  const window = {
+    KeyboardEvent: class KeyboardEvent {
+      constructor(type, options) {
+        this.type = type;
+        this.options = options;
+      }
+    },
+    location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" },
+  };
   const context = { window, globalThis: window, URL };
   runRuntimeApiAndHosts(context);
   const adapter = window.CodexPlusHost.adapters.projectSelector;
 
   const selected = [];
   const events = [];
-  const makeEvent = (key) => ({
+  const escapeEvents = [];
+  const makeEvent = (key, target) => ({
     key,
+    target,
     preventDefault() { events.push("preventDefault"); },
     stopPropagation() { events.push("stopPropagation"); },
   });
@@ -959,6 +972,20 @@ test("project selector Enter key adapter accepts only the first searched match",
 
   assert.deepEqual(selected, ["first"]);
   assert.deepEqual(events, ["preventDefault", "stopPropagation"]);
+
+  adapter.acceptFirst(
+    makeEvent("Enter", { dispatchEvent(event) { escapeEvents.push(event); } }),
+    [{ projectId: "fallback" }],
+    (projectId) => selected.push(projectId),
+    "codex",
+  );
+
+  assert.deepEqual(selected, ["first", "fallback"]);
+  assert.equal(escapeEvents.length, 1);
+  assert.equal(escapeEvents[0].type, "keydown");
+  assert.equal(escapeEvents[0].options.key, "Escape");
+  assert.equal(escapeEvents[0].options.bubbles, true);
+  assert.equal(escapeEvents[0].options.cancelable, true);
 });
 
 test("run command patch bridges the native project selector shortcut to the runtime command", () => {
