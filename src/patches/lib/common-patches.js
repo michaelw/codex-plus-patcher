@@ -1,6 +1,16 @@
 const { codexPlusRuntimeAssets } = require("../../runtime/assets");
 const { replaceOnce } = require("./replace");
 const { makePatchSet } = require("./make-patch-set");
+const { aboutMetadataRequire } = require("./hooks/about");
+const { diagnosticDetailsHook } = require("./hooks/diagnostics");
+const { mermaidDiagramHook } = require("./hooks/mermaid");
+const { messageComposerHook } = require("./hooks/message-composer");
+const { nativeMainHook } = require("./hooks/native-main");
+const { reviewHook } = require("./hooks/review");
+const { projectColorHook, sidebarMergeDataAttributes } = require("./hooks/sidebar");
+const { appearanceSettingsHook, commandMenuItemsExpression } = require("./hooks/settings-commands");
+const { threadHeaderHook } = require("./hooks/thread-header");
+const { workerHook } = require("./hooks/worker");
 const {
   patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut,
   patchRunCommandProjectSelectorShortcut,
@@ -40,11 +50,6 @@ function buildCodexPlusPatchSet(config) {
   const sidebarThreadRowSignalsFile = files.sidebarThreadRowSignals;
   const branchPickerDropdownContentFile = files.branchPickerDropdownContent;
 
-function codexPlusWorkerHelpers() {
-  return `
-const CPXWorkerBridge=require(\"./codex-plus-worker.js\");function CPX_traceRequest(e){return CPXWorkerBridge.traceRequest(e)}async function CPX_repositoryTargets(e,t,n,r){return CPXWorkerBridge.repositoryTargets(e,t,n,r,(i,a)=>pae(e.getWorktreeRepositoryForRoot(i,n),a))}function CPX_isReadOnlyBranchRequest(e,t){return CPXWorkerBridge.isReadOnlyBranchRequest(e,t)}`;
-}
-
 function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
 }
@@ -59,7 +64,7 @@ function patchAboutDialog(text, context = {}) {
   let patched = replaceOnce(
     text,
     "let i=a.app.getName(),o=a.app.getVersion()",
-    `let CPXAbout=require("./codex-plus-aboutMetadata.js").aboutPayload(${JSON.stringify(aboutContext)}),i=CPXAbout.appDisplayName,o=a.app.getVersion()`,
+    `let CPXAbout=${aboutMetadataRequire()}.aboutPayload(${JSON.stringify(aboutContext)}),i=CPXAbout.appDisplayName,o=a.app.getVersion()`,
     "about dialog app name anchor",
   );
   patched = replaceOnce(
@@ -77,7 +82,9 @@ function patchAboutDialog(text, context = {}) {
   patched = replaceOnce(
     patched,
     "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
-    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let CPXAboutMetadata=require(\"./codex-plus-aboutMetadata.js\"),q=CPXAboutMetadata.disclaimerMarkup({escape:zz.default,heading:D,body:O}),s=r==null?``:",
+    "function K0({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let CPXAboutMetadata=" +
+      aboutMetadataRequire() +
+      ",q=CPXAboutMetadata.disclaimerMarkup({escape:zz.default,heading:D,body:O}),s=r==null?``:",
     "about dialog renderer signature anchor",
   );
   patched = replaceOnce(
@@ -110,19 +117,19 @@ function patchWorker(text) {
   let patched = replaceOnce(
     text,
     "function pae(e,t){return e.queryClient.fetchQuery",
-    `${codexPlusWorkerHelpers()}function pae(e,t){return e.queryClient.fetchQuery`,
+    `${workerHook()}function pae(e,t){return e.queryClient.fetchQuery`,
     "worker helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
     "case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
-    "case`codex-plus-trace`:a=X(CPX_traceRequest(e.params));break;case`repository-targets`:a=X(await CPX_repositoryTargets(this.gitManager,e.params,r,t.signal));break;case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+    "case`codex-plus-trace`:a=X(CPXT(e.params));break;case`repository-targets`:a=X(await CPXR(this.gitManager,e.params,r,t.signal));break;case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
     "repository-targets worker switch anchor",
   );
   patched = replaceOnce(
     patched,
     "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)}",
-    "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)||CPX_isReadOnlyBranchRequest(e,t)}",
+    "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)||CPXB(e,t)}",
     "codex plus branch picker git allowlist anchor",
   );
   return replaceOnce(
@@ -132,24 +139,6 @@ function patchWorker(text) {
     "repository-targets worker readonly method anchor",
   );
 }
-
-const codexPlusReviewHelpers = `
-function CPXReviewMux(e){let t=e.mainReviewContent??(0,$.jsx)(of,e);return window.CodexPlus?.ui?.review?.renderBody?.({props:e,deps:{jsx:$.jsx,jsxs:$.jsxs,Fragment:$.Fragment,createElement:Q.createElement,React:Q,useStore:s,useAtom:l,routeAtom:ft,cwdAtom:Or,hostIdAtom:Dr,hostConfigAtom:kr,conversationIdAtom:jr,gitRequest:y,pathValue:B,DefaultReview:of,Button:Y,Tooltip:Ae,Icon:Je,Dropdown:yi,DropdownMenu:vi,BranchPickerDropdownContent:CPXBranchPickerDropdownContent,ReviewToolbar:dp,parseDiff:xr,DiffCard:Ma},defaultBody:t})??t}`;
-
-const codexPlusSubrepoDiffHelpers = `
-`;
-
-const codexPlusDiagnosticHelpers = `
-function CPXDiagnosticDetails(e){return window.CodexPlus?.ui?.errors?.renderDetails?.(e)??null}`;
-
-const codexPlusMermaidHelpers = `
-function CPXMermaidDiagramProps(e){return window.CodexPlus?.ui?.mermaid?.diagramProps?.(e)}`;
-
-const codexPlusThreadHeaderHelpers = `
-function CPXThreadHeaderAccessories(e){return window.CodexPlus?.ui?.threadHeader?.renderAccessories?.(e)??null}`;
-
-const codexPlusNativeMainHelpers = `
-let CPXNativeMenuItems=[],CPXRefreshApplicationMenu=null;function CPXMenuSnapshot(e){return e?.items?.map(e=>({id:e.id,label:e.label,enabled:e.enabled,visible:e.visible,accelerator:e.accelerator,submenu:CPXMenuSnapshot(e.submenu)}))}function CPXLogMenuDiagnostics(){try{let e=CPXMenuSnapshot(a.Menu.getApplicationMenu())??[],t=JSON.stringify(e),n=t.includes(\`codexPlusOpenDevTools\`)||t.includes(\`Open Developer Tools\`);if(process.env.CODEX_PLUS_MENU_DIAGNOSTICS===\`1\`||!n)console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({hasOpenDeveloperTools:n,menu:e})}\`)}catch(e){console.log(\`[Codex Plus menu diagnostics] \${JSON.stringify({error:String(e?.message??e)})}\`)}}function CPXOpenDevTools(e){try{let t=e?.sender;if(typeof t?.openDevTools!==\`function\`)return{ok:!1};return t.openDevTools(),{ok:!0}}catch{return{ok:!1}}}function CPXFocusedEvent(){let e=a.BrowserWindow.getFocusedWindow();return e&&!e.isDestroyed()?{sender:e.webContents}:null}function CPXRunNativeMenuRequest(e){switch(e?.method){case\`devtools/open\`:return CPXOpenDevTools(CPXFocusedEvent());default:return{ok:!1}}}function CPXNativeMenuTemplateItems(e){return CPXNativeMenuItems.filter(t=>t.menuId===e).map(e=>({id:e.id,label:e.label,click:()=>{CPXRunNativeMenuRequest(e.nativeRequest)}}))}function CPXRegisterNativeMenuItem(e){if(e?.id==null||e?.menuId==null||e?.label==null||e?.nativeRequest?.method==null)return{ok:!1};let t={id:String(e.id),menuId:String(e.menuId),label:String(e.label),nativeRequest:{method:String(e.nativeRequest.method),params:e.nativeRequest.params},afterId:e.afterId==null?null:String(e.afterId),afterLabel:e.afterLabel==null?null:String(e.afterLabel)};CPXNativeMenuItems=CPXNativeMenuItems.filter(e=>e.id!==t.id),CPXNativeMenuItems.push(t);try{CPXRefreshApplicationMenu?.()}catch{}return CPXLogMenuDiagnostics(),{ok:!0}}function CPXOpenMermaidViewer(e){let t=e?.html;if(typeof t!==\`string\`||t.length===0)return{ok:!1};let n=(0,s.join)((0,o.tmpdir)(),\`codex-plus-mermaid-\${(0,u.randomUUID)()}.html\`);(0,l.writeFileSync)(n,t,\`utf8\`);let r=new a.BrowserWindow({height:900,resizable:!0,show:!0,title:\`Mermaid diagram viewer\`,webPreferences:{contextIsolation:!0,nodeIntegration:!1,sandbox:!0},width:1400});return r.webContents.setWindowOpenHandler(e=>{try{let t=new URL(e.url);if(t.protocol===\`https:\`&&t.hostname===\`mermaid.live\`)a.shell.openExternal(e.url)}catch{}return{action:\`deny\`}}),r.on(\`closed\`,()=>{try{(0,l.unlinkSync)(n)}catch{}}),r.loadURL((0,S.pathToFileURL)(n).toString()).catch(()=>{}),{ok:!0}}function CPXRegisterNativeRequest(e){return a.ipcMain.handle(\`codex_plus:native-request\`,async(t,n)=>{if(!e.isTrustedIpcEvent(t))return{ok:!1};switch(n?.method){case\`native-menu/register-item\`:return CPXRegisterNativeMenuItem(n.params);case\`devtools/open\`:return CPXOpenDevTools(t);case\`mermaid/openViewer\`:return CPXOpenMermaidViewer(n.params);default:return{ok:!1}}})}`;
 
 function patchThreadSidePanelTabs(text) {
   let patched = replaceOnce(
@@ -161,13 +150,13 @@ function patchThreadSidePanelTabs(text) {
   patched = replaceOnce(
     patched,
     "function uf({cwd:e,fileEntries:t,generatedPathsReady:n,hasUnhandledAttributesFiles:r,isCappedMode:i,repositorySource:a,reviewSummarySource:o}){",
-    `${codexPlusReviewHelpers}function uf({cwd:e,fileEntries:t,generatedPathsReady:n,hasUnhandledAttributesFiles:r,isCappedMode:i,repositorySource:a,reviewSummarySource:o}){`,
+    `${reviewHook()}function uf({cwd:e,fileEntries:t,generatedPathsReady:n,hasUnhandledAttributesFiles:r,isCappedMode:i,repositorySource:a,reviewSummarySource:o}){`,
     "review host hook insertion anchor",
   );
   return replaceOnce(
     patched,
     "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,$.jsx)(Tf,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];let c;",
-    "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,$.jsx)(CPXReviewMux,{mainReviewContent:(0,$.jsx)(Tf,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];let c;",
+    "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,$.jsx)(CPXRM,{mainReviewContent:(0,$.jsx)(Tf,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];let c;",
     "review body mux anchor",
   );
 }
@@ -175,7 +164,7 @@ function patchAppShell(text) {
   let patched = replaceOnce(
     text,
     "function En(e){return(0,Q.jsx)(wn,{onRetry:()=>{e.resetError()}})}",
-    `${codexPlusDiagnosticHelpers}function En(e){return(0,Q.jsx)(wn,{error:e.error,onRetry:()=>{e.resetError()}})}`,
+    `${diagnosticDetailsHook()}function En(e){return(0,Q.jsx)(wn,{error:e.error,onRetry:()=>{e.resetError()}})}`,
     "app shell error fallback prop anchor",
   );
   patched = replaceOnce(
@@ -202,7 +191,7 @@ function patchErrorBoundary(text) {
   let patched = replaceOnce(
     text,
     "function Xf(e){let t=(0,Vf.c)(9),{resetError:n}=e,r=ee(),i,a;",
-    `${codexPlusDiagnosticHelpers}function Xf(e){let t=(0,Vf.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=ee(),i,a;`,
+    `${diagnosticDetailsHook()}function Xf(e){let t=(0,Vf.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=ee(),i,a;`,
     "webview error boundary fallback prop anchor",
   );
   patched = replaceOnce(
@@ -223,7 +212,7 @@ function patchAppMainProjectColors(text) {
   let patched = replaceOnce(
     text,
     "function Pk(e){let t=(0,Q.c)(45),",
-    `${codexPlusProjectColorHelpers}function Pk(e){let t=(0,Q.c)(46),`,
+    `${projectColorHook()}function Pk(e){let t=(0,Q.c)(46),`,
     "project color app main helper insertion anchor",
   );
   patched = replaceOnce(
@@ -235,7 +224,7 @@ function patchAppMainProjectColors(text) {
   patched = replaceOnce(
     patched,
     "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o}",
-    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o,dataAttributes:CPXHostThreadRowProps(i)}",
+    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o,dataAttributes:CPXTR(i)}",
     "project thread row color key anchor",
   );
   patched = replaceOnce(
@@ -265,7 +254,7 @@ function patchAppMainProjectColors(text) {
   patched = replaceOnce(
     patched,
     "Ke=(0,Z.jsx)(Oe,{rowAttributes:ke,className:Ae,collapsed:L,contentClassName:je,",
-    "Ke=(0,Z.jsx)(Oe,{rowAttributes:{...ke,...CPXHostProjectRowProps(n)},className:Ae,collapsed:L,contentClassName:je,",
+    "Ke=(0,Z.jsx)(Oe,{rowAttributes:{...ke,...CPXPR(n)},className:Ae,collapsed:L,contentClassName:je,",
     "project header row color attributes anchor",
   );
   return patched;
@@ -288,7 +277,7 @@ function patchAppMainSidebarBlur(text) {
   return replaceOnce(
     patched,
     "children:[l,u,(0,Z.jsx)(H_,{route:a,children:C})]",
-    "children:[l,u,...(window.CodexPlus?.ui?.commands?.renderMenuItems?.({group:`suggested`,deps:{jsx:Z.jsx,MenuItem:Zy,register:Hp}})??[]),(0,Z.jsx)(H_,{route:a,children:C})]",
+    `children:[l,u,...(${commandMenuItemsExpression("suggested", "Z.jsx", "Zy", "Hp")}),(0,Z.jsx)(H_,{route:a,children:C})]`,
     "sidebar name blur command mount anchor",
   );
 }
@@ -328,19 +317,19 @@ function patchSidebarProjectHoverCardSourceRows(text) {
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})",
-    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label}),CPX_rowDataAttributes)",
+    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})", "CPX_rowDataAttributes")}`,
     "pending worktree sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
-    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),CPX_rowDataAttributes)",
+    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})", "CPX_rowDataAttributes")}`,
     "remote sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
     patched,
     "dataAttributes:ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})",
-    "dataAttributes:window.CodexPlus?.ui?.sidebar?.mergeDataAttributes?.(ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x}),CPX_rowDataAttributes)",
+    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})", "CPX_rowDataAttributes")}`,
     "local sidebar row data attributes merge anchor",
   );
   patched = replaceOnce(
@@ -421,7 +410,7 @@ function patchHeader(text) {
   patched = replaceOnce(
     patched,
     "function lt(e){let t=(0,Z.c)(68),",
-    `${codexPlusThreadHeaderHelpers}function lt(e){let t=(0,Z.c)(72),`,
+    `${threadHeaderHook()}function lt(e){let t=(0,Z.c)(72),`,
     "thread header accessory helper insertion anchor",
   );
   patched = replaceOnce(
@@ -444,7 +433,7 @@ function patchThreadPageHeader(text) {
   patched = replaceOnce(
     patched,
     "function c(e){let t=(0,o.c)(21),",
-    `${codexPlusThreadHeaderHelpers}function c(e){let t=(0,o.c)(24),`,
+    `${threadHeaderHook()}function c(e){let t=(0,o.c)(24),`,
     "thread page header helper insertion anchor",
   );
   patched = replaceOnce(
@@ -466,7 +455,7 @@ function patchLocalConversationPageHeader(text) {
   let patched = replaceOnce(
     text,
     "function Tt(e){let t=(0,Y.c)(42),",
-    `${codexPlusThreadHeaderHelpers}function Tt(e){let t=(0,Y.c)(45),`,
+    `${threadHeaderHook()}function Tt(e){let t=(0,Y.c)(45),`,
     "local conversation header helper insertion anchor",
   );
   patched = replaceOnce(
@@ -484,17 +473,11 @@ function patchLocalConversationPageHeader(text) {
   return patched;
 }
 
-const codexPlusProjectColorHelpers = `
-function CPXHostProjectRowProps(e){return window.CodexPlus?.ui?.sidebar?.projectRowProps?.({project:e})}function CPXHostThreadRowProps(e){return window.CodexPlus?.ui?.sidebar?.threadRowProps?.({project:e})}function CPXHostUserBubbleProps(e){return window.CodexPlus?.ui?.message?.userBubbleProps?.(e)}function CPXHostComposerSurfaceProps(e){return window.CodexPlus?.ui?.composer?.surfaceProps?.(e)}`;
-
-const codexPlusAppearanceSettingsHelpers = `
-function CPXAppearanceRows(e){return window.CodexPlus?.ui?.settings?.appearance?.renderRows?.({deps:{React:X,jsx:Z.jsx,SettingRow:J,ColorInput:sn,Switch:q},variant:e})??[]}`;
-
 function patchGeneralSettingsUserBubbleColors(text) {
   let patched = replaceOnce(
     text,
     "function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
-    `${codexPlusAppearanceSettingsHelpers}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+    `${appearanceSettingsHook()}function tn({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
     "user bubble settings helper insertion anchor",
   );
   return replaceOnce(
@@ -505,20 +488,17 @@ function patchGeneralSettingsUserBubbleColors(text) {
   );
 }
 
-const codexPlusUserBubbleHelpers = `
-${codexPlusProjectColorHelpers}function CPX_installHostSurfaceProps(){}CPX_installHostSurfaceProps();`;
-
 function patchUserMessageAttachmentsBubbleColors(text) {
   let patched = replaceOnce(
     text,
     "var Z=i(),Q=e(n(),1),$=r();function Ue(e){",
-    `var Z=i(),Q=e(n(),1),$=r();${codexPlusUserBubbleHelpers}function Ue(e){`,
+    `var Z=i(),Q=e(n(),1),$=r();${messageComposerHook()}function Ue(e){`,
     "user bubble helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
     "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
-    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({}),role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
+    "Se=W?(0,$.jsx)(`div`,{className:`w-full p-px`,children:(0,$.jsx)(it,{cwd:T??null,hostId:k,initialMessage:U.trim(),onCancel:()=>{q(null)},onDraftChange:e=>{q(e)},onSubmit:ge})}):le?(0,$.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:H?`button`:void 0,tabIndex:0,className:D(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,H&&`cursor-interaction`),",
     "user bubble marker attribute anchor",
   );
   return replaceOnce(
@@ -544,8 +524,8 @@ function patchUserMessageAttachmentsProjectColors(text) {
   );
   return replaceOnce(
     patched,
-    "\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({}),role:H?`button`:void 0,",
-    "\"data-user-message-bubble\":!0,...CPXHostUserBubbleProps({project:CPX_userMessageProjectId}),role:H?`button`:void 0,",
+    "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:H?`button`:void 0,",
+    "\"data-user-message-bubble\":!0,...CPXBubbleProps({project:CPX_userMessageProjectId}),role:H?`button`:void 0,",
     "user bubble project marker attribute anchor",
   );
 }
@@ -554,13 +534,13 @@ function patchComposerBubbleColors(text) {
   let patched = replaceOnce(
     text,
     "function oh(e){let t=(0,$.c)(13),",
-    `${codexPlusUserBubbleHelpers}function oh(e){let t=(0,$.c)(14),`,
+    `${messageComposerHook()}function oh(e){let t=(0,$.c)(14),`,
     "composer user bubble helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
     "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,",
-    "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d,codexPlusProps:CPX_hostSurfaceProps}=e,CPX_surfaceProps=CPX_hostSurfaceProps??CPXHostComposerSurfaceProps({}),",
+    "function oh(e){let t=(0,$.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d,codexPlusProps:CPX_hostSurfaceProps}=e,CPX_surfaceProps=CPX_hostSurfaceProps??CPXSurfaceProps({}),",
     "composer host surface props anchor",
   );
   patched = replaceOnce(
@@ -582,7 +562,7 @@ function patchComposerProjectColors(text) {
   patched = replaceOnce(
     patched,
     anchors.composerProjectStyleCaller,
-    anchors.composerProjectStyleCaller.replace(";return", ",CPX_composerThreadProjectId=a(CPX_threadProjectId,G==null?null:CPX_localThreadKey(G)),CPX_composerSurfaceProps=CPXHostComposerSurfaceProps({project:G==null?On?{hostId:On.hostId,path:On.remotePath,projectId:kn,label:On.label??On.name}:x??void 0:CPX_composerThreadProjectId});return"),
+    anchors.composerProjectStyleCaller.replace(";return", ",CPX_composerThreadProjectId=a(CPX_threadProjectId,G==null?null:CPX_localThreadKey(G)),CPX_composerSurfaceProps=CPXSurfaceProps({project:G==null?On?{hostId:On.hostId,path:On.remotePath,projectId:kn,label:On.label??On.name}:x??void 0:CPX_composerThreadProjectId});return"),
     "composer project style hook-safe caller anchor",
   );
   return replaceOnce(
@@ -615,13 +595,13 @@ function patchLocalTaskRow(text) {
   let patched = replaceOnce(
     text,
     "function fn(e){let t=(0,K.c)(124),",
-    `${codexPlusProjectColorHelpers}function fn(e){let t=(0,K.c)(124),`,
+    `${projectColorHook()}function fn(e){let t=(0,K.c)(124),`,
     "local task row project color helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
     "threadSummary:Ne,dataAttributes:Fe}=e,Ie=g===void 0?!1:g,",
-    "threadSummary:Ne,dataAttributes:Fe}=e,CPX_rowDataAttributes=Fe??CPXHostProjectRowProps(Oe),Ie=g===void 0?!1:g,",
+    "threadSummary:Ne,dataAttributes:Fe}=e,CPX_rowDataAttributes=Fe??CPXPR(Oe),Ie=g===void 0?!1:g,",
     "local task row project assignment anchor",
   );
   patched = replaceOnce(
@@ -648,7 +628,7 @@ function patchMermaidDiagramShell(text) {
   let patched = replaceOnce(
     text,
     "function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,",
-    `${codexPlusMermaidHelpers}function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,`,
+    `${mermaidDiagramHook()}function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,`,
     "mermaid diagram shell helper insertion anchor",
   );
   return replaceOnce(
@@ -672,13 +652,13 @@ function patchMainNativeBridge(text) {
   let patched = replaceOnce(
     text,
     "function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{",
-    `${codexPlusNativeMainHelpers}function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{`,
+    `${nativeMainHook()}function z1(e){return a.ipcMain.handle(Tl,async(t,n)=>{`,
     "codex plus native main helper insertion anchor",
   );
   return replaceOnce(
     patched,
     "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),a.ipcMain.on(kl,",
-    "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),CPXRegisterNativeRequest({isTrustedIpcEvent:te}),a.ipcMain.on(kl,",
+    "v0({buildFlavor:i,getContextForWebContents:N.getContextForWebContents,isTrustedIpcEvent:te,usesOwlAppShell:y}),CPXNative.registerNativeRequest({isTrustedIpcEvent:te}),a.ipcMain.on(kl,",
     "codex plus native main registration anchor",
   );
 }
@@ -693,13 +673,13 @@ function patchMainMenuDiagnostics(text) {
   patched = replaceOnce(
     patched,
     "He,We,{type:`separator`}",
-    "He,We,...CPXNativeMenuTemplateItems(`view-menu`),{type:`separator`}",
+    "He,We,...CPXNative.templateItems(`view-menu`),{type:`separator`}",
     "codex plus view menu template items anchor",
   );
   return replaceOnce(
     patched,
     "me.refreshApplicationMenu(),w(`application menu refreshed`,A),",
-    "CPXRefreshApplicationMenu=()=>me.refreshApplicationMenu(),me.refreshApplicationMenu(),CPXLogMenuDiagnostics(),w(`application menu refreshed`,A),",
+    "CPXNative.setRefreshApplicationMenu(()=>me.refreshApplicationMenu()),me.refreshApplicationMenu(),CPXNative.logMenuDiagnostics(),w(`application menu refreshed`,A),",
     "codex plus menu diagnostics refresh anchor",
   );
 }

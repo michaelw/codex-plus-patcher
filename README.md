@@ -39,7 +39,8 @@ The generated app includes a readable Codex Plus runtime under
 `webview/assets/codex-plus/`. Versioned ASAR patches install the runtime,
 built-in plugins, and the small Codex core hooks those plugins use. See
 [Runtime Plugin Support](docs/plugin-support.md) for the currently supported
-plugin interfaces.
+plugin interfaces and [Plugin Architecture](docs/plugin-architecture.md) for
+the layer rules.
 
 ## How It Works
 

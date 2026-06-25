@@ -14,6 +14,7 @@ const {
   selectPatch,
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
+const { codexPlusRuntimeAssets, runtimeFiles } = require("../src/runtime/assets");
 
 function transformFile(patchSet, filePath, text, context) {
   return collectFileTransforms(patchSet)
@@ -28,6 +29,17 @@ function findTransformPath(patchSet, fileNamePrefix) {
   })?.[0];
   assert.ok(filePath, `${patchSet.id} has ${fileNamePrefix} transform`);
   return filePath;
+}
+
+function runRuntimeApiAndHosts(context) {
+  for (const [asarPath, localPath] of runtimeFiles) {
+    if (!asarPath.startsWith("webview/assets/codex-plus/api/") && !asarPath.startsWith("webview/assets/codex-plus/host/")) continue;
+    vm.runInNewContext(
+      fs.readFileSync(path.join(__dirname, "../src/runtime", localPath), "utf8"),
+      context,
+      { filename: localPath },
+    );
+  }
 }
 
 function versionedNames(patchSet) {
@@ -96,7 +108,17 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
   for (const patchSet of patchSets) {
     const addedFiles = collectAssetFiles(patchSet).map(([filePath]) => filePath);
     assert.ok(addedFiles.includes(".vite/build/codex-plus-aboutMetadata.js"));
+    assert.ok(addedFiles.includes(".vite/build/codex-plus-native-main.js"));
+    assert.ok(addedFiles.includes(".vite/build/codex-plus-worker.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/runtime.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/runtime-manifest.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/index.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/about.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/review.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/native.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/host/review.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/host/projectSelector.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/host/threadHeader.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/aboutMetadata.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/nestedRepositories.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/plugins/diagnosticErrors.js"));
@@ -113,6 +135,62 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
       addedFiles.indexOf("webview/assets/codex-plus/plugins/projectSelectorShortcut.js"),
     );
   }
+});
+
+test("runtime asset order keeps API, host, vendor, and plugin layers deterministic", () => {
+  const asarPaths = runtimeFiles.map(([asarPath]) => asarPath);
+  const indexOf = (filePath) => {
+    const index = asarPaths.indexOf(filePath);
+    assert.notEqual(index, -1, `${filePath} is shipped`);
+    return index;
+  };
+
+  assert.ok(indexOf("webview/assets/codex-plus/runtime.js") < indexOf("webview/assets/codex-plus/runtime-manifest.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/runtime-manifest.js") < indexOf("webview/assets/codex-plus/api/index.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/index.js") < indexOf("webview/assets/codex-plus/api/review.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/about.js") < indexOf("webview/assets/codex-plus/plugins/aboutMetadata.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/mermaid.js") < indexOf("webview/assets/codex-plus/host/review.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/host/threadHeader.js") < indexOf("webview/assets/codex-plus/plugins/nestedRepositories.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/vendor/fzf.umd.js") < indexOf("webview/assets/codex-plus/plugins/projectSelectorShortcut.js"));
+  assert.equal(asarPaths[indexOf(".vite/build/codex-plus-native-main.js")], ".vite/build/codex-plus-native-main.js");
+  assert.equal(asarPaths[indexOf(".vite/build/codex-plus-worker.js")], ".vite/build/codex-plus-worker.js");
+});
+
+test("runtime plugins stay pure from host bundle details", () => {
+  const pluginDir = path.join(__dirname, "../src/runtime/plugins");
+  for (const fileName of fs.readdirSync(pluginDir).filter((name) => name.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(pluginDir, fileName), "utf8");
+    assert.doesNotMatch(source, /\.vite\/build/, `${fileName} must not know Vite bundle paths`);
+    assert.doesNotMatch(source, /webview\/assets\/codex-plus/, `${fileName} must not know shipped asset paths`);
+    assert.doesNotMatch(source, /\bt\[\d+\]/, `${fileName} must not know React compiler cache slots`);
+    assert.doesNotMatch(source, /CodexPlusHost/, `${fileName} must not call host adapters`);
+    assert.doesNotMatch(source, /CPX[A-Za-z]/, `${fileName} must not know minified hook names`);
+  }
+});
+
+test("hook builders stay within the compact glue budget", () => {
+  const hookDir = path.join(__dirname, "../src/patches/lib/hooks");
+  const argsByExport = {
+    sidebarMergeDataAttributes: ["project", "thread"],
+    commandMenuItemsExpression: ["items", "jsx", "open", "formatMessage"],
+  };
+
+  for (const fileName of fs.readdirSync(hookDir).filter((name) => name.endsWith(".js"))) {
+    const hooks = require(path.join(hookDir, fileName));
+    for (const [name, hook] of Object.entries(hooks)) {
+      const snippet = hook(...(argsByExport[name] || []));
+      const compactLength = String(snippet).replace(/\s+/g, "").length;
+      assert.ok(compactLength <= 180, `${fileName}:${name} is ${compactLength} compact characters`);
+    }
+  }
+});
+
+test("patch composition does not grow embedded helper bodies", () => {
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  assert.doesNotMatch(commonPatches, /codexPlus\w+Helpers/);
+  assert.doesNotMatch(commonPatches, /function CPXReviewMux/);
+  assert.doesNotMatch(commonPatches, /function CPXProjectSelector/);
+  assert.doesNotMatch(commonPatches, /function CPXOpenMermaidViewer/);
 });
 
 test("native bridge patch exposes the DevTools request for patch sets with a main bundle", () => {
@@ -140,24 +218,17 @@ test("native bridge patch exposes the DevTools request for patch sets with a mai
           return fakeMain;
         }
       })
-      .find((text) => text.includes("CPXOpenDevTools"));
+      .find((text) => text.includes("codex-plus-native-main.js"));
     assert.equal(typeof main, "string", `${patchSet.id} has native main transform`);
 
     assert.match(preload, /exposeInMainWorld\(`codexPlusNative`,\{request:\(t,n\)=>e\.ipcRenderer\.invoke\(`codex_plus:native-request`,\{method:t,params:n\}\)\}\)/);
-    assert.match(main, /function CPXMenuSnapshot\(e\)/);
-    assert.match(main, /function CPXLogMenuDiagnostics\(\)/);
-    assert.match(main, /function CPXRegisterNativeMenuItem\(e\)/);
-    assert.match(main, /CPXRefreshApplicationMenu=null/);
-    assert.match(main, /function CPXNativeMenuTemplateItems\(e\)/);
+    assert.match(main, /let CPXNative=require\("\.\/codex-plus-native-main\.js"\)\.create\(\{electron:a\}\);/);
+    assert.match(main, /CPXNative\.registerNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
     assert.doesNotMatch(main, /function CPXApplyNativeMenuItems\(\)/);
     assert.doesNotMatch(main, /setApplicationMenu\(null\)/);
-    assert.match(main, /case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\)/);
-    assert.match(main, /CODEX_PLUS_MENU_DIAGNOSTICS/);
-    assert.match(main, /function CPXOpenDevTools\(e\)/);
-    assert.match(main, /typeof t\?\.openDevTools!==`function`/);
-    assert.match(main, /t\.openDevTools\(\),\{ok:!0\}/);
-    assert.match(main, /if\(!e\.isTrustedIpcEvent\(t\)\)return\{ok:!1\};switch\(n\?\.method\)\{case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\);case`devtools\/open`:return CPXOpenDevTools\(t\)/);
-    assert.match(main, /CPXRegisterNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
+    assert.doesNotMatch(main, /function CPXRegisterNativeMenuItem\(e\)/);
+    assert.doesNotMatch(main, /function CPXOpenDevTools\(e\)/);
+    assert.doesNotMatch(main, /function CPXOpenMermaidViewer\(e\)/);
 
     if (versionedNames(patchSet).electronCommandSourceFile) {
       const mainFilePath = mainTransforms[0][0];
@@ -177,10 +248,16 @@ test("native bridge patch exposes the DevTools request for patch sets with a mai
             return current;
           }
         }, fakeMenuMain);
-      assert.match(menuPatch, /He,We,\.\.\.CPXNativeMenuTemplateItems\(`view-menu`\),\{type:`separator`\}/);
-      assert.match(menuPatch, /CPXRefreshApplicationMenu=\(\)=>me\.refreshApplicationMenu\(\),me\.refreshApplicationMenu\(\),CPXLogMenuDiagnostics\(\),w\(`application menu refreshed`,A\),/);
+      assert.match(menuPatch, /He,We,\.\.\.CPXNative\.templateItems\(`view-menu`\),\{type:`separator`\}/);
+      assert.match(menuPatch, /CPXNative\.setRefreshApplicationMenu\(\(\)=>me\.refreshApplicationMenu\(\)\),me\.refreshApplicationMenu\(\),CPXNative\.logMenuDiagnostics\(\),w\(`application menu refreshed`,A\),/);
     }
   }
+
+  const nativeMainSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/nativeMain.js"), "utf8");
+  assert.match(nativeMainSource, /function registerNativeMenuItem/);
+  assert.match(nativeMainSource, /CODEX_PLUS_MENU_DIAGNOSTICS/);
+  assert.match(nativeMainSource, /function openDevTools/);
+  assert.match(nativeMainSource, /function openMermaidViewer/);
 });
 
 test("current patch queues expose project colors and project selector shortcut separately from bubble colors", () => {
@@ -351,7 +428,6 @@ test("patchAsar inserts new runtime files and integrity metadata", () => {
 });
 
 test("runtime API registers plugins, settings, commands, styles, modules, and patches", async () => {
-  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
   const styles = [];
   const storage = new Map();
   const nativeRequests = [];
@@ -402,7 +478,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
     },
   };
 
-  vm.runInNewContext(runtime, context);
+  runRuntimeApiAndHosts(context);
 
   const api = window.CodexPlus;
   assert.equal(window.CodexPlusDiagnostics, api.diagnostics);
@@ -491,6 +567,13 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), { "data-sample-composer": "" });
   assert.deepEqual(plain(api.ui.mermaid.diagramProps({ code: "graph TD;A-->B" })), { "data-sample-mermaid": "" });
   assert.equal(api.ui.review.renderBody({ defaultBody: "body", props: {}, deps: {} }), "wrapped:body");
+  assert.equal(
+    window.CodexPlusHost.adapters.review.renderBodyFromHost(
+      { mainReviewContent: "host-body" },
+      [{ jsx, jsxs: jsx, Fragment: "fragment" }, { createElement: () => null }, null, null, null, null, null, null, null, null, null, "default-review", null, null, null, null, null, null, null, null, null],
+    ),
+    "wrapped:host-body",
+  );
   assert.equal(api.ui.errors.renderDetails({ jsx, error: new Error("boom") }).props.children, "boom");
   const headerAccessories = api.ui.threadHeader.renderAccessories({ context: { cwd: "/tmp/example" }, deps: { jsx } });
   assert.equal(headerAccessories.length, 1);
@@ -530,14 +613,20 @@ test("runtime loads built-in plugins before the app entrypoint while parsing", (
 
   vm.runInNewContext(runtime, context);
 
+  assert.deepEqual(writes, [
+    '<script src="https://example.invalid/webview/assets/codex-plus/runtime-manifest.js"></script>',
+  ]);
+
+  const manifest = new Map(codexPlusRuntimeAssets()).get("webview/assets/codex-plus/runtime-manifest.js");
+  vm.runInNewContext(manifest, context);
+
   assert.ok(writes.some((html) => html.includes("plugins/projectPathHeader.js")));
   assert.ok(writes.some((html) => html.includes("vendor/fzf.umd.js")));
   assert.ok(writes.indexOf(writes.find((html) => html.includes("vendor/fzf.umd.js"))) < writes.indexOf(writes.find((html) => html.includes("plugins/projectSelectorShortcut.js"))));
-  assert.ok(writes.every((html) => /^<script src="https:\/\/example\.invalid\/webview\/assets\/codex-plus\/(?:plugins|vendor)\/.+"><\/script>$/.test(html)));
+  assert.ok(writes.slice(1).every((html) => /^<script src="https:\/\/example\.invalid\/webview\/assets\/codex-plus\/(?:api|host|plugins|vendor)\/.+"><\/script>$/.test(html)));
 });
 
 test("dev tools plugin registers an Open Developer Tools panels command", async () => {
-  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
   const plugin = fs.readFileSync("src/runtime/plugins/devTools.js", "utf8");
   const nativeRequests = [];
   const window = {
@@ -551,7 +640,7 @@ test("dev tools plugin registers an Open Developer Tools panels command", async 
   };
   const context = { window, globalThis: window, URL };
 
-  vm.runInNewContext(runtime, context);
+  runRuntimeApiAndHosts(context);
   vm.runInNewContext(plugin, context);
 
   const api = window.CodexPlus;
@@ -584,7 +673,6 @@ test("dev tools plugin registers an Open Developer Tools panels command", async 
 });
 
 test("project selector shortcut command focuses and opens the mounted selector trigger", () => {
-  const runtime = fs.readFileSync("src/runtime/runtime.js", "utf8");
   const plugin = fs.readFileSync("src/runtime/plugins/projectSelectorShortcut.js", "utf8");
   const storage = new Map();
   const focused = [];
@@ -703,7 +791,7 @@ test("project selector shortcut command focuses and opens the mounted selector t
     },
   };
 
-  vm.runInNewContext(runtime, context);
+  runRuntimeApiAndHosts(context);
   vm.runInNewContext(plugin, context);
 
   const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -820,24 +908,21 @@ test("local active workspace root dropdown exposes only the final selector trigg
 
     const transformed = transform(fakeDropdownBundle);
 
-    assert.match(transformed, /function CPXProjectSelectorFuzzyFilter\(e,t\)/);
-    assert.match(transformed, /window\.CodexPlus\?\.ui\?\.projectSelector\?\.fuzzyFilter\?\.\(e,t\)/);
-    assert.match(transformed, /function CPXProjectSelectorFuzzyHighlight\(e,t\)/);
-    assert.match(transformed, /window\.CodexPlus\?\.ui\?\.projectSelector\?\.fuzzyHighlight\?\.\(\{text:e,query:t,jsx:H\.jsx\}\)/);
-    assert.match(transformed, /function CPXProjectSelectorAcceptFirst\(e,t,n,r\)/);
-    assert.match(transformed, /v=CPXProjectSelectorFuzzyFilter\(n,h\)/);
-    assert.match(transformed, /onKeyDown:e=>CPXProjectSelectorAcceptFirst\(e,v,i,h\)/);
-    assert.match(transformed, /children:CPXProjectSelectorFuzzyHighlight\(e\.label,h\)/);
+    assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+    assert.match(transformed, /CPXPSF=\(e,t\)=>CPXP\.fuzzyFilter\(e,t\)/);
+    assert.match(transformed, /CPXPSH=\(e,t\)=>CPXP\.fuzzyHighlight\(e,t,H\.jsx\)/);
+    assert.match(transformed, /CPXPSA=\(e,t,n,r\)=>CPXP\.acceptFirst\(e,t,n,r\)/);
+    assert.match(transformed, /v=CPXPSF\(n,h\)/);
+    assert.match(transformed, /onKeyDown:e=>CPXPSA\(e,v,i,h\)/);
+    assert.match(transformed, /children:CPXPSH\(e\.label,h\)/);
     assert.doesNotMatch(transformed, /toLowerCase\(\)\.includes\(e\)/);
     assert.doesNotMatch(transformed, /function fuzzyIndices/);
     assert.doesNotMatch(transformed, /function CPXFuzzyIndices/);
-    assert.match(transformed, /function CPXProjectSelectorTrigger\(e,t\)/);
-    assert.match(transformed, /Me\.isValidElement\(e\)\?Me\.cloneElement\(e,\{\.\.\.e\.props,"data-codex-plus-project-selector-trigger":!0,"data-codex-plus-project-selector-variant":t\}\):e/);
-    assert.match(transformed, /triggerButton:CPXProjectSelectorTrigger\(X,k\)/);
+    assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,Me\)\}/);
+    assert.match(transformed, /triggerButton:CPXPST\(X,k\)/);
     assert.match(transformed, /triggerButton:e,onStartFromScratch:U/);
     assert.doesNotMatch(transformed, /className:`contents`/);
-    assert.equal(transformed.match(/data-codex-plus-project-selector-trigger/g)?.length, 1);
-    assert.equal(transformed.match(/data-codex-plus-project-selector-variant/g)?.length, 1);
+    assert.equal(transformed.match(/CPXPST/g)?.length, 2);
   }
 });
 
@@ -853,11 +938,11 @@ test("project selector Enter key adapter accepts only the first searched match",
 
   assert.equal(typeof transform, "function");
   const transformed = transform(fakeDropdownBundle);
-  const helperSource = transformed.match(/function CPXProjectSelectorAcceptFirst[\s\S]*?function Pe/)?.[0];
-  assert.ok(helperSource, "transformed dropdown exposes Enter adapter source");
-  const sandbox = {};
-  vm.createContext(sandbox);
-  vm.runInContext(`${helperSource.replace(/function Pe$/, "")};this.CPXProjectSelectorAcceptFirst=CPXProjectSelectorAcceptFirst;`, sandbox);
+  assert.match(transformed, /CPXPSA=\(e,t,n,r\)=>CPXP\.acceptFirst\(e,t,n,r\)/);
+  const window = { location: { href: "https://example.invalid/webview/assets/codex-plus/runtime.js" } };
+  const context = { window, globalThis: window, URL };
+  runRuntimeApiAndHosts(context);
+  const adapter = window.CodexPlusHost.adapters.projectSelector;
 
   const selected = [];
   const events = [];
@@ -867,10 +952,10 @@ test("project selector Enter key adapter accepts only the first searched match",
     stopPropagation() { events.push("stopPropagation"); },
   });
 
-  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [{ projectId: "first" }, { projectId: "second" }], (projectId) => selected.push(projectId), "codex");
-  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [{ projectId: "empty-query" }], (projectId) => selected.push(projectId), "   ");
-  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("Enter"), [], (projectId) => selected.push(projectId), "codex");
-  sandbox.CPXProjectSelectorAcceptFirst(makeEvent("ArrowDown"), [{ projectId: "arrow" }], (projectId) => selected.push(projectId), "codex");
+  adapter.acceptFirst(makeEvent("Enter"), [{ projectId: "first" }, { projectId: "second" }], (projectId) => selected.push(projectId), "codex");
+  adapter.acceptFirst(makeEvent("Enter"), [{ projectId: "empty-query" }], (projectId) => selected.push(projectId), "   ");
+  adapter.acceptFirst(makeEvent("Enter"), [], (projectId) => selected.push(projectId), "codex");
+  adapter.acceptFirst(makeEvent("ArrowDown"), [{ projectId: "arrow" }], (projectId) => selected.push(projectId), "codex");
 
   assert.deepEqual(selected, ["first"]);
   assert.deepEqual(events, ["preventDefault", "stopPropagation"]);
@@ -1075,7 +1160,7 @@ test("header patch renders project path accessories from thread context", () => 
     assert.match(transformed, /a as CPX_readAtom/);
     assert.match(transformed, /t as CPX_Tooltip/);
     assert.match(transformed, /function CPXThreadHeaderAccessories\(e\)/);
-    assert.match(transformed, /threadHeader\?\.renderAccessories/);
+    assert.match(transformed, /CodexPlusHost\.adapters\.threadHeader/);
     assert.match(transformed, /CPX_headerContext=\{cwd:CPX_readAtom\(CPX_headerCwd\),hostId:CPX_readAtom\(CPX_headerHostId\)\}/);
     assert.match(transformed, /deps:\{jsx:Q\.jsx,jsxs:Q\.jsxs,Tooltip:CPX_Tooltip\}/);
     assert.match(transformed, /children:\[\(0,Q\.jsx\)\(mt,\{onClick:c\}\),\(0,Q\.jsx\)\(x,\{color:`ghostActive`/);
@@ -1129,6 +1214,7 @@ test("documentation mentions current patches and contributor sync rule", () => {
   assert.match(readme, /Toggle sidebar blur/);
   assert.match(readme, /fullscreen Mermaid diagram viewer/);
   assert.match(readme, /Runtime Plugin Support\]\(docs\/plugin-support\.md\)/);
+  assert.match(readme, /Plugin Architecture\]\(docs\/plugin-architecture\.md\)/);
   assert.match(readme, /Versioned ASAR patches install the runtime,\s+built-in plugins/);
   assert.match(development, /If a patch or runtime plugin is added, removed, or renamed/);
   assert.match(development, /README patch summary/);
@@ -1139,12 +1225,22 @@ test("documentation mentions current patches and contributor sync rule", () => {
   const pluginSupport = fs.readFileSync("docs/plugin-support.md", "utf8");
   assert.match(pluginSupport, /window\.CodexPlus/);
   assert.match(pluginSupport, /window\.CodexPlusHost/);
+  assert.match(pluginSupport, /plugin-architecture\.md/);
   assert.match(pluginSupport, /CodexPlus\.definePlugin/);
   assert.match(pluginSupport, /CodexPlus\.registerPlugin/);
   assert.match(pluginSupport, /aboutMetadata/);
   assert.match(pluginSupport, /sidebarNameBlur/);
   assert.match(pluginSupport, /threadHeader/);
   assert.match(pluginSupport, /third-party plugin marketplace/);
+  const pluginArchitecture = fs.readFileSync("docs/plugin-architecture.md", "utf8");
+  assert.match(pluginArchitecture, /src\/runtime\/api/);
+  assert.match(pluginArchitecture, /src\/runtime\/plugins/);
+  assert.match(pluginArchitecture, /src\/runtime\/host/);
+  assert.match(pluginArchitecture, /src\/patches\/lib\/hooks/);
+  assert.match(pluginArchitecture, /180-character/);
+  assert.match(pluginArchitecture, /plugin purity/);
+  assert.match(pluginArchitecture, /host adapter/);
+  assert.match(pluginArchitecture, /hook builder/);
   assert.equal(packageJson.scripts.check, "node scripts/check-syntax.js");
 });
 
@@ -1188,20 +1284,10 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
           return fakeMain;
         }
       })
-      .find((text) => text.includes("CPXOpenMermaidViewer"));
+      .find((text) => text.includes("codex-plus-native-main.js"));
     assert.equal(typeof main, "string", `${patchSet.id} has native bridge main transform`);
-    assert.match(main, /function CPXMenuSnapshot\(e\)/);
-    assert.match(main, /function CPXLogMenuDiagnostics\(\)/);
-    assert.match(main, /function CPXOpenDevTools\(e\)/);
-    assert.match(main, /typeof t\?\.openDevTools!==`function`/);
-    assert.match(main, /t\.openDevTools\(\),\{ok:!0\}/);
-    assert.match(main, /function CPXOpenMermaidViewer\(e\)/);
-    assert.match(main, /new a\.BrowserWindow\(\{height:900,resizable:!0,show:!0,title:`Mermaid diagram viewer`/);
-    assert.match(main, /codex-plus-mermaid-\$\{\(0,u\.randomUUID\)\(\)\}\.html/);
-    assert.match(main, /r\.loadURL\(\(0,S\.pathToFileURL\)\(n\)\.toString\(\)\)/);
-    assert.match(main, /if\(!e\.isTrustedIpcEvent\(t\)\)return\{ok:!1\};switch\(n\?\.method\)\{case`native-menu\/register-item`:return CPXRegisterNativeMenuItem\(n\.params\);case`devtools\/open`:return CPXOpenDevTools\(t\)/);
-    assert.match(main, /codex_plus:native-request/);
-    assert.match(main, /CPXRegisterNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
+    assert.match(main, /let CPXNative=require\("\.\/codex-plus-native-main\.js"\)\.create\(\{electron:a\}\);/);
+    assert.match(main, /CPXNative\.registerNativeRequest\(\{isTrustedIpcEvent:te\}\)/);
   }
 
   for (const patchSet of patchSets.filter((patchSet) => patchSet.id === "codex-26.616.51431-4212" || patchSet.id === "codex-26.616.41845-4198")) {
@@ -1213,12 +1299,14 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
   }
 
   const pluginSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/mermaidFullscreen.js"), "utf8");
+  const nativeMainSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/nativeMain.js"), "utf8");
   const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
   assert.match(pluginSource, /function openViewer/);
   assert.match(pluginSource, /CodexPlus\.native\.request\("mermaid\/openViewer", \{ html \}\)/);
   assert.match(pluginSource, /window\.open\(liveUrl, "_blank", "noopener"\)/);
-  assert.match(commonPatches, /a\.shell\.openExternal\(e\.url\)/);
-  assert.match(commonPatches, /t\.hostname===\\`mermaid\.live\\`/);
+  assert.match(nativeMainSource, /electron\.shell\.openExternal\(event\.url\)/);
+  assert.match(nativeMainSource, /url\.hostname === "mermaid\.live"/);
+  assert.doesNotMatch(commonPatches, /function CPXOpenMermaidViewer/);
   assert.doesNotMatch(pluginSource, /container\.querySelector\("svg"\)/);
   assert.doesNotMatch(pluginSource, /data-codex-plus-mermaid-content/);
   assert.doesNotMatch(pluginSource, /function isMermaidSvg/);
@@ -1385,9 +1473,9 @@ test("review patch mounts repository mux before main branch selection", () => {
     assert.match(transformed, /children:d&&!u&&c==null\?\(0,\$\.jsx\)\(Oa,\{\}\):\(0,\$\.jsx\)\(of,/);
     assert.match(
       transformed,
-      /s=\(0,\$\.jsx\)\(CPXReviewMux,\{mainReviewContent:\(0,\$\.jsx\)\(Tf,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
+      /s=\(0,\$\.jsx\)\(CPXRM,\{mainReviewContent:\(0,\$\.jsx\)\(Tf,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
     );
-    assert.match(transformed, /ui\?\.review\?\.renderBody/);
+    assert.match(transformed, /CodexPlusHost\.adapters\.review/);
     assert.doesNotMatch(transformed, /plugins\?\.get\(`nestedRepositories`\)\?\.exports/);
     assert.match(transformed, /CPXBranchPickerDropdownContent/);
     assert.doesNotMatch(transformed, /function CPXBranchPicker/);
@@ -1426,18 +1514,19 @@ test("worker patch allows codex plus branch picker read-only branch requests", (
 
     const transformed = transform(fakeWorker);
 
-    assert.match(transformed, /case`repository-targets`:a=X\(await CPX_repositoryTargets/);
+    assert.match(transformed, /case`repository-targets`:a=X\(await CPXR/);
     assert.match(transformed, /case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:/);
-    assert.match(transformed, /const CPXWorkerBridge=require\("\.\/codex-plus-worker\.js"\)/);
-    assert.match(transformed, /function CPX_isReadOnlyBranchRequest\(e,t\)\{return CPXWorkerBridge\.isReadOnlyBranchRequest\(e,t\)\}/);
+    assert.match(transformed, /const CPXW=require\("\.\/codex-plus-worker\.js"\)/);
+    assert.match(transformed, /CPXB=\(e,t\)=>CPXW\.isReadOnlyBranchRequest\(e,t\)/);
     assert.match(
       transformed,
-      /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPX_isReadOnlyBranchRequest\(e,t\)\}/,
+      /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPXB\(e,t\)\}/,
     );
   }
 
-  const workerSource = fs.readFileSync(path.join(__dirname, "../src/runtime/worker.js"), "utf8");
+  const workerSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/worker.js"), "utf8");
   assert.match(workerSource, /function repositoryTargets/);
+  assert.match(workerSource, /function repositoryTargetsFromHost/);
   assert.match(workerSource, /function isReadOnlyBranchRequest/);
   assert.match(workerSource, /recent-branches/);
   assert.match(workerSource, /search-branches/);
@@ -1514,10 +1603,11 @@ test("app main patch applies project colors to project headers and grouped row o
 
     const transformed = transformFile(patchSet, appMainFile, fakeAppMainBundle);
 
-    assert.match(transformed, /ui\?\.sidebar\?\.projectRowProps/);
-    assert.match(transformed, /ui\?\.sidebar\?\.threadRowProps/);
-    assert.match(transformed, /rowAttributes:\{\.\.\.ke,\.\.\.CPXHostProjectRowProps\(n\)\}/);
-    assert.match(transformed, /dataAttributes:CPXHostThreadRowProps\(i\)/);
+    assert.match(transformed, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
+    assert.match(transformed, /CPXPR=e=>CPXS\.projectRowProps\(e\)/);
+    assert.match(transformed, /CPXTR=e=>CPXS\.threadRowProps\(e\)/);
+    assert.match(transformed, /rowAttributes:\{\.\.\.ke,\.\.\.CPXPR\(n\)\}/);
+    assert.match(transformed, /dataAttributes:CPXTR\(i\)/);
     assert.match(transformed, /"data-codex-plus-sidebar-name":``/);
     assert.doesNotMatch(transformed, /function CPXSidebarNameBlurCommand\(\)/);
     assert.match(transformed, /ui\?\.commands\?\.renderMenuItems/);
@@ -1561,7 +1651,7 @@ test("local task row patch colors standalone rows from row project context", () 
     const transformed = transform(fakeLocalTaskRowBundle);
 
     assert.doesNotMatch(transformed, /CPX_threadProjectAssignments/);
-    assert.match(transformed, /CPX_rowDataAttributes=Fe\?\?CPXHostProjectRowProps\(Oe\)/);
+    assert.match(transformed, /CPX_rowDataAttributes=Fe\?\?CPXPR\(Oe\)/);
     assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
     assert.match(transformed, /t\[87\]!==CPX_rowDataAttributes/);
     assert.match(transformed, /t\[87\]=CPX_rowDataAttributes/);
@@ -1665,9 +1755,9 @@ test("sidebar thread list forwards project color data attributes into rows", () 
     assert.doesNotMatch(transformed, /function CPX_mergeDataAttributes\(e,t\)/);
     assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
     assert.match(transformed, /dataAttributes:l\?\.dataAttributes/);
-    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e\.task\.title\?\?``\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /ui\?\.sidebar\?\.mergeDataAttributes\?\.\(ae\.sidebarThreadRow\(\{active:s,hostId:t\.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t\.label\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e\.task\.title\?\?``\}\),CPX_rowDataAttributes\)/);
+    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:t\.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t\.label\}\),CPX_rowDataAttributes\)/);
     assert.match(transformed, /function Rn\(e\)\{let t=\(0,zt\.c\)\(44\),/);
     assert.match(transformed, /var En=\(0,Vt\.memo\)\(function\(e\)\{let t=\(0,zt\.c\)\(41\),/);
     assert.match(transformed, /function On\(e\)\{let t=\(0,zt\.c\)\(124\),/);
@@ -1698,7 +1788,8 @@ test("user message patch applies variant-specific bubble colors with default fal
 
     const transformed = transformFile(patchSet, userMessageAttachmentsFile, fakeBundle);
 
-    assert.match(transformed, /ui\?\.message\?\.userBubbleProps/);
+    assert.match(transformed, /CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
+    assert.match(transformed, /CPXBubbleProps=e=>CPXMC\.userBubbleProps\(e\)/);
     assert.doesNotMatch(transformed, /CPX_USER_BUBBLE_OVERRIDE_KEY/);
     assert.doesNotMatch(transformed, /CPX_userBubbleOverrideEnabled/);
     assert.doesNotMatch(transformed, /function CPX_projectColorStyle\(e\)/);
@@ -1708,11 +1799,9 @@ test("user message patch applies variant-specific bubble colors with default fal
     assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
     assert.doesNotMatch(transformed, /CPX_PROJECT_PALETTE/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-bubble\]\[data-codex-plus-project-color\]\).*background-color:var\(--codex-plus-project/);
-    assert.match(transformed, /function CPX_installHostSurfaceProps\(\)/);
-    assert.match(transformed, /CPX_installHostSurfaceProps\(\)/);
     assert.match(transformed, /CPX_userMessageProjectId=o\(CPX_threadProjectId,S==null\?null:CPX_localThreadKey\(S\)\)/);
     assert.doesNotMatch(transformed, /CPX_userMessageProjectStyle/);
-    assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXHostUserBubbleProps\(\{project:CPX_userMessageProjectId\}\),role:H\?`button`:void 0/);
+    assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXBubbleProps\(\{project:CPX_userMessageProjectId\}\),role:H\?`button`:void 0/);
     assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
     assert.match(transformed, /bg-token-foreground\/5 max-w-\[77%\]/);
   }
@@ -1753,10 +1842,10 @@ test("composer patch applies the user entry marker and shared color variables", 
 
     const transformed = transformFile(patchSet, composerFile, fakeBundle);
 
-    assert.match(transformed, /ui\?\.composer\?\.surfaceProps/);
+    assert.match(transformed, /CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
+    assert.match(transformed, /CPXSurfaceProps=e=>CPXMC\.composerSurfaceProps\(e\)/);
     assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
     assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
-    assert.match(transformed, /function CPX_installHostSurfaceProps\(\)/);
     assert.match(transformed, /function oh\(e\)\{let t=\(0,\$\.c\)\(14\)/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\].*background-color:var\(--codex-plus-project/);
     assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
@@ -1764,7 +1853,7 @@ test("composer patch applies the user entry marker and shared color variables", 
     assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
     assert.doesNotMatch(transformed, /CPX_projectColorInlineStyle/);
     assert.match(transformed, /CPX_composerThreadProjectId=a\(CPX_threadProjectId,G==null\?null:CPX_localThreadKey\(G\)\)/);
-    assert.match(transformed, /CPX_composerSurfaceProps=CPXHostComposerSurfaceProps\(\{project:G==null\?On\?\{hostId:On\.hostId,path:On\.remotePath,projectId:kn,label:On\.label\?\?On\.name\}:x\?\?void 0:CPX_composerThreadProjectId\}\);return/);
+    assert.match(transformed, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:G==null\?On\?\{hostId:On\.hostId,path:On\.remotePath,projectId:kn,label:On\.label\?\?On\.name\}:x\?\?void 0:CPX_composerThreadProjectId\}\);return/);
     assert.match(transformed, /codexPlusProps:!Ge&&!Hn\?CPX_composerSurfaceProps:void 0/);
     assert.doesNotMatch(transformed, /style:!Ge&&!Hn\?CPX_projectColorStyle\(.*a\(CPX_threadProjectId/);
   }

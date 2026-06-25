@@ -2,31 +2,72 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const runtimeRoot = __dirname;
-const runtimeFiles = [
-  [".vite/build/codex-plus-aboutMetadata.js", "plugins/aboutMetadata.js"],
-  [".vite/build/codex-plus-worker.js", "worker.js"],
-  ["webview/assets/codex-plus/runtime.js", "runtime.js"],
-  ["webview/assets/codex-plus/plugins/aboutMetadata.js", "plugins/aboutMetadata.js"],
-  ["webview/assets/codex-plus/plugins/nestedRepositories.js", "plugins/nestedRepositories.js"],
-  ["webview/assets/codex-plus/plugins/diagnosticErrors.js", "plugins/diagnosticErrors.js"],
-  ["webview/assets/codex-plus/plugins/userBubbleColors.js", "plugins/userBubbleColors.js"],
-  ["webview/assets/codex-plus/plugins/projectColors.js", "plugins/projectColors.js"],
-  ["webview/assets/codex-plus/plugins/projectPathHeader.js", "plugins/projectPathHeader.js"],
-  ["webview/assets/codex-plus/plugins/sidebarNameBlur.js", "plugins/sidebarNameBlur.js"],
-  ["webview/assets/codex-plus/plugins/devTools.js", "plugins/devTools.js"],
-  ["webview/assets/codex-plus/vendor/fzf.umd.js", "../../node_modules/fzf/dist/fzf.umd.js"],
-  ["webview/assets/codex-plus/plugins/projectSelectorShortcut.js", "plugins/projectSelectorShortcut.js"],
-  ["webview/assets/codex-plus/plugins/mermaidFullscreen.js", "plugins/mermaidFullscreen.js"],
+const browserRuntimeFiles = [
+  "api/index.js",
+  "api/diagnostics.js",
+  "api/modules.js",
+  "api/settings.js",
+  "api/patches.js",
+  "api/commands.js",
+  "api/styles.js",
+  "api/sidebar.js",
+  "api/message.js",
+  "api/composer.js",
+  "api/about.js",
+  "api/review.js",
+  "api/native.js",
+  "api/errors.js",
+  "api/threadHeader.js",
+  "api/mermaid.js",
+  "host/review.js",
+  "host/sidebar.js",
+  "host/messageComposer.js",
+  "host/projectSelector.js",
+  "host/threadHeader.js",
+  "vendor/fzf.umd.js",
+  "plugins/aboutMetadata.js",
+  "plugins/nestedRepositories.js",
+  "plugins/diagnosticErrors.js",
+  "plugins/userBubbleColors.js",
+  "plugins/projectColors.js",
+  "plugins/projectPathHeader.js",
+  "plugins/sidebarNameBlur.js",
+  "plugins/devTools.js",
+  "plugins/projectSelectorShortcut.js",
+  "plugins/mermaidFullscreen.js",
 ];
 
+const nodeRuntimeFiles = [
+  [".vite/build/codex-plus-aboutMetadata.js", "plugins/aboutMetadata.js"],
+  [".vite/build/codex-plus-native-main.js", "host/nativeMain.js"],
+  [".vite/build/codex-plus-worker.js", "host/worker.js"],
+  ["webview/assets/codex-plus/runtime.js", "runtime.js"],
+];
+
+const browserRuntimeAssets = browserRuntimeFiles.map((filePath) => [
+  `webview/assets/codex-plus/${filePath}`,
+  filePath.startsWith("vendor/") ? "../../node_modules/fzf/dist/fzf.umd.js" : filePath,
+]);
+
+const runtimeFiles = [
+  ...nodeRuntimeFiles,
+  ["webview/assets/codex-plus/runtime-manifest.js", null],
+  ...browserRuntimeAssets,
+];
+
+function browserRuntimeManifest() {
+  return `window.__CodexPlusRuntimeFiles=${JSON.stringify(browserRuntimeFiles)};window.__CodexPlusLoadRuntimeFiles?.(window.__CodexPlusRuntimeFiles);\n`;
+}
+
 function codexPlusRuntimeAssets() {
-  return runtimeFiles.map(([asarPath, localPath]) => [
-    asarPath,
-    fs.readFileSync(path.join(runtimeRoot, localPath), "utf8"),
-  ]);
+  return runtimeFiles.map(([asarPath, localPath]) => {
+    const content = localPath == null ? browserRuntimeManifest() : fs.readFileSync(path.join(runtimeRoot, localPath), "utf8");
+    return [asarPath, content];
+  });
 }
 
 module.exports = {
+  browserRuntimeFiles,
   codexPlusRuntimeAssets,
   runtimeFiles,
 };

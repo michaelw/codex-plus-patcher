@@ -221,8 +221,15 @@ function isReadOnlyBranchRequest(requestKind, source) {
   return source === "codex_plus_review" && (requestKind === "recent-branches" || requestKind === "search-branches");
 }
 
+function repositoryTargetsFromHost(gitManager, params, platform, signal, getSubmodulePaths) {
+  return repositoryTargets(gitManager, params, platform, signal, (root, submoduleSignal) =>
+    getSubmodulePaths(gitManager.getWorktreeRepositoryForRoot(root, platform), submoduleSignal),
+  );
+}
+
 module.exports = {
   isReadOnlyBranchRequest,
+  repositoryTargetsFromHost,
   repositoryTargets,
   traceRequest,
 };
