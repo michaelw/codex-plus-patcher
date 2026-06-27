@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const packageJson = require("../package.json");
 
 const {
   createApplyProgress,
@@ -1040,7 +1041,7 @@ test("audit identity helper handles clean, dirty, and non-git cases", () => {
     },
   });
   assert.equal(clean.packageName, "codex-plus-patcher");
-  assert.equal(clean.packageVersion, "0.7.0");
+  assert.equal(clean.packageVersion, packageJson.version);
   assert.equal(clean.gitSha, "abc123");
   assert.equal(clean.gitDirty, false);
   assert.equal(clean.gitAvailable, true);
