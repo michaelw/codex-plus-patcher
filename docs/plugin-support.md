@@ -215,8 +215,7 @@ A patch is acceptable if it:
 - exposes Codex host dependencies to `CodexPlus`;
 - adds a stable data marker;
 - calls a generic `CodexPlus.ui.*`, `CodexPlus.commands.*`, or
-  `CodexPlus.native.*` host method;
-- changes a minified memo cache so the generic hook is reactive.
+  `CodexPlus.native.*` host method.
 
 A patch is suspicious if it:
 
@@ -224,7 +223,8 @@ A patch is suspicious if it:
 - contains CSS beyond a tiny host marker;
 - contains plugin-specific render logic;
 - knows a plugin ID and a host component at the same time;
-- constructs a business command or menu item directly.
+- constructs a business command or menu item directly;
+- rewrites React compiler cache branches or cache sizes.
 
 New feature work should prefer adding or extending a generic runtime surface
 first, then hook that surface into Codex core with the smallest versioned patch

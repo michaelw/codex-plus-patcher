@@ -143,7 +143,14 @@ test("dev-sync copies allowed config and symlinks original worktrees", () => {
   writeFile(devHome, "logs_2.sqlite-wal", "remove me");
   writeFile(sourceHome, "config.toml", "model = 'gpt-5'\n");
   writeFile(sourceHome, "auth.json", "{}\n");
-  writeFile(sourceHome, ".codex-global-state.json", "{}\n");
+  writeFile(sourceHome, ".codex-global-state.json", JSON.stringify({
+    "electron-persisted-atom-state": {
+      "composer-prompt-drafts-v1": {
+        "local:thread-1": "blur",
+      },
+      "project-order": ["/repo"],
+    },
+  }));
   writeFile(sourceHome, "rules/default.rules", "rule\n");
   writeFile(sourceHome, "skills/example/SKILL.md", "# Skill\n");
   writeFile(sourceHome, "plugins/example/plugin.json", "{}\n");
@@ -162,6 +169,9 @@ test("dev-sync copies allowed config and symlinks original worktrees", () => {
   const result = syncDevHome({ sourceHome, devHome });
 
   assert.equal(fs.readFileSync(path.join(devHome, "config.toml"), "utf8"), "model = 'gpt-5'\n");
+  const devGlobalState = JSON.parse(fs.readFileSync(path.join(devHome, ".codex-global-state.json"), "utf8"));
+  assert.equal(devGlobalState["electron-persisted-atom-state"]["composer-prompt-drafts-v1"], undefined);
+  assert.deepEqual(devGlobalState["electron-persisted-atom-state"]["project-order"], ["/repo"]);
   assert.equal(fs.readFileSync(path.join(devHome, "rules/default.rules"), "utf8"), "rule\n");
   assert.equal(fs.readFileSync(path.join(devHome, "computer-use/config.json"), "utf8"), "{}\n");
   assert.equal(fs.lstatSync(path.join(devHome, "worktrees")).isSymbolicLink(), true);
@@ -177,12 +187,14 @@ test("dev-sync copies allowed config and symlinks original worktrees", () => {
   assert.equal(fs.existsSync(path.join(devHome, "state_5.sqlite-shm")), false);
   assert.equal(fs.existsSync(path.join(devHome, "cache", "generated.txt")), false);
   assert.equal(fs.existsSync(path.join(devHome, "cache", "stale.txt")), false);
+  assert.equal(result.scrubbedGlobalState, true);
   assert.deepEqual(result.sqliteSnapshots, ["state_5.sqlite"]);
   assert.deepEqual(result.worktrees, {
     source: path.join(sourceHome, "worktrees"),
     target: path.join(devHome, "worktrees"),
   });
   assert.match(formatSyncDevHomeResult(result), /SQLite snapshots: state_5\.sqlite/);
+  assert.match(formatSyncDevHomeResult(result), /Scrubbed writable state: composer prompt drafts/);
   assert.match(formatSyncDevHomeResult(result), /Dev mode shares the original Codex worktrees/);
 });
 

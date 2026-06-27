@@ -69,6 +69,18 @@ function copyEntry({ sourceHome, devHome, relativePath, fsImpl = fs }) {
   return relativePath;
 }
 
+function scrubDevGlobalState(devHome, fsImpl = fs) {
+  const statePath = path.join(devHome, ".codex-global-state.json");
+  if (!fsImpl.existsSync(statePath)) return false;
+  const state = JSON.parse(fsImpl.readFileSync(statePath, "utf8"));
+  const atomState = state["electron-persisted-atom-state"];
+  if (atomState == null || typeof atomState !== "object") return false;
+  if (!Object.prototype.hasOwnProperty.call(atomState, "composer-prompt-drafts-v1")) return false;
+  delete atomState["composer-prompt-drafts-v1"];
+  fsImpl.writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+  return true;
+}
+
 function cleanExcludedDevState(devHome, fsImpl = fs) {
   for (const relativePath of EXCLUDED_DEV_STATE_ENTRIES) {
     fsImpl.rmSync(path.join(devHome, relativePath), { recursive: true, force: true });
@@ -120,6 +132,7 @@ function syncDevHome({
     });
     if (copiedPath) copied.push(copiedPath);
   }
+  const scrubbedGlobalState = scrubDevGlobalState(resolvedDevHome, fsImpl);
 
   const sqliteSnapshots = [];
   for (const relativePath of SQLITE_SNAPSHOT_ENTRIES) {
@@ -146,6 +159,7 @@ function syncDevHome({
     sourceHome: resolvedSourceHome,
     devHome: resolvedDevHome,
     copied,
+    scrubbedGlobalState,
     sqliteSnapshots,
     worktrees,
     warning: DEV_MODE_WARNING,
@@ -210,6 +224,7 @@ function formatSyncDevHomeResult(result) {
     `Source home: ${result.sourceHome}`,
     `Dev home: ${result.devHome}`,
     `Copied: ${result.copied.length === 0 ? "(none)" : result.copied.join(", ")}`,
+    `Scrubbed writable state: ${result.scrubbedGlobalState ? "composer prompt drafts" : "(none)"}`,
     `SQLite snapshots: ${result.sqliteSnapshots?.length ? result.sqliteSnapshots.join(", ") : "(none)"}`,
     result.worktrees ? `Worktrees: ${result.worktrees.target} -> ${result.worktrees.source}` : "Worktrees: (missing)",
     `Warning: ${result.warning}`,

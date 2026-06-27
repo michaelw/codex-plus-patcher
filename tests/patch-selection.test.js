@@ -50,7 +50,6 @@ function findTransformPath(patchSet, fileNamePrefix) {
     "local-task-row": "patchLocalTaskRow",
     review: "patchThreadSidePanelTabs",
     "run-command": "patchRunCommandProjectSelectorShortcut",
-    "sidebar-project-hover-card-source-rows": "patchSidebarProjectHoverCardSourceRows",
     "user-message-attachments": "patchUserMessageAttachmentsBubbleColors",
   };
   const transformName = transformNames[fileNamePrefix];
@@ -74,7 +73,6 @@ function logicalTransformName(fileNamePrefix) {
     "local-task-row": "patchLocalTaskRow",
     review: "patchThreadSidePanelTabs",
     "run-command": "patchRunCommandProjectSelectorShortcut",
-    "sidebar-project-hover-card-source-rows": "patchSidebarProjectHoverCardSourceRows",
     "user-message-attachments": "patchUserMessageAttachmentsBubbleColors",
   }[fileNamePrefix];
 }
@@ -318,7 +316,6 @@ test("runtime plugins stay pure from host bundle details", () => {
 test("hook builders stay within the compact glue budget", () => {
   const hookDir = path.join(__dirname, "../src/patches/lib/hooks");
   const argsByExport = {
-    sidebarMergeDataAttributes: ["project", "thread"],
     commandMenuItemsExpression: ["items", "jsx", "open", "formatMessage"],
   };
 
@@ -1250,23 +1247,6 @@ test("run command patch bridges the native project selector shortcut to the runt
   }
 });
 
-test("renderer command palette includes the sidebar blur command", () => {
-  const fakeRunCommandBundle = [
-    "var i=new Map([[`newThread`,()=>{}],[`openFolder`,()=>{r()}],[`toggleSidebar`,()=>{}]]),a=new Map;",
-    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
-  ].join("");
-
-  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
-  const runCommandFile = findTransformPath(patchSet, "run-command");
-  const transformed = transformFile(patchSet, runCommandFile, fakeRunCommandBundle);
-
-  assert.match(transformed, /id:`codexPlusToggleSidebarNameBlur`/);
-  assert.match(transformed, /title:`Toggle sidebar blur`/);
-  assert.match(transformed, /description:`Blur or show sidebar chat and project names`/);
-  assert.match(transformed, /\[`codexPlusToggleSidebarNameBlur`,\(\)=>\{window\.CodexPlus\?\.commands\?\.run\?\.\(`codexPlusToggleSidebarNameBlur`\)\}\]/);
-  assert.match(transformed, /id:`codexPlusToggleSidebarNameBlur`[\s\S]*\{id:`toggleBottomPanel`/);
-});
-
 function fakeAboutDialogBundle() {
   return [
     "let i=a.app.getName(),o=a.app.getVersion(),s=B0(o),c=t.aa(e),l=c==null?o:`${o} • ${c}`,u=process.platform===`darwin`,d=r.$(),f=await G0(),p=d.formatMessage({messageId:C0,defaultMessage:w0,values:{appName:i}}),m=u?null:d.formatMessage({messageId:T0,defaultMessage:`OK`}),h=s==null?d.formatMessage({messageId:E0,defaultMessage:D0,values:{version:l}}):d.formatMessage({messageId:O0,defaultMessage:k0,values:{version:l,releaseDate:s}}),g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),v=_.length===0?h:[h,``,..._].join(`\n`),y=n!=null&&!n.isDestroyed()?n:null,b=a.nativeTheme.shouldUseDarkColors;",
@@ -1947,10 +1927,11 @@ test("app main patch applies project colors to project headers and grouped row o
 
     assert.match(transformed, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
     assert.match(transformed, /CPXPR=e=>CPXS\.projectRowProps\(e\)/);
-    assert.match(transformed, /CPXTR=e=>CPXS\.threadRowProps\(e\)/);
+    assert.doesNotMatch(transformed, /CPXTR=/);
     assert.match(transformed, /rowAttributes:\{\.\.\.ke,\.\.\.CPXPR\(n\)\}/);
     assert.match(transformed, /\.\.\.CPXPR\(\{projectId:_,label:p\}\),ref:n,className:j,role:`button`/);
-    assert.match(transformed, /dataAttributes:CPXTR\(i\)/);
+    assert.match(transformed, /ie=\(0,Z\.jsx\)\(`div`,\{\.\.\.H,\.\.\.CPXPR\(i\),children:re\}\)/);
+    assert.doesNotMatch(transformed, /dataAttributes:CPXTR\(i\)/);
     assert.match(transformed, /"data-codex-plus-sidebar-name":``/);
     assert.doesNotMatch(transformed, /function CPXSidebarNameBlurCommand\(\)/);
     assert.match(transformed, /ui\?\.commands\?\.renderMenuItems/);
@@ -1958,9 +1939,9 @@ test("app main patch applies project colors to project headers and grouped row o
     assert.match(transformed, /codexPlusToggleSidebarNameBlur:\$i/);
     assert.doesNotMatch(transformed, /localStorage\.(?:setItem|getItem)\(`codex-plus:sidebar/);
     assert.match(transformed, /children:\[l,u,\.\.\.\(window\.CodexPlus\?\.ui\?\.commands\?\.renderMenuItems/);
-    assert.match(transformed, /function Pk\(e\)\{let t=\(0,Q\.c\)\(46\),/);
-    assert.match(transformed, /t\[24\]!==a\|\|t\[45\]!==i\?/);
-    assert.match(transformed, /t\[24\]=a,t\[45\]=i,t\[25\]=q\):q=t\[25\]/);
+    assert.match(transformed, /function Pk\(e\)\{let t=\(0,Q\.c\)\(45\),/);
+    assert.doesNotMatch(transformed, /t\[24\]!==a\|\|t\[45\]!==i\?/);
+    assert.doesNotMatch(transformed, /t\[24\]=a,t\[45\]=i,t\[25\]=q\):q=t\[25\]/);
     assert.doesNotMatch(transformed, /CPX_PROJECT_PALETTE/);
     assert.doesNotMatch(transformed, /CPX_installProjectColorStyles/);
   }
@@ -1990,9 +1971,12 @@ test("current project headers receive project color row attributes on the clicka
   const transformed = transformFile(patchSet, appMainFile, fakeCurrentAppMainBundle);
 
   assert.match(transformed, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
-  assert.match(transformed, /dataAttributes:CPXTR\(a\)/);
+  assert.doesNotMatch(transformed, /CPXTR=/);
   assert.match(transformed, /\.\.\.CPXPR\(a\),children:ne/);
   assert.match(transformed, /\.\.\.CPXPR\(\{projectId:_,label:p\}\),ref:n,className:j,role:`button`/);
+  assert.doesNotMatch(transformed, /dataAttributes:CPXTR\(a\)/);
+  assert.doesNotMatch(transformed, /t\[44\]!==a/);
+  assert.doesNotMatch(transformed, /t\[44\]=a/);
 });
 
 test("project colors resolve composer cwd to the sidebar project identity", () => {
@@ -2104,10 +2088,11 @@ test("local task row patch colors standalone rows from row project context", () 
     const transformed = transform(fakeLocalTaskRowBundle);
 
     assert.doesNotMatch(transformed, /CPX_threadProjectAssignments/);
-    assert.match(transformed, /CPX_rowDataAttributes=Fe\?\?CPXPR\(Oe\)/);
-    assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
-    assert.match(transformed, /t\[87\]!==CPX_rowDataAttributes/);
-    assert.match(transformed, /t\[87\]=CPX_rowDataAttributes/);
+    assert.match(transformed, /dataAttributes:Fe=CPXPR\(Oe\)/);
+    assert.match(transformed, /dataAttributes:Fe,archiveAriaLabel:hn/);
+    assert.match(transformed, /t\[87\]!==Fe/);
+    assert.match(transformed, /t\[87\]=Fe/);
+    assert.doesNotMatch(transformed, /CPX_rowDataAttributes/);
   }
 });
 
@@ -2172,46 +2157,18 @@ test("keyboard shortcut search metadata falls back to command declaration titles
   }
 });
 
-test("sidebar thread list forwards project color data attributes into rows", () => {
-  const fakeSidebarRowsBundle = [
-    "function Ft(e,t,n){",
-    "var En=(0,Vt.memo)(function(e){let t=(0,zt.c)(40),{threadKey:n,canPin:r,disableHoverCard:a,floatStatusIconsRight:o,isGrouped:s,hideRemoteHostEnvIcon:c,hideTimestamp:l,locationId:u,onActivateGroup:d,onStartNewConversation:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v}=e,",
-    "t[12]!==A||t[13]!==y||t[14]!==b||t[15]!==F||t[16]!==x||t[17]!==B||t[18]!==L||t[19]!==z||t[20]!==ee||t[21]!==te||t[22]!==j||t[23]!==M||t[24]!==N||t[25]!==P||t[26]!==k||t[27]!==S||t[28]!==C||t[29]!==d||t[30]!==f||t[31]!==h||t[32]!==w||t[33]!==V||t[34]!==T?",
-    "onArchiveStart:L,onArchiveSuccess:z,onArchiveError:B}",
-    "t[32]=w,t[33]=V,t[34]=T,t[35]=H):H=t[35]",
-    "function On(e){let t=(0,zt.c)(121),{entry:n,isPinned:r,isAutomationRun:a,automationDisplayName:o,isActive:s,canPin:c,disableHoverCard:u,floatStatusIconsRight:f,isGrouped:p,hideRemoteHostEnvIcon:m,hideTimestamp:h,locationId:g,onActivateGroup:y,onStartNewConversation:b,showPinActionOnHover:te,variant:C,shortcutLabel:T,hoverCardHostConfig:E,hoverCardProjectId:D,hoverCardProjectLabel:A,hoverCardRepositoryLabel:j,displayCwd:M,onArchiveStart:N,onArchiveSuccess:P,onArchiveError:F}=e,",
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})",
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})",
-    "t[22]=c,t[23]=se,t[24]=Ne,t[25]=L,t[26]=Je,t[27]=J,t[28]=oe,t[29]=V,t[30]=G,t[31]=s,t[32]=z,t[33]=r,t[34]=g,t[35]=K,t[36]=y,t[37]=P,t[38]=le,t[39]=W,t[40]=ue,t[41]=et,t[42]=H,t[43]=U,t[44]=st):st=t[44]",
-    "t[45]!==c||t[46]!==Ne||t[47]!==Fe||t[48]!==L||t[49]!==Je||t[50]!==J||t[51]!==oe||t[52]!==V||t[53]!==G||t[54]!==s||t[55]!==z||t[56]!==r||t[57]!==g||t[58]!==F||t[59]!==P||t[60]!==nt||t[61]!==Q||t[62]!==We||t[63]!==W||t[64]!==Xe||t[65]!==et||t[66]!==H||t[67]!==U?",
-    "t[63]=W,t[64]=Xe,t[65]=et,t[66]=H,t[67]=U,t[68]=ht):ht=t[68]",
-    "t[69]!==o||t[70]!==c||t[71]!==I||t[72]!==ot||t[73]!==M||t[74]!==Pe||t[75]!==Ne||t[76]!==Fe||t[77]!==L||t[78]!==Je||t[79]!==J||t[80]!==ne||t[81]!==oe||t[82]!==V||t[83]!==E||t[84]!==A||t[85]!==G||t[86]!==s||t[87]!==a||t[88]!==z||t[89]!==r||t[90]!==pe||t[91]!==fe||t[92]!==he||t[93]!==Be||t[94]!==De||t[95]!==null||t[96]!==_e||t[97]!==me||t[98]!==ge||t[99]!==g||t[100]!==y||t[101]!==F||t[102]!==P||t[103]!==nt||t[104]!==Q||t[105]!==W||t[106]!==Xe||t[107]!==et||t[108]!==H||t[109]!==be||t[110]!==U?",
-    "t[108]=H,t[109]=be,t[110]=U,t[111]=vt):vt=t[111]",
-    "t[14]!==l?.canPin||t[15]!==l?.disableHoverCard||t[16]!==l?.floatStatusIconsRight||t[17]!==l?.hideRemoteHostEnvIcon||t[18]!==l?.hideTimestamp||t[19]!==l?.isGrouped||t[20]!==l?.locationId||t[21]!==l?.onActivateGroup||t[22]!==l?.onStartNewConversation||t[23]!==l?.showPinActionOnHover||t[24]!==l?.variant||t[25]!==b?",
-    "showPinActionOnHover:l?.showPinActionOnHover,variant:l?.variant,shortcutLabel:b?.get(e)}),",
-    "t[24]=l?.variant,t[25]=b,t[26]=j):j=t[26]",
-    "function Rn(e){let t=(0,zt.c)(43),",
-  ].join("");
+test("project colors avoid sidebar row cache-slot forwarding", () => {
+  const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+
+  assert.doesNotMatch(commonPatches, /patchSidebarProjectHoverCardSourceRows/);
+  assert.doesNotMatch(commonPatches, /patchRendererCommandPaletteSidebarBlur/);
+  assert.doesNotMatch(commonPatches, /CPX_rowDataAttributes/);
+  assert.doesNotMatch(commonPatches, /t\[\d+\].*CPX_rowDataAttributes|CPX_rowDataAttributes.*t\[\d+\]/);
 
   for (const patchSet of patchSets) {
-    const transform = findTransform(patchSet, "sidebar-project-hover-card-source-rows");
-
-    assert.equal(typeof transform, "function", `${patchSet.id} has sidebar row list transform`);
-
-    const transformed = transform(fakeSidebarRowsBundle);
-
-    assert.doesNotMatch(transformed, /function CPX_mergeDataAttributes\(e,t\)/);
-    assert.match(transformed, /dataAttributes:CPX_rowDataAttributes/);
-    assert.match(transformed, /dataAttributes:l\?\.dataAttributes/);
-    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e\.task\.title\?\?``\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /CodexPlusHost\.adapters\.sidebar\.mergeThreadRowAttributes\(ae\.sidebarThreadRow\(\{active:s,hostId:t\.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t\.label\}\),CPX_rowDataAttributes\)/);
-    assert.match(transformed, /function Rn\(e\)\{let t=\(0,zt\.c\)\(44\),/);
-    assert.match(transformed, /var En=\(0,Vt\.memo\)\(function\(e\)\{let t=\(0,zt\.c\)\(41\),/);
-    assert.match(transformed, /function On\(e\)\{let t=\(0,zt\.c\)\(124\),/);
-    assert.match(transformed, /t\[43\]!==l\?\.dataAttributes/);
-    assert.match(transformed, /t\[123\]!==CPX_rowDataAttributes/);
+    const transforms = collectFileTransforms(patchSet).map(([, transform]) => transform.name);
+    assert.ok(!transforms.includes("patchSidebarProjectHoverCardSourceRows"), `${patchSet.id} does not patch sidebar row caches`);
+    assert.ok(!transforms.includes("patchRendererCommandPaletteSidebarBlur"), `${patchSet.id} uses one command metadata hook`);
   }
 });
 

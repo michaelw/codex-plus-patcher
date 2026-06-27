@@ -7,7 +7,7 @@ const { mermaidDiagramHook } = require("./hooks/mermaid");
 const { messageComposerHook } = require("./hooks/message-composer");
 const { nativeMainHook } = require("./hooks/native-main");
 const { reviewHook } = require("./hooks/review");
-const { projectColorHook, sidebarMergeDataAttributes } = require("./hooks/sidebar");
+const { projectColorHook } = require("./hooks/sidebar");
 const { appearanceSettingsHook, commandMenuItemsExpression } = require("./hooks/settings-commands");
 const { threadHeaderHook } = require("./hooks/thread-header");
 const { workerHook } = require("./hooks/worker");
@@ -31,7 +31,6 @@ function buildCodexPlusPatchSet(config) {
   const appShellFile = files.appShell;
   const errorBoundaryFile = files.errorBoundary;
   const generalSettingsFile = files.generalSettings;
-  const sidebarProjectHoverCardSourceRowsFile = files.sidebarProjectHoverCardSourceRows;
   const headerFile = files.header;
   const threadPageHeaderFile = files.threadPageHeader;
   const localConversationPageFile = files.localConversationPage;
@@ -355,20 +354,8 @@ function patchAppMainProjectColors(text) {
     let patched = replaceOnce(
       text,
       "function gg(e){let t=(0,Rg.c)(44),",
-      `${projectColorHook()}function gg(e){let t=(0,Rg.c)(45),`,
+      `${projectColorHook()}function gg(e){let t=(0,Rg.c)(44),`,
       "project color app main helper insertion anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "t[19]!==V||t[20]!==c||t[21]!==l||t[22]!==_||t[23]!==s||t[24]!==o?(q={onActivateGroup:V,onStartNewConversation:o,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:_,floatStatusIconsRight:c,showPinActionOnHover:s},",
-      "t[19]!==V||t[20]!==c||t[21]!==l||t[22]!==_||t[23]!==s||t[24]!==o||t[44]!==a?(q={onActivateGroup:V,onStartNewConversation:o,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:_,floatStatusIconsRight:c,showPinActionOnHover:s,dataAttributes:CPXTR(a)},",
-      "project thread row color cache dependency anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "t[19]=V,t[20]=c,t[21]=l,t[22]=_,t[23]=s,t[24]=o,t[25]=q):q=t[25];",
-      "t[19]=V,t[20]=c,t[21]=l,t[22]=_,t[23]=s,t[24]=o,t[44]=a,t[25]=q):q=t[25];",
-      "project thread row color cache write anchor",
     );
     patched = replaceOnce(
       patched,
@@ -386,44 +373,14 @@ function patchAppMainProjectColors(text) {
   let patched = replaceOnce(
     text,
     "function Pk(e){let t=(0,Q.c)(45),",
-    `${projectColorHook()}function Pk(e){let t=(0,Q.c)(46),`,
+    `${projectColorHook()}function Pk(e){let t=(0,Q.c)(45),`,
     "project color app main helper insertion anchor",
   );
   patched = replaceOnce(
     patched,
-    "H=Ha.sidebarProjectList({projectId:i.projectId,showAll:x})",
-    "H=Ha.sidebarProjectList({projectId:i.projectId,showAll:x})",
-    "project group color marker anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o}",
-    "q={onActivateGroup:V,onStartNewConversation:a,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:b,floatStatusIconsRight:s,showPinActionOnHover:o,dataAttributes:CPXTR(i)}",
-    "project thread row color key anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[19]!==V||t[20]!==s||t[21]!==l||t[22]!==b||t[23]!==o||t[24]!==a?",
-    "t[19]!==V||t[20]!==s||t[21]!==l||t[22]!==b||t[23]!==o||t[24]!==a||t[45]!==i?",
-    "project thread row color cache dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[19]=V,t[20]=s,t[21]=l,t[22]=b,t[23]=o,t[24]=a,t[25]=q):q=t[25]",
-    "t[19]=V,t[20]=s,t[21]=l,t[22]=b,t[23]=o,t[24]=a,t[45]=i,t[25]=q):q=t[25]",
-    "project thread row color cache write anchor",
-  );
-  patched = replaceOnce(
-    patched,
     "ie=(0,Z.jsx)(`div`,{...H,children:re})",
-    "ie=(0,Z.jsx)(`div`,{...H,children:re})",
+    "ie=(0,Z.jsx)(`div`,{...H,...CPXPR(i),children:re})",
     "project group color render anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "O=(0,Z.jsx)(NO,{action:T,actionTooltipContent:h,actionTooltipDisabled:p,indicator:E,isMenuOpen:g,menu:D})",
-    "O=(0,Z.jsx)(NO,{action:T,actionTooltipContent:h,actionTooltipDisabled:p,indicator:E,isMenuOpen:g,menu:D})",
-    "project header action render anchor",
   );
   patched = replaceOnce(
     patched,
@@ -467,195 +424,6 @@ function patchAppMainSidebarBlur(text) {
     "children:[l,u,(0,Z.jsx)(H_,{route:a,children:C})]",
     `children:[l,u,...(${commandMenuItemsExpression("suggested", "Z.jsx", "Zy", "Hp")}),(0,Z.jsx)(H_,{route:a,children:C})]`,
     "sidebar name blur command mount anchor",
-  );
-}
-
-function patchRendererCommandPaletteSidebarBlur(text) {
-  return replaceOnce(
-    text,
-    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`toggleBottomPanel`,",
-    "{id:`toggleSidebar`,titleIntlId:`codex.command.toggleSidebar`,descriptionIntlId:`codex.commandDescription.toggleSidebar`,commandMenuGroupKey:`panels`,commandMenu:!0,electron:{menuTitle:`Toggle Sidebar`,menuTitleIntlId:`codex.commandMenuTitle.toggleSidebar`,defaultKeybindings:[{key:`CmdOrCtrl+B`}]}},{id:`codexPlusToggleSidebarNameBlur`,title:`Toggle sidebar blur`,description:`Blur or show sidebar chat and project names`,commandMenuGroupKey:`panels`,commandMenu:!0},{id:`toggleBottomPanel`,",
-    "renderer command palette sidebar blur metadata anchor",
-  );
-}
-
-function patchSidebarProjectHoverCardSourceRows(text) {
-  if (text.includes("function Om(e){let t=(0,Fm.c)(8),") && text.includes("function qm(e){let t=(0,Ym.c)(42),")) {
-    let patched = replaceOnce(
-      text,
-      "function km(e){let t=(0,Fm.c)(129),{entry:n,isPinned:r,isAutomationRun:i,isUnread:a,automationDisplayName:o,isActive:s,canPin:c,disableHoverCard:l,floatStatusIconsRight:u,isGrouped:d,isProjectlessHoverCard:f,hideRemoteHostEnvIcon:p,hideTimestamp:m,locationId:h,onActivateGroup:g,onStartNewConversation:_,showPinnedChatIcon:v,showPinActionOnHover:y,variant:b,shortcutLabel:x,hoverCardHostConfig:S,hoverCardProjectId:C,hoverCardProjectLabel:w,hoverCardRepositoryLabel:T,displayCwd:D,onArchiveStart:O,onArchiveSuccess:k,onArchiveError:A}=e,",
-      "function km(e){let t=(0,Fm.c)(129),{entry:n,isPinned:r,isAutomationRun:i,isUnread:a,automationDisplayName:o,isActive:s,canPin:c,disableHoverCard:l,floatStatusIconsRight:u,isGrouped:d,isProjectlessHoverCard:f,hideRemoteHostEnvIcon:p,hideTimestamp:m,locationId:h,onActivateGroup:g,onStartNewConversation:_,showPinnedChatIcon:v,showPinActionOnHover:y,variant:b,shortcutLabel:x,hoverCardHostConfig:S,hoverCardProjectId:C,hoverCardProjectLabel:w,hoverCardRepositoryLabel:T,displayCwd:D,onArchiveStart:O,onArchiveSuccess:k,onArchiveError:A,dataAttributes:CPX_rowDataAttributes}=e,",
-      "sidebar row dispatcher data attributes prop anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "dataAttributes:kr.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})",
-      `dataAttributes:${sidebarMergeDataAttributes("kr.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})", "CPX_rowDataAttributes")}`,
-      "pending worktree sidebar row data attributes merge anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "dataAttributes:kr.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
-      `dataAttributes:${sidebarMergeDataAttributes("kr.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})", "CPX_rowDataAttributes")}`,
-      "remote sidebar row data attributes merge anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "dataAttributes:kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
-      `dataAttributes:${sidebarMergeDataAttributes("kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})", "CPX_rowDataAttributes")}`,
-      "local sidebar row data attributes merge anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "var Fm,Im,Lm,Rm,zm=e((()=>{Fm=c(),Aa(),C(),Im=t(n(),1),",
-      "var Fm,Im,Lm,Rm,zm=e((()=>{Fm=c(),Aa(),C(),Im=t(n(),1),",
-      "sidebar row component module anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "{threadKey:n,canPin:r,disableHoverCard:i,floatStatusIconsRight:a,isGrouped:o,hideRemoteHostEnvIcon:s,hideTimestamp:c,locationId:l,onActivateGroup:u,onStartNewConversation:d,showPinnedChatIcon:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v}=e,",
-      "{threadKey:n,canPin:r,disableHoverCard:i,floatStatusIconsRight:a,isGrouped:o,hideRemoteHostEnvIcon:s,hideTimestamp:c,locationId:l,onActivateGroup:u,onStartNewConversation:d,showPinnedChatIcon:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v,dataAttributes:CPX_rowDataAttributes}=e,",
-      "sidebar row component data attributes prop anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "t[12]!==F||t[13]!==y||t[14]!==b||t[15]!==V||t[16]!==x||t[17]!==te||t[18]!==U||t[19]!==G||t[20]!==C||t[21]!==w||t[22]!==I||t[23]!==ee||t[24]!==R||t[25]!==B||t[26]!==N||t[27]!==S||t[28]!==z||t[29]!==P||t[30]!==T||t[31]!==u||t[32]!==d||t[33]!==h||t[34]!==O||t[35]!==D||t[36]!==q||t[37]!==k?",
-      "t[12]!==F||t[13]!==y||t[14]!==b||t[15]!==V||t[16]!==x||t[17]!==te||t[18]!==U||t[19]!==G||t[20]!==C||t[21]!==w||t[22]!==I||t[23]!==ee||t[24]!==R||t[25]!==B||t[26]!==N||t[27]!==S||t[28]!==z||t[29]!==P||t[30]!==T||t[31]!==u||t[32]!==d||t[33]!==h||t[34]!==O||t[35]!==D||t[36]!==q||t[37]!==k||t[43]!==CPX_rowDataAttributes?",
-      "sidebar row component data attributes memo dependency anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "onArchiveStart:U,onArchiveSuccess:G,onArchiveError:te}",
-      "onArchiveStart:U,onArchiveSuccess:G,onArchiveError:te,dataAttributes:CPX_rowDataAttributes}",
-      "sidebar row component data attributes object anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "t[36]=q,t[37]=k,t[38]=J):J=t[38];",
-      "t[36]=q,t[37]=k,t[43]=CPX_rowDataAttributes,t[38]=J):J=t[38];",
-      "sidebar row component data attributes memo write anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "t[14]!==c?.canPin||t[15]!==c?.disableHoverCard||t[16]!==c?.floatStatusIconsRight||t[17]!==c?.hideRemoteHostEnvIcon||t[18]!==c?.hideTimestamp||t[19]!==c?.isGrouped||t[20]!==c?.locationId||t[21]!==c?.onActivateGroup||t[22]!==c?.onStartNewConversation||t[23]!==c?.showPinActionOnHover||t[24]!==c?.variant||t[25]!==y?",
-      "t[14]!==c?.canPin||t[15]!==c?.disableHoverCard||t[16]!==c?.floatStatusIconsRight||t[17]!==c?.hideRemoteHostEnvIcon||t[18]!==c?.hideTimestamp||t[19]!==c?.isGrouped||t[20]!==c?.locationId||t[21]!==c?.onActivateGroup||t[22]!==c?.onStartNewConversation||t[23]!==c?.showPinActionOnHover||t[24]!==c?.variant||t[25]!==y||t[41]!==c?.dataAttributes?",
-      "thread list row options data attributes memo dependency anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "variant:c?.variant,shortcutLabel:y?.get(e)})",
-      "variant:c?.variant,shortcutLabel:y?.get(e),dataAttributes:c?.dataAttributes})",
-      "thread list row options data attributes prop anchor",
-    );
-    return replaceOnce(
-      patched,
-      "t[24]=c?.variant,t[25]=y,t[26]=M):M=t[26];",
-      "t[24]=c?.variant,t[25]=y,t[41]=c?.dataAttributes,t[26]=M):M=t[26];",
-      "thread list row options data attributes memo write anchor",
-    );
-  }
-  let patched = text;
-  patched = replaceOnce(
-    patched,
-    "var En=(0,Vt.memo)(function(e){let t=(0,zt.c)(40),{threadKey:n,canPin:r,disableHoverCard:a,floatStatusIconsRight:o,isGrouped:s,hideRemoteHostEnvIcon:c,hideTimestamp:l,locationId:u,onActivateGroup:d,onStartNewConversation:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v}=e,",
-    "var En=(0,Vt.memo)(function(e){let t=(0,zt.c)(41),{threadKey:n,canPin:r,disableHoverCard:a,floatStatusIconsRight:o,isGrouped:s,hideRemoteHostEnvIcon:c,hideTimestamp:l,locationId:u,onActivateGroup:d,onStartNewConversation:f,showPinActionOnHover:p,variant:m,shortcutLabel:h,onArchiveStart:g,onArchiveSuccess:_,onArchiveError:v,dataAttributes:CPX_rowDataAttributes}=e,",
-    "sidebar row component data attributes prop anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[12]!==A||t[13]!==y||t[14]!==b||t[15]!==F||t[16]!==x||t[17]!==B||t[18]!==L||t[19]!==z||t[20]!==ee||t[21]!==te||t[22]!==j||t[23]!==M||t[24]!==N||t[25]!==P||t[26]!==k||t[27]!==S||t[28]!==C||t[29]!==d||t[30]!==f||t[31]!==h||t[32]!==w||t[33]!==V||t[34]!==T?",
-    "t[12]!==A||t[13]!==y||t[14]!==b||t[15]!==F||t[16]!==x||t[17]!==B||t[18]!==L||t[19]!==z||t[20]!==ee||t[21]!==te||t[22]!==j||t[23]!==M||t[24]!==N||t[25]!==P||t[26]!==k||t[27]!==S||t[28]!==C||t[29]!==d||t[30]!==f||t[31]!==h||t[32]!==w||t[33]!==V||t[34]!==T||t[40]!==CPX_rowDataAttributes?",
-    "sidebar row component data attributes memo dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "onArchiveStart:L,onArchiveSuccess:z,onArchiveError:B}",
-    "onArchiveStart:L,onArchiveSuccess:z,onArchiveError:B,dataAttributes:CPX_rowDataAttributes}",
-    "sidebar row component data attributes object anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[32]=w,t[33]=V,t[34]=T,t[35]=H):H=t[35]",
-    "t[32]=w,t[33]=V,t[34]=T,t[40]=CPX_rowDataAttributes,t[35]=H):H=t[35]",
-    "sidebar row component data attributes memo write anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "function On(e){let t=(0,zt.c)(121),{entry:n,isPinned:r,isAutomationRun:a,automationDisplayName:o,isActive:s,canPin:c,disableHoverCard:u,floatStatusIconsRight:f,isGrouped:p,hideRemoteHostEnvIcon:m,hideTimestamp:h,locationId:g,onActivateGroup:y,onStartNewConversation:b,showPinActionOnHover:te,variant:C,shortcutLabel:T,hoverCardHostConfig:E,hoverCardProjectId:D,hoverCardProjectLabel:A,hoverCardRepositoryLabel:j,displayCwd:M,onArchiveStart:N,onArchiveSuccess:P,onArchiveError:F}=e,",
-    "function On(e){let t=(0,zt.c)(124),{entry:n,isPinned:r,isAutomationRun:a,automationDisplayName:o,isActive:s,canPin:c,disableHoverCard:u,floatStatusIconsRight:f,isGrouped:p,hideRemoteHostEnvIcon:m,hideTimestamp:h,locationId:g,onActivateGroup:y,onStartNewConversation:b,showPinActionOnHover:te,variant:C,shortcutLabel:T,hoverCardHostConfig:E,hoverCardProjectId:D,hoverCardProjectLabel:A,hoverCardRepositoryLabel:j,displayCwd:M,onArchiveStart:N,onArchiveSuccess:P,onArchiveError:F,dataAttributes:CPX_rowDataAttributes}=e,",
-    "sidebar row dispatcher data attributes prop anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})",
-    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`pending-worktree`,pinned:r,title:t.label})", "CPX_rowDataAttributes")}`,
-    "pending worktree sidebar row data attributes merge anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
-    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})", "CPX_rowDataAttributes")}`,
-    "remote sidebar row data attributes merge anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "dataAttributes:ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})",
-    `dataAttributes:${sidebarMergeDataAttributes("ae.sidebarThreadRow({active:s,hostId:f,id:i,kind:`local`,pinned:r,title:x})", "CPX_rowDataAttributes")}`,
-    "local sidebar row data attributes merge anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[22]=c,t[23]=se,t[24]=Ne,t[25]=L,t[26]=Je,t[27]=J,t[28]=oe,t[29]=V,t[30]=G,t[31]=s,t[32]=z,t[33]=r,t[34]=g,t[35]=K,t[36]=y,t[37]=P,t[38]=le,t[39]=W,t[40]=ue,t[41]=et,t[42]=H,t[43]=U,t[44]=st):st=t[44]",
-    "t[22]=c,t[23]=se,t[24]=Ne,t[25]=L,t[26]=Je,t[27]=J,t[28]=oe,t[29]=V,t[30]=G,t[31]=s,t[32]=z,t[33]=r,t[34]=g,t[35]=K,t[36]=y,t[37]=P,t[38]=le,t[39]=W,t[40]=ue,t[41]=et,t[42]=H,t[43]=U,t[121]=CPX_rowDataAttributes,t[44]=st):st=t[44]",
-    "pending worktree sidebar row data attributes memo write anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[45]!==c||t[46]!==Ne||t[47]!==Fe||t[48]!==L||t[49]!==Je||t[50]!==J||t[51]!==oe||t[52]!==V||t[53]!==G||t[54]!==s||t[55]!==z||t[56]!==r||t[57]!==g||t[58]!==F||t[59]!==P||t[60]!==nt||t[61]!==Q||t[62]!==We||t[63]!==W||t[64]!==Xe||t[65]!==et||t[66]!==H||t[67]!==U?",
-    "t[45]!==c||t[46]!==Ne||t[47]!==Fe||t[48]!==L||t[49]!==Je||t[50]!==J||t[51]!==oe||t[52]!==V||t[53]!==G||t[54]!==s||t[55]!==z||t[56]!==r||t[57]!==g||t[58]!==F||t[59]!==P||t[60]!==nt||t[61]!==Q||t[62]!==We||t[63]!==W||t[64]!==Xe||t[65]!==et||t[66]!==H||t[67]!==U||t[122]!==CPX_rowDataAttributes?",
-    "remote sidebar row data attributes memo dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[63]=W,t[64]=Xe,t[65]=et,t[66]=H,t[67]=U,t[68]=ht):ht=t[68]",
-    "t[63]=W,t[64]=Xe,t[65]=et,t[66]=H,t[67]=U,t[122]=CPX_rowDataAttributes,t[68]=ht):ht=t[68]",
-    "remote sidebar row data attributes memo write anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[69]!==o||t[70]!==c||t[71]!==I||t[72]!==ot||t[73]!==M||t[74]!==Pe||t[75]!==Ne||t[76]!==Fe||t[77]!==L||t[78]!==Je||t[79]!==J||t[80]!==ne||t[81]!==oe||t[82]!==V||t[83]!==E||t[84]!==A||t[85]!==G||t[86]!==s||t[87]!==a||t[88]!==z||t[89]!==r||t[90]!==pe||t[91]!==fe||t[92]!==he||t[93]!==Be||t[94]!==De||t[95]!==null||t[96]!==_e||t[97]!==me||t[98]!==ge||t[99]!==g||t[100]!==y||t[101]!==F||t[102]!==P||t[103]!==nt||t[104]!==Q||t[105]!==W||t[106]!==Xe||t[107]!==et||t[108]!==H||t[109]!==be||t[110]!==U?",
-    "t[69]!==o||t[70]!==c||t[71]!==I||t[72]!==ot||t[73]!==M||t[74]!==Pe||t[75]!==Ne||t[76]!==Fe||t[77]!==L||t[78]!==Je||t[79]!==J||t[80]!==ne||t[81]!==oe||t[82]!==V||t[83]!==E||t[84]!==A||t[85]!==G||t[86]!==s||t[87]!==a||t[88]!==z||t[89]!==r||t[90]!==pe||t[91]!==fe||t[92]!==he||t[93]!==Be||t[94]!==De||t[95]!==null||t[96]!==_e||t[97]!==me||t[98]!==ge||t[99]!==g||t[100]!==y||t[101]!==F||t[102]!==P||t[103]!==nt||t[104]!==Q||t[105]!==W||t[106]!==Xe||t[107]!==et||t[108]!==H||t[109]!==be||t[110]!==U||t[123]!==CPX_rowDataAttributes?",
-    "local sidebar row data attributes memo dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[108]=H,t[109]=be,t[110]=U,t[111]=vt):vt=t[111]",
-    "t[108]=H,t[109]=be,t[110]=U,t[123]=CPX_rowDataAttributes,t[111]=vt):vt=t[111]",
-    "local sidebar row data attributes memo write anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[14]!==l?.canPin||t[15]!==l?.disableHoverCard||t[16]!==l?.floatStatusIconsRight||t[17]!==l?.hideRemoteHostEnvIcon||t[18]!==l?.hideTimestamp||t[19]!==l?.isGrouped||t[20]!==l?.locationId||t[21]!==l?.onActivateGroup||t[22]!==l?.onStartNewConversation||t[23]!==l?.showPinActionOnHover||t[24]!==l?.variant||t[25]!==b?",
-    "t[14]!==l?.canPin||t[15]!==l?.disableHoverCard||t[16]!==l?.floatStatusIconsRight||t[17]!==l?.hideRemoteHostEnvIcon||t[18]!==l?.hideTimestamp||t[19]!==l?.isGrouped||t[20]!==l?.locationId||t[21]!==l?.onActivateGroup||t[22]!==l?.onStartNewConversation||t[23]!==l?.showPinActionOnHover||t[24]!==l?.variant||t[25]!==b||t[43]!==l?.dataAttributes?",
-    "thread list row options data attributes memo dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "showPinActionOnHover:l?.showPinActionOnHover,variant:l?.variant,shortcutLabel:b?.get(e)}),",
-    "showPinActionOnHover:l?.showPinActionOnHover,variant:l?.variant,shortcutLabel:b?.get(e),dataAttributes:l?.dataAttributes}),",
-    "thread list row options data attributes prop anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "t[24]=l?.variant,t[25]=b,t[26]=j):j=t[26]",
-    "t[24]=l?.variant,t[25]=b,t[43]=l?.dataAttributes,t[26]=j):j=t[26]",
-    "thread list row options data attributes memo write anchor",
-  );
-  return replaceOnce(
-    patched,
-    "function Rn(e){let t=(0,zt.c)(43),",
-    "function Rn(e){let t=(0,zt.c)(44),",
-    "thread list memo cache size anchor",
   );
 }
 
@@ -1003,27 +771,10 @@ function patchLocalTaskRow(text) {
     patched = replaceOnce(
       patched,
       "threadSummary:le,dataAttributes:ue}=e,de=c===void 0?!1:c,",
-      "threadSummary:le,dataAttributes:ue}=e,CPX_rowDataAttributes=ue??CPXPR({projectId:oe,label:se,path:r,cwd:r,hostId:R?.id}),de=c===void 0?!1:c,",
+      "threadSummary:le,dataAttributes:ue=CPXPR({projectId:oe,label:se,path:r,cwd:r,hostId:R?.id})}=e,de=c===void 0?!1:c,",
       "local task row project assignment anchor",
     );
-    patched = replaceOnce(
-      patched,
-      "t[95]!==ue",
-      "t[95]!==CPX_rowDataAttributes",
-      "local task row memo dependency anchor",
-    );
-    patched = replaceOnce(
-      patched,
-      "dataAttributes:ue,archiveAriaLabel:qt",
-      "dataAttributes:CPX_rowDataAttributes,archiveAriaLabel:qt",
-      "local task row data attributes anchor",
-    );
-    return replaceOnce(
-      patched,
-      "t[95]=ue",
-      "t[95]=CPX_rowDataAttributes",
-      "local task row memo assignment anchor",
-    );
+    return patched;
   }
   let patched = replaceOnce(
     text,
@@ -1034,27 +785,10 @@ function patchLocalTaskRow(text) {
   patched = replaceOnce(
     patched,
     "threadSummary:Ne,dataAttributes:Fe}=e,Ie=g===void 0?!1:g,",
-    "threadSummary:Ne,dataAttributes:Fe}=e,CPX_rowDataAttributes=Fe??CPXPR(Oe),Ie=g===void 0?!1:g,",
+    "threadSummary:Ne,dataAttributes:Fe=CPXPR(Oe)}=e,Ie=g===void 0?!1:g,",
     "local task row project assignment anchor",
   );
-  patched = replaceOnce(
-    patched,
-    "t[87]!==Fe",
-    "t[87]!==CPX_rowDataAttributes",
-    "local task row memo dependency anchor",
-  );
-  patched = replaceOnce(
-    patched,
-    "dataAttributes:Fe,archiveAriaLabel:hn",
-    "dataAttributes:CPX_rowDataAttributes,archiveAriaLabel:hn",
-    "local task row data attributes anchor",
-  );
-  return replaceOnce(
-    patched,
-    "t[87]=Fe",
-    "t[87]=CPX_rowDataAttributes",
-    "local task row memo assignment anchor",
-  );
+  return patched;
 }
 
 function patchMermaidDiagramShell(text) {
@@ -1200,7 +934,6 @@ return makePatchSet({
       id: "project-colors",
       fileTransforms: [
         [appMainFile, patchAppMainProjectColors],
-        [sidebarProjectHoverCardSourceRowsFile, patchSidebarProjectHoverCardSourceRows],
         [localTaskRowFile, patchLocalTaskRow],
         [userMessageAttachmentsFile, patchUserMessageAttachmentsProjectColors],
         [composerFile, patchComposerProjectColors],
@@ -1218,7 +951,6 @@ return makePatchSet({
       id: "sidebar-name-blur",
       fileTransforms: [
         [appMainFile, patchAppMainSidebarBlur],
-        [runCommandFile, patchRendererCommandPaletteSidebarBlur],
         [electronMenuShortcutsFile, patchElectronMenuShortcuts],
         [keyboardShortcutsSearchInputFile, patchKeyboardShortcutsSearchInput],
       ],
