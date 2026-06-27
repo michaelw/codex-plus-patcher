@@ -59,6 +59,13 @@
   }
 
   const projectByPath = new Map();
+  const projectByName = new Map();
+
+  function pathBasename(value) {
+    const trimmed = String(value || "").replace(/\/+$/, "");
+    if (trimmed === "") return "";
+    return trimmed.split("/").pop() || "";
+  }
 
   function projectPathKeys(project) {
     if (project == null || typeof project === "string") return [];
@@ -69,16 +76,47 @@
     return paths.map((path) => `${host}:${path}`);
   }
 
+  function projectNameKeys(project) {
+    if (project == null || typeof project === "string") return [];
+    const repositoryRoot = project.repositoryData?.rootFolder;
+    const values = [
+      project.label,
+      project.name,
+      repositoryRoot,
+      pathBasename(project.projectId),
+      pathBasename(project.id),
+      ...projectPathKeys(project).map((key) => pathBasename(key)),
+    ];
+    return Array.from(new Set(values
+      .filter((value) => value != null && String(value).trim() !== "")
+      .map((value) => String(value).trim())));
+  }
+
+  function rememberProjectName(key, project) {
+    if (key === "") return;
+    const existing = projectByName.get(key);
+    if (existing === undefined) {
+      projectByName.set(key, project);
+      return;
+    }
+    if (existing != null && colorKey(existing) !== colorKey(project)) projectByName.set(key, null);
+  }
+
   function rememberProject(project) {
     const key = colorKey(project);
     if (key.trim() === "") return project;
     for (const pathKey of projectPathKeys(project)) projectByPath.set(pathKey, project);
+    for (const nameKey of projectNameKeys(project)) rememberProjectName(nameKey, project);
     return project;
   }
 
   function resolveProject(project) {
     for (const pathKey of projectPathKeys(project)) {
       const knownProject = projectByPath.get(pathKey);
+      if (knownProject) return knownProject;
+    }
+    for (const nameKey of projectNameKeys(project)) {
+      const knownProject = projectByName.get(nameKey);
       if (knownProject) return knownProject;
     }
     return null;
@@ -124,7 +162,8 @@
 
   function dataAttributes(project, sidebar) {
     const resolvedProject = sidebar ? rememberProject(project) : resolveProject(project);
-    const inlineStyle = resolvedProject ? style(resolvedProject) : activeSidebarStyle() ?? style(project);
+    const directStyle = style(project);
+    const inlineStyle = resolvedProject ? style(resolvedProject) : directStyle ?? activeSidebarStyle();
     if (inlineStyle == null) return undefined;
     return {
       "data-codex-plus-project-color": "",

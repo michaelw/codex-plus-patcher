@@ -106,32 +106,20 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
 }
 
 function patchRunCommandProjectSelectorShortcut(text) {
-  let patched = text;
+  const runtimeCommandEntries = "...(window.CodexPlus?.commands?.all?.()??[]).map(e=>[e.id,()=>window.CodexPlus?.commands?.run?.(e.id)])";
   if (text.includes("],[`openFolder`,GTt],[`toggleSidebar`,")) {
-    patched = replaceOnce(
-      patched,
-      "],[`openFolder`,GTt],[`toggleSidebar`,",
-      "],[`openFolder`,GTt],[`codexPlus.focusProjectSelector`,()=>{window.CodexPlus?.commands?.run?.(`codexPlus.focusProjectSelector`)}],[`toggleSidebar`,",
-      "project selector shortcut command dispatch anchor",
-    );
     return replaceOnce(
-      patched,
-      "],[`codexPlus.focusProjectSelector`,()=>{window.CodexPlus?.commands?.run?.(`codexPlus.focusProjectSelector`)}],[`toggleSidebar`,",
-      "],[`codexPlus.focusProjectSelector`,()=>{window.CodexPlus?.commands?.run?.(`codexPlus.focusProjectSelector`)}],[`codexPlusToggleSidebarNameBlur`,()=>{window.CodexPlus?.commands?.run?.(`codexPlusToggleSidebarNameBlur`)}],[`toggleSidebar`,",
-      "sidebar blur command dispatch anchor",
+      text,
+      "],[`openFolder`,GTt],[`toggleSidebar`,",
+      `],[\`openFolder\`,GTt],${runtimeCommandEntries},[\`toggleSidebar\`,`,
+      "codex plus runtime command dispatch anchor",
     );
   }
-  patched = replaceOnce(
-    patched,
-    "],[`openFolder`,()=>{r()}],[`toggleSidebar`,",
-    "],[`codexPlus.focusProjectSelector`,()=>{window.CodexPlus?.commands?.run?.(`codexPlus.focusProjectSelector`)}],[`openFolder`,()=>{r()}],[`toggleSidebar`,",
-    "project selector shortcut command dispatch anchor",
-  );
   return replaceOnce(
-    patched,
+    text,
     "],[`openFolder`,()=>{r()}],[`toggleSidebar`,",
-    "],[`openFolder`,()=>{r()}],[`codexPlusToggleSidebarNameBlur`,()=>{window.CodexPlus?.commands?.run?.(`codexPlusToggleSidebarNameBlur`)}],[`toggleSidebar`,",
-    "sidebar blur command dispatch anchor",
+    `],[\`openFolder\`,()=>{r()}],${runtimeCommandEntries},[\`toggleSidebar\`,`,
+    "codex plus runtime command dispatch anchor",
   );
 }
 

@@ -46,6 +46,7 @@ function parseArgs(argv) {
     apply: true,
     launch: true,
     keepOpen: false,
+    includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
   };
@@ -83,6 +84,7 @@ function parseArgs(argv) {
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--debug") args.debug = true;
@@ -102,7 +104,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
-  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open]
+  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open] [--include-native-open-probes]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -130,6 +132,8 @@ Options:
   --no-apply               Reuse an existing audit target without applying patches
   --no-launch              Attach to an existing audit app instead of launching
   --keep-open              Leave the audit-launched app open after probes finish
+  --include-native-open-probes
+                           Also open DevTools and Mermaid viewer windows during audit probes
   --no-progress            Suppress audit progress and print only the final summary
   --quiet                  Print minimal audit output
   --debug                  Print stack traces for CLI errors

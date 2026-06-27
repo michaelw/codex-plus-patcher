@@ -1240,12 +1240,10 @@ test("run command patch bridges the native project selector shortcut to the runt
 
     const transformed = transform(fakeRunCommandBundle);
 
-    assert.match(transformed, /\[`codexPlusToggleSidebarNameBlur`,\(\)=>\{window\.CodexPlus\?\.commands\?\.run\?\.\(`codexPlusToggleSidebarNameBlur`\)\}\]/);
-    assert.match(transformed, /\[`codexPlus\.focusProjectSelector`,\(\)=>\{window\.CodexPlus\?\.commands\?\.run\?\.\(`codexPlus\.focusProjectSelector`\)\}\]/);
-    assert.match(transformed, /\[`codexPlus\.focusProjectSelector`[\s\S]*\[`toggleSidebar`/);
-    assert.match(transformed, /\[`codexPlusToggleSidebarNameBlur`[\s\S]*\[`toggleSidebar`/);
-    assert.equal(transformed.match(/codexPlusToggleSidebarNameBlur/g)?.length, 2);
-    assert.equal(transformed.match(/codexPlus\.focusProjectSelector/g)?.length, 2);
+    assert.match(transformed, /\.\.\.\(window\.CodexPlus\?\.commands\?\.all\?\.\(\)\?\?\[\]\)\.map\(e=>\[e\.id,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\.id\)\]\)/);
+    assert.match(transformed, /commands\?\.all[\s\S]*\[`toggleSidebar`/);
+    assert.doesNotMatch(transformed, /codexPlusToggleSidebarNameBlur`/);
+    assert.doesNotMatch(transformed, /codexPlus\.focusProjectSelector`/);
   }
 });
 
@@ -2053,9 +2051,16 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   const composerProps = context.window.CodexPlus.ui.composer.surfaceProps({
     project: { cwd: project.path, hostId: "local" },
   });
+  const worktreeProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({
+    project: { cwd: "/Users/example/.codex/worktrees/c7ee/thand-agent", hostId: "local" },
+  });
 
   assert.equal(
     composerProps.style["--codex-plus-project-accent"],
+    sidebarProps.style["--codex-plus-project-accent"],
+  );
+  assert.equal(
+    worktreeProjectProps.style["--codex-plus-project-accent"],
     sidebarProps.style["--codex-plus-project-accent"],
   );
 
@@ -2080,7 +2085,17 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   const worktreeComposerProps = context.window.CodexPlus.ui.composer.surfaceProps({
     project: { cwd: "/Users/example/.codex/worktrees/6499/codex-plus-patcher", hostId: "local" },
   });
-  assert.equal(worktreeComposerProps.style["--codex-plus-project-accent"], "#bab0ac");
+  assert.equal(
+    worktreeComposerProps.style["--codex-plus-project-accent"],
+    context.window.CodexPlus.plugins.get("projectColors").exports.style({
+      cwd: "/Users/example/.codex/worktrees/6499/codex-plus-patcher",
+      hostId: "local",
+    })["--codex-plus-project-accent"],
+  );
+  assert.notEqual(worktreeComposerProps.style["--codex-plus-project-accent"], "#bab0ac");
+
+  const missingProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({});
+  assert.equal(missingProjectProps.style["--codex-plus-project-accent"], "#bab0ac");
 });
 
 test("local task row patch colors standalone rows from row project context", () => {
@@ -2166,6 +2181,23 @@ test("keyboard shortcut search metadata falls back to command declaration titles
     assert.doesNotMatch(transformed, /codexPlus\.command\.toggleSidebarNameBlur/);
     assert.match(transformed, /t\.formatMessage\(c\[e\.titleIntlId\]\)/);
     assert.match(transformed, /e\.title\?\?e\.electron\?\.menuTitle\?\?t\.formatMessage\(l\[e\.electron\.menuTitleIntlId\]\)/);
+  }
+});
+
+test("command menu appends Codex Plus runtime command metadata", () => {
+  const fakeCommandMenuBundle = [
+    "let M=j,N;t[11]===o?N=t[12]:(N=()=>{o(``)},t[11]=o,t[12]=N);",
+  ].join("");
+
+  for (const patchSet of patchSets) {
+    const filePath = findTransformPath(patchSet, "keyboard-shortcuts-search-input");
+
+    const transformed = transformFile(patchSet, filePath, fakeCommandMenuBundle);
+
+    assert.match(transformed, /globalThis\.CodexPlus\?\.ui\?\.commands\?\.commandMetadata/);
+    assert.match(transformed, /filter\?\.\(e=>!j\.some\(t=>t\.id===e\.id\)\)/);
+    assert.doesNotMatch(transformed, /codexPlusToggleSidebarNameBlur/);
+    assert.doesNotMatch(transformed, /Toggle sidebar blur/);
   }
 });
 
@@ -2283,10 +2315,13 @@ test("composer patch applies the user entry marker and shared color variables", 
 
     assert.match(transformed, /CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
     assert.match(transformed, /CPXSurfaceProps=e=>CPXMC\.composerSurfaceProps\(e\)/);
+    assert.doesNotMatch(transformed, /let CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
+    assert.match(transformed, /var CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
+    assert.doesNotMatch(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_surfaceProps\?\?=/);
     if (patchSet.id === "codex-26.623.41415-4505") {
       assert.match(transformed, /function Wbe\(e\)\{let t=\(0,gW\.c\)\(13\)/);
-      assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_surfaceProps\?\?=CPXSurfaceProps\(\{\}\)/);
-      assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
+      assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+      assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);
       assert.match(transformed, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:\{cwd:ln\?\?an,hostId:\$n\}\}\)/);
       assert.match(transformed, /codexPlusProps:CPX_composerSurfaceProps/);
       assert.match(transformed, /key:CPX_composerSurfaceProps\?\.\[`data-codex-plus-project-color`\]\?\?``/);
@@ -2302,7 +2337,7 @@ test("composer patch applies the user entry marker and shared color variables", 
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\].*background-color:var\(--codex-plus-project/);
     assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
     assert.doesNotMatch(transformed, /CPX_userBubbleTextColor/);
-    assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
+    assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);
     assert.match(transformed, /key:CPX_composerSurfaceProps\?\.\[`data-codex-plus-project-color`\]\?\?``/);
     assert.doesNotMatch(transformed, /t\[12\]!==CPX_surfaceProps/);
     assert.doesNotMatch(transformed, /t\[12\]=CPX_surfaceProps/);

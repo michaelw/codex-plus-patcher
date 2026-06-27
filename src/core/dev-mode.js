@@ -31,7 +31,7 @@ const COPY_ENTRIES = [
   "chrome-native-hosts-v2.json",
   "computer-use/config.json",
 ];
-const SQLITE_SNAPSHOT_ENTRIES = ["state_5.sqlite"];
+const SQLITE_SNAPSHOT_ENTRIES = ["state_5.sqlite", "sqlite/state_5.sqlite"];
 const EXCLUDED_DEV_STATE_ENTRIES = [
   "sqlite",
   "cache",
@@ -108,6 +108,15 @@ function snapshotSqlite({ sourceHome, devHome, relativePath, fsImpl = fs, execFi
   return relativePath;
 }
 
+function linkSharedDirectory({ sourceHome, devHome, relativePath, fsImpl = fs }) {
+  const source = path.join(sourceHome, relativePath);
+  const target = path.join(devHome, relativePath);
+  fsImpl.rmSync(target, { recursive: true, force: true });
+  if (!fsImpl.existsSync(source)) return null;
+  fsImpl.symlinkSync(source, target, "dir");
+  return { source, target };
+}
+
 function syncDevHome({
   sourceHome = path.join(os.homedir(), ".codex"),
   devHome = DEFAULT_DEV_HOME,
@@ -145,14 +154,18 @@ function syncDevHome({
     if (snapshotPath) sqliteSnapshots.push(snapshotPath);
   }
 
-  const sourceWorktrees = path.join(resolvedSourceHome, "worktrees");
-  const devWorktrees = path.join(resolvedDevHome, "worktrees");
-  let worktrees = null;
-  fsImpl.rmSync(devWorktrees, { recursive: true, force: true });
-  if (fsImpl.existsSync(sourceWorktrees)) {
-    fsImpl.symlinkSync(sourceWorktrees, devWorktrees, "dir");
-    worktrees = { source: sourceWorktrees, target: devWorktrees };
-  }
+  const worktrees = linkSharedDirectory({
+    sourceHome: resolvedSourceHome,
+    devHome: resolvedDevHome,
+    relativePath: "worktrees",
+    fsImpl,
+  });
+  const sessions = linkSharedDirectory({
+    sourceHome: resolvedSourceHome,
+    devHome: resolvedDevHome,
+    relativePath: "sessions",
+    fsImpl,
+  });
 
   return {
     sourceHome: resolvedSourceHome,
@@ -161,6 +174,7 @@ function syncDevHome({
     scrubbedGlobalState,
     sqliteSnapshots,
     worktrees,
+    sessions,
     warning: DEV_MODE_WARNING,
   };
 }
@@ -226,6 +240,7 @@ function formatSyncDevHomeResult(result) {
     `Scrubbed writable state: ${result.scrubbedGlobalState ? "composer prompt drafts" : "(none)"}`,
     `SQLite snapshots: ${result.sqliteSnapshots?.length ? result.sqliteSnapshots.join(", ") : "(none)"}`,
     result.worktrees ? `Worktrees: ${result.worktrees.target} -> ${result.worktrees.source}` : "Worktrees: (missing)",
+    result.sessions ? `Sessions: ${result.sessions.target} -> ${result.sessions.source}` : "Sessions: (missing)",
     `Warning: ${result.warning}`,
   ];
   return `${lines.join("\n")}\n`;

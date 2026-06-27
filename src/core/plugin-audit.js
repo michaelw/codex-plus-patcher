@@ -1,4 +1,5 @@
 const childProcess = require("node:child_process");
+const fs = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     launch: true,
     json: false,
     keepOpen: false,
+    includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
   };
@@ -58,6 +60,7 @@ function parseArgs(argv) {
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return args;
@@ -109,6 +112,10 @@ async function findFreePort(start) {
   throw new Error(`Could not find a free remote debugging port starting at ${start}`);
 }
 
+function auditAttachCommand(port) {
+  return `codex-plus-patcher audit-plugins --no-apply --no-launch --keep-open --port ${port}`;
+}
+
 function getJson(url) {
   return new Promise((resolve, reject) => {
     const request = http.get(url, (response) => {
@@ -150,6 +157,121 @@ async function waitForRendererTarget(port, timeoutMs = 90000) {
     await delay(500);
   }
   throw new Error(`Timed out waiting for app://-/index.html on port ${port}${lastError ? `: ${lastError.message}` : ""}`);
+}
+
+async function findRendererTargetOnPort(port) {
+  try {
+    const targets = await getJson(`http://127.0.0.1:${port}/json/list`);
+    return targets.find((entry) => entry.url === "app://-/index.html") || null;
+  } catch {
+    return null;
+  }
+}
+
+function listRunningAuditApps({
+  targetApp = DEFAULT_TARGET,
+  electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
+  execFileSync = childProcess.execFileSync,
+} = {}) {
+  const targetBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  const userDataArg = `--user-data-dir=${path.resolve(electronUserDataPath)}`;
+  let text;
+  try {
+    text = execFileSync("ps", ["-axo", "pid=,command="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return [];
+  }
+  return text
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!match) return null;
+      const command = match[2];
+      if (!command.startsWith(targetBinary) || !command.includes(userDataArg)) return null;
+      const portMatch = command.match(/--remote-debugging-port=(\d+)/);
+      return {
+        pid: Number(match[1]),
+        command,
+        remoteDebuggingPort: portMatch ? Number(portMatch[1]) : null,
+      };
+    })
+    .filter(Boolean);
+}
+
+class AuditPreflightError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "AuditPreflightError";
+    this.details = details;
+  }
+}
+
+async function auditPreflight(args, {
+  findPort = findFreePort,
+  findRendererTarget = findRendererTargetOnPort,
+  listRunningApps = listRunningAuditApps,
+} = {}) {
+  const requestedPort = args.remoteDebuggingPort;
+  const existingTarget = await findRendererTarget(requestedPort);
+  const runningApps = listRunningApps({
+    targetApp: args.target,
+    electronUserDataPath: args.electronUserDataPath,
+  });
+  const livePorts = Array.from(new Set(runningApps
+    .map((app) => app.remoteDebuggingPort)
+    .filter((port) => port != null)));
+  const livePort = existingTarget ? requestedPort : livePorts[0] ?? null;
+  const existingApp = runningApps[0] || null;
+  const suggestedCommand = livePort == null ? null : auditAttachCommand(livePort);
+
+  if (!args.launch) {
+    return {
+      port: requestedPort,
+      launch: false,
+      reuseExisting: Boolean(existingTarget || existingApp),
+      existingApp,
+      existingTarget,
+      livePort,
+      suggestedCommand,
+    };
+  }
+
+  if (existingTarget || existingApp) {
+    if (!args.apply) {
+      if (livePort == null) {
+        throw new AuditPreflightError(
+          "Codex Plus is already running for this audit target, but no remote debugging port was detected",
+          { existingApp, livePort, suggestedCommand },
+        );
+      }
+      return {
+        port: livePort,
+        launch: false,
+        reuseExisting: true,
+        existingApp,
+        existingTarget,
+        livePort,
+        suggestedCommand,
+      };
+    }
+    throw new AuditPreflightError(
+      `Codex Plus audit app is already running${livePort == null ? "" : ` on port ${livePort}`}; close it before applying patches, or rerun ${suggestedCommand}`,
+      { existingApp, livePort, suggestedCommand },
+    );
+  }
+
+  return {
+    port: await findPort(requestedPort),
+    launch: true,
+    reuseExisting: false,
+    existingApp: null,
+    existingTarget: null,
+    livePort: null,
+    suggestedCommand: null,
+  };
 }
 
 class CdpSession {
@@ -231,6 +353,38 @@ async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
   throw new Error(`Timed out waiting for Codex Plus runtime plugins: ${JSON.stringify(lastStatus)}`);
 }
 
+async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = null;
+  while (Date.now() < deadline) {
+    lastStatus = await cdp.evaluate(`(() => {
+      const root = document.getElementById("root");
+      const bodyText = document.body?.innerText?.trim() ?? "";
+      const interactiveCount = document.querySelectorAll("button,a,nav,[role=navigation]").length;
+      return {
+        readyState: document.readyState,
+        hasRoot: Boolean(root),
+        hasStartupLoader: Boolean(document.querySelector("#root .startup-loader")),
+        bodyTextLength: bodyText.length,
+        elementCount: document.querySelectorAll("*").length,
+        interactiveCount,
+        sampleText: bodyText.slice(0, 120),
+      };
+    })()`);
+    if (
+      lastStatus.readyState === "complete" &&
+      lastStatus.hasRoot &&
+      !lastStatus.hasStartupLoader &&
+      lastStatus.bodyTextLength > 0 &&
+      lastStatus.interactiveCount > 0
+    ) {
+      return lastStatus;
+    }
+    await delay(250);
+  }
+  throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}`);
+}
+
 function failedPlugins(result) {
   return Array.from(new Set((result.failures || [])
     .map((failure) => failure.plugin)
@@ -275,6 +429,15 @@ function formatAuditResult(result, { quiet = false } = {}) {
       if (failure.patch || failure.patchId || failure.details?.patch || failure.details?.patchId) {
         lines.push(`  patch: ${failure.patch || failure.patchId || failure.details?.patch || failure.details?.patchId}`);
       }
+      if (Array.isArray(failure.details?.crashDumps) && failure.details.crashDumps.length > 0) {
+        lines.push(`  crash dumps: ${failure.details.crashDumps.join(", ")}`);
+      }
+      if (failure.details?.livePort != null) {
+        lines.push(`  live port: ${failure.details.livePort}`);
+      }
+      if (failure.details?.suggestedCommand) {
+        lines.push(`  suggested command: ${failure.details.suggestedCommand}`);
+      }
       lines.push("");
     }
     lines.push("Re-run with --json for full probe details.");
@@ -283,6 +446,7 @@ function formatAuditResult(result, { quiet = false } = {}) {
 
   const probeCount = Object.keys(result.pluginResults || {}).length;
   const runtime = result.runtimeStatus || {};
+  const appShell = result.appShellStatus || {};
   const cleanup = result.cleanupResult;
   const cleanupText = cleanup?.keptOpen
     ? "kept open"
@@ -298,8 +462,11 @@ function formatAuditResult(result, { quiet = false } = {}) {
   lines.push(
     "",
     `Port: ${result.target?.remoteDebuggingPort ?? "unknown"}`,
+    result.preflight?.reuseExisting ? "Launch: reused existing app" : "Launch: audit-launched app",
     `Runtime ready: ${runtime.registered ?? result.registeredPlugins?.length ?? 0} registered, ${runtime.started ?? result.startedPlugins?.length ?? 0} started`,
+    `App shell: ${appShell.hasStartupLoader === false ? "mounted" : "unknown"}`,
     `Probed ${probeCount} plugins`,
+    `Native open probes: ${result.nativeOpenProbes?.included ? "included" : "skipped"}`,
     `Cleanup: ${cleanupText}`,
     "",
     "All plugin probes passed.",
@@ -414,8 +581,72 @@ async function cleanupLaunchedAuditApp(launchResult, {
   return { attempted: true, keptOpen: false, ok: true, pid };
 }
 
-function pluginAuditExpression() {
-  return `(${async function runPluginAudit() {
+function processIsAlive(pid, { kill = process.kill } = {}) {
+  if (pid == null) return false;
+  try {
+    kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function listCrashpadPendingDumps(electronUserDataPath, { readdirSync = fs.readdirSync } = {}) {
+  const pendingDir = path.join(electronUserDataPath, "Crashpad", "pending");
+  try {
+    return readdirSync(pendingDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && (entry.name.endsWith(".dmp") || entry.name.endsWith("_sidecar.json")))
+      .map((entry) => path.join(pendingDir, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+async function checkKeepOpenAppStability(launchResult, {
+  electronUserDataPath,
+  wait = delay,
+  isAlive = processIsAlive,
+  listCrashDumps = listCrashpadPendingDumps,
+  waitMs = 15000,
+  intervalMs = 500,
+} = {}) {
+  const pid = launchResult?.pid ?? null;
+  if (pid == null) {
+    return {
+      checked: false,
+      ok: true,
+      pid,
+      alive: null,
+      crashDumps: [],
+      message: "No audit-launched app process to check",
+    };
+  }
+  const deadline = Date.now() + waitMs;
+  let alive = isAlive(pid);
+  while (alive && Date.now() < deadline) {
+    await wait(Math.min(intervalMs, Math.max(0, deadline - Date.now())));
+    alive = isAlive(pid);
+  }
+  const crashDumps = electronUserDataPath ? listCrashDumps(electronUserDataPath) : [];
+  return {
+    checked: true,
+    ok: alive,
+    pid,
+    alive,
+    crashDumps,
+    message: alive ? "Audit-launched app is still running" : "Audit-launched app exited after probes",
+  };
+}
+
+function appendFailure(result, failure) {
+  result.failures = [...(result.failures || []), failure];
+  result.ok = false;
+}
+
+function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
+  const options = JSON.stringify({ includeNativeOpenProbes });
+  return `(${async function runPluginAudit(options) {
     const requiredPlugins = [
       "aboutMetadata",
       "nestedRepositories",
@@ -451,6 +682,44 @@ function pluginAuditExpression() {
       const details = common(id);
       if (!details.registered || !details.started) throw new Error(`${id} is not registered and started`);
       return details;
+    };
+    const rendererAssetUrls = async () => {
+      const roots = Array.from(new Set([
+        ...Array.from(document.scripts).map((script) => script.src),
+        ...performance.getEntriesByType("resource").map((entry) => entry.name),
+      ])).filter((url) => typeof url === "string" && url.startsWith("app://-/") && url.endsWith(".js"));
+      const urls = new Set(roots);
+      for (const url of roots.filter((candidate) => candidate.includes("/assets/index-"))) {
+        try {
+          const text = await fetch(url).then((response) => response.text());
+          for (const match of text.matchAll(/["'](\.\/[^"']+\.js)["']/g)) {
+            urls.add(new URL(match[1], url).href);
+          }
+        } catch {
+          // Missing source readback is handled by the caller's evidence checks.
+        }
+      }
+      return Array.from(urls);
+    };
+    const rendererSourceEvidence = async (needles) => {
+      const urls = await rendererAssetUrls();
+      const evidence = Object.fromEntries(needles.map((needle) => [needle, null]));
+      for (const url of urls) {
+        if (!url.includes("/assets/") || url.includes("/assets/codex-plus/")) continue;
+        let text = "";
+        try {
+          text = await fetch(url).then((response) => response.text());
+        } catch {
+          continue;
+        }
+        for (const needle of needles) {
+          if (evidence[needle] == null && text.includes(needle)) evidence[needle] = url;
+        }
+      }
+      return {
+        urlsChecked: urls.length,
+        evidence,
+      };
     };
     const jsx = (type, props, key) => ({ type, props: props || {}, key });
     const jsxs = jsx;
@@ -595,18 +864,39 @@ function pluginAuditExpression() {
       const details = checkCommon("sidebarNameBlur");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusToggleSidebarNameBlur");
       if (!metadata) throw new Error("Sidebar blur command metadata is missing");
-      document.documentElement.removeAttribute("data-codex-plus-sidebar-names-blurred");
-      window.CodexPlus.commands.run("codexPlusToggleSidebarNameBlur");
-      const toggled = document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true";
-      const probe = document.createElement("span");
-      probe.setAttribute("data-codex-plus-sidebar-name", "");
-      probe.textContent = "probe";
-      document.body.appendChild(probe);
-      const filter = getComputedStyle(probe).filter;
-      probe.remove();
+      const commandPalette = await rendererSourceEvidence([
+        "globalThis.CodexPlus?.ui?.commands?.commandMetadata",
+        "e.title??e.electron?.menuTitle??",
+      ]);
+      if (!commandPalette.evidence["globalThis.CodexPlus?.ui?.commands?.commandMetadata"]) {
+        throw new Error("Sidebar blur command is not wired into the renderer command palette");
+      }
+      if (!commandPalette.evidence["e.title??e.electron?.menuTitle??"]) {
+        throw new Error("Renderer command palette cannot read literal Codex Plus command titles");
+      }
+      const root = document.documentElement;
+      const previous = root.getAttribute("data-codex-plus-sidebar-names-blurred");
+      let toggled = false;
+      let filter = "";
+      try {
+        root.removeAttribute("data-codex-plus-sidebar-names-blurred");
+        window.CodexPlus.commands.run("codexPlusToggleSidebarNameBlur");
+        toggled = root.getAttribute("data-codex-plus-sidebar-names-blurred") === "true";
+        const probe = document.createElement("span");
+        probe.setAttribute("data-codex-plus-sidebar-name", "");
+        probe.textContent = "probe";
+        document.body.appendChild(probe);
+        filter = getComputedStyle(probe).filter;
+        probe.remove();
+      } finally {
+        if (previous == null) root.removeAttribute("data-codex-plus-sidebar-names-blurred");
+        else root.setAttribute("data-codex-plus-sidebar-names-blurred", previous);
+      }
       if (!toggled) throw new Error("Sidebar blur command did not toggle the root marker");
       if (!String(filter).includes("blur")) throw new Error("Sidebar blur computed style is not active");
-      pass("sidebarNameBlur", { ...details, metadata, toggled, filter });
+      const restored = root.getAttribute("data-codex-plus-sidebar-names-blurred") === previous;
+      if (!restored) throw new Error("Sidebar blur probe did not restore its previous state");
+      pass("sidebarNameBlur", { ...details, metadata, commandPalette, toggled, filter, restored });
     } catch (error) {
       fail("sidebarNameBlur", error);
     }
@@ -615,9 +905,13 @@ function pluginAuditExpression() {
       const details = checkCommon("devTools");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusOpenDevTools");
       if (!metadata) throw new Error("DevTools command metadata is missing");
-      const result = await window.CodexPlus.commands.run("codexPlusOpenDevTools");
-      if (!result?.ok) throw new Error(`DevTools command returned ${JSON.stringify(result)}`);
-      pass("devTools", { ...details, metadata, result });
+      if (options.includeNativeOpenProbes) {
+        const result = await window.CodexPlus.commands.run("codexPlusOpenDevTools");
+        if (!result?.ok) throw new Error(`DevTools command returned ${JSON.stringify(result)}`);
+        pass("devTools", { ...details, metadata, nativeOpenProbe: true, result });
+      } else {
+        pass("devTools", { ...details, metadata, nativeOpenProbe: false });
+      }
     } catch (error) {
       fail("devTools", error);
     }
@@ -665,11 +959,15 @@ function pluginAuditExpression() {
       const buttonRendered = Boolean(container.querySelector(".codex-plus-mermaid-expand-button"));
       container.remove();
       if (!buttonRendered) throw new Error("Mermaid expand button did not render");
-      const nativeResult = await window.CodexPlus.native.request("mermaid/openViewer", {
-        html: "<!doctype html><meta charset='utf-8'><title>Codex Plus Mermaid Audit</title><div>ok</div>",
-      });
-      if (!nativeResult?.ok) throw new Error(`Mermaid native viewer returned ${JSON.stringify(nativeResult)}`);
-      pass("mermaidFullscreen", { ...details, marker, buttonRendered, nativeResult });
+      if (options.includeNativeOpenProbes) {
+        const nativeResult = await window.CodexPlus.native.request("mermaid/openViewer", {
+          html: "<!doctype html><meta charset='utf-8'><title>Codex Plus Mermaid Audit</title><div>ok</div>",
+        });
+        if (!nativeResult?.ok) throw new Error(`Mermaid native viewer returned ${JSON.stringify(nativeResult)}`);
+        pass("mermaidFullscreen", { ...details, marker, buttonRendered, nativeOpenProbe: true, nativeResult });
+      } else {
+        pass("mermaidFullscreen", { ...details, marker, buttonRendered, nativeOpenProbe: false });
+      }
     } catch (error) {
       fail("mermaidFullscreen", error);
     }
@@ -684,7 +982,7 @@ function pluginAuditExpression() {
       registeredPlugins: typeof window.CodexPlus?.plugins?.list === "function" ? pluginIds() : null,
       startedPlugins: started(),
     };
-  }}())`;
+  }}(${options}))`;
 }
 
 async function runAudit(args, {
@@ -698,9 +996,13 @@ async function runAudit(args, {
   const waitRenderer = operations.waitForRendererTarget || waitForRendererTarget;
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
+  const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
+  const checkStability = operations.checkKeepOpenAppStability || checkKeepOpenAppStability;
+  const preflightAudit = operations.auditPreflight || auditPreflight;
   const readIdentity = operations.auditIdentity || auditIdentity;
-  const port = await findPort(args.remoteDebuggingPort);
+  let preflight = null;
+  let port = args.remoteDebuggingPort;
   const identity = readIdentity();
   let applyResult = null;
   let syncResult = null;
@@ -708,9 +1010,12 @@ async function runAudit(args, {
   let target = null;
   let cdp = null;
   let runtimeStatus = null;
+  let appShellStatus = null;
   let cleanupResult = null;
   let result = null;
   try {
+    preflight = await preflightAudit(args, { findPort });
+    port = preflight.port;
     if (args.apply) {
       applyResult = await withAuditProgress(
         progress,
@@ -733,7 +1038,7 @@ async function runAudit(args, {
         devHome: args.devHome,
       }),
     );
-    if (args.launch) {
+    if (preflight.launch) {
       launchResult = await withAuditProgress(
         progress,
         `Launching Codex Plus on port ${port}`,
@@ -761,11 +1066,17 @@ async function runAudit(args, {
       "Runtime ready",
       () => waitRuntime(cdp),
     );
+    appShellStatus = await withAuditProgress(
+      progress,
+      "Waiting for Codex app shell",
+      "App shell mounted",
+      () => waitAppShell(cdp),
+    );
     const live = await withAuditProgress(
       progress,
       "Running plugin probes",
       "Probed plugins",
-      () => cdp.evaluate(pluginAuditExpression()),
+      () => cdp.evaluate(pluginAuditExpression({ includeNativeOpenProbes: args.includeNativeOpenProbes })),
     );
     result = {
       ok: live.ok,
@@ -786,6 +1097,7 @@ async function runAudit(args, {
         scrubbedGlobalState: syncResult.scrubbedGlobalState,
         sqliteSnapshots: syncResult.sqliteSnapshots,
         worktrees: syncResult.worktrees,
+        sessions: syncResult.sessions,
       },
       launchResult: launchResult && {
         command: launchResult.command,
@@ -795,13 +1107,22 @@ async function runAudit(args, {
       registeredPlugins: live.registeredPlugins,
       startedPlugins: live.startedPlugins,
       runtimeStatus,
+      appShellStatus,
       audit: identity,
+      nativeOpenProbes: {
+        included: Boolean(args.includeNativeOpenProbes),
+      },
+      preflight,
     };
     return result;
   } catch (error) {
     result = {
       ok: false,
-      failures: [{ plugin: "audit", message: error.message }],
+      failures: [{
+        plugin: "audit",
+        message: error.message,
+        details: error.details,
+      }],
       pluginResults: {},
       target: {
         app: path.resolve(args.target),
@@ -818,6 +1139,7 @@ async function runAudit(args, {
         scrubbedGlobalState: syncResult.scrubbedGlobalState,
         sqliteSnapshots: syncResult.sqliteSnapshots,
         worktrees: syncResult.worktrees,
+        sessions: syncResult.sessions,
       },
       launchResult: launchResult && {
         command: launchResult.command,
@@ -827,11 +1149,45 @@ async function runAudit(args, {
       registeredPlugins: null,
       startedPlugins: null,
       runtimeStatus,
+      appShellStatus,
       audit: identity,
+      nativeOpenProbes: {
+        included: Boolean(args.includeNativeOpenProbes),
+      },
+      preflight,
     };
     return result;
   } finally {
     if (cdp) await cdp.close();
+    if (result && args.keepOpen && launchResult) {
+      let stability;
+      try {
+        stability = await checkStability(launchResult, {
+          electronUserDataPath: args.electronUserDataPath,
+        });
+      } catch (error) {
+        stability = {
+          checked: true,
+          ok: false,
+          pid: launchResult.pid ?? null,
+          alive: null,
+          crashDumps: [],
+          message: `Could not verify keep-open app stability: ${error.message || String(error)}`,
+        };
+      }
+      result.appStability = stability;
+      if (!stability.ok) {
+        appendFailure(result, {
+          plugin: "audit",
+          message: stability.message,
+          details: {
+            pid: stability.pid,
+            alive: stability.alive,
+            crashDumps: stability.crashDumps,
+          },
+        });
+      }
+    }
     try {
       cleanupResult = launchResult
         ? await withAuditProgress(
@@ -871,8 +1227,11 @@ if (require.main === module) {
 }
 
 module.exports = {
+  auditAttachCommand,
   auditIdentity,
+  auditPreflight,
   cleanupLaunchedAuditApp,
+  checkKeepOpenAppStability,
   createAuditProgress,
   DEFAULT_PORT,
   DEFAULT_SOURCE,
@@ -880,11 +1239,17 @@ module.exports = {
   failedPatches,
   failedPlugins,
   findFreePort,
+  findRendererTargetOnPort,
   formatAuditJson,
   formatAuditResult,
+  listRunningAuditApps,
+  listCrashpadPendingDumps,
   parseArgs,
+  pluginAuditExpression,
+  processIsAlive,
   runAudit,
   shouldShowAuditProgress,
+  waitForAppShellMounted,
   waitForLiveRuntime,
   waitForRendererTarget,
 };

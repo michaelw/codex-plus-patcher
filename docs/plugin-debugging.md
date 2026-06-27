@@ -15,7 +15,8 @@ codex-plus-patcher apply \
   --target "work/Codex Plus.app"
 ```
 
-Sync a private development `CODEX_HOME` that shares the original worktrees:
+Sync a private development `CODEX_HOME` that snapshots thread sqlite state and
+shares the original worktrees and sessions:
 
 ```sh
 codex-plus-patcher dev-sync
@@ -42,7 +43,7 @@ use the same default `~/.codex` state, including sqlite databases and their WAL
 and lock files. When both apps open those databases, sqlite locking can prevent
 startup or leave one app waiting on the other. The dev launch avoids that clash
 by giving Codex Plus a private `CODEX_HOME` and Electron user data directory
-while symlinking only `worktrees/` back to the original Codex home.
+while symlinking `worktrees/` and `sessions/` back to the original Codex home.
 
 ## Deterministic Plugin Audit
 
@@ -64,7 +65,10 @@ codex-plus-patcher audit-plugins --json
 ```
 
 Pass `--keep-open` to leave the workspace-local audit app running for manual
-DevTools inspection after the probes finish.
+DevTools inspection after the probes finish. The default audit avoids opening
+extra native windows so the app remains usable after a keep-open run. Use
+`--include-native-open-probes` when you specifically want the audit to open
+DevTools and a Mermaid viewer window as part of the live probes.
 
 ## Live Proof Recipes
 
@@ -90,8 +94,9 @@ DevTools inspection after the probes finish.
 - Nested repositories: request nested repository targets through the worker
   bridge and confirm subrepositories appear in the Review pane.
 - Dev sqlite isolation: confirm sqlite handles point under
-  `work/codex-plus-dev-home`, and `worktrees/` inside the dev home is a symlink
-  to the original Codex home.
+  `work/codex-plus-dev-home`, both `state_5.sqlite` and
+  `sqlite/state_5.sqlite` are snapshots when present, and `worktrees/` plus
+  `sessions/` inside the dev home are symlinks to the original Codex home.
 - Startup cleanliness: after launch, the initial composer must be empty. Text
   left from a command search, such as `blur`, is a defect.
 
