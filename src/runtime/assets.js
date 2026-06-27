@@ -55,13 +55,13 @@ const runtimeFiles = [
   ...browserRuntimeAssets,
 ];
 
-function browserRuntimeManifest() {
-  return `window.__CodexPlusRuntimeFiles=${JSON.stringify(browserRuntimeFiles)};window.__CodexPlusLoadRuntimeFiles?.(window.__CodexPlusRuntimeFiles);\n`;
+function browserRuntimeManifest(config = {}) {
+  return `window.__CodexPlusRuntimeConfig=${JSON.stringify(config)};window.__CodexPlusRuntimeFiles=${JSON.stringify(browserRuntimeFiles)};window.__CodexPlusLoadRuntimeFiles?.(window.__CodexPlusRuntimeFiles);\n`;
 }
 
-function codexPlusRuntimeAssets() {
+function codexPlusRuntimeAssets(config = {}) {
   return runtimeFiles.map(([asarPath, localPath]) => {
-    const content = localPath == null ? browserRuntimeManifest() : fs.readFileSync(path.join(runtimeRoot, localPath), "utf8");
+    const content = localPath == null ? browserRuntimeManifest(config) : fs.readFileSync(path.join(runtimeRoot, localPath), "utf8");
     return [asarPath, content];
   });
 }

@@ -62,7 +62,10 @@
     return result;
   }
 
+  core.plugins.list = () => Array.from(core.plugins.values());
+
   const CodexPlus = {
+    config: globalObject.__CodexPlusRuntimeConfig || {},
     definePlugin,
     registerPlugin,
     startPlugin,

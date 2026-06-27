@@ -13,6 +13,10 @@
     return new URL(`assets/${assetPath}`, document.baseURI).href;
   }
 
+  function mermaidCoreAsset() {
+    return CodexPlus.config?.mermaidCoreAsset || "mermaid.core.js";
+  }
+
   function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -219,7 +223,7 @@ renderFromSource().catch((error) => {
     const isDark = document.documentElement.classList.contains("dark") || document.documentElement.classList.contains("electron-dark");
     const debug = localStorage.getItem("codexPlusMermaidDebug") === "1";
     const html = source
-      ? viewerHtml({ source, isDark, mermaidModuleUrl: assetUrl("mermaid.core-eIokQLcr.js"), debug })
+      ? viewerHtml({ source, isDark, mermaidModuleUrl: assetUrl(mermaidCoreAsset()), debug })
       : `<!doctype html><meta charset="utf-8"><body>${escapeHtml("No Mermaid source was found.")}</body>`;
     CodexPlus.native.request("mermaid/openViewer", { html }).catch(() => {});
   }

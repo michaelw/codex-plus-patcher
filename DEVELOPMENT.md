@@ -20,29 +20,29 @@ stay outside commits.
 Install dependencies and link the local CLI:
 
 ```sh
-rtk npm install
-rtk npm link
-rtk codex-plus-patcher --help
+npm install
+npm link
+codex-plus-patcher --help
 ```
 
 Run the source checks used before commits:
 
 ```sh
-rtk npm test
-rtk npm run check
-rtk npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
+npm test
+npm run check
+npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
 ```
 
 Dry-run patch selection against the installed Codex app:
 
 ```sh
-rtk codex-plus-patcher apply --mode dev --patch-dir ./src/patches --dry-run --json
+codex-plus-patcher apply --mode dev --patch-dir ./src/patches --dry-run --json
 ```
 
 Apply to a workspace-local app target:
 
 ```sh
-rtk codex-plus-patcher apply \
+codex-plus-patcher apply \
   --mode dev \
   --patch-dir ./src/patches \
   --target "work/Codex Plus <version>.app"
@@ -51,17 +51,17 @@ rtk codex-plus-patcher apply \
 Verify signing on the generated workspace app:
 
 ```sh
-rtk codesign --verify --deep --strict "work/Codex Plus <version>.app"
+codesign --verify --deep --strict "work/Codex Plus <version>.app"
 ```
 
 Read back the patched ASAR SHA and inspect markers:
 
 ```sh
-rtk shasum -a 256 "work/Codex Plus <version>.app/Contents/Resources/app.asar"
-rtk codex-plus-patcher asar-list \
+shasum -a 256 "work/Codex Plus <version>.app/Contents/Resources/app.asar"
+codex-plus-patcher asar-list \
   --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
   --contains "webview/assets/codex-plus/"
-rtk codex-plus-patcher asar-cat \
+codex-plus-patcher asar-cat \
   --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
   --file "webview/assets/codex-plus/plugins/nestedRepositories.js"
 ```
@@ -79,6 +79,8 @@ moved feature bodies are no longer inside versioned chunks.
 Generated Codex Plus apps expose **View > Open Developer Tools**. Use DevTools
 to inspect runtime plugin loading, console errors, and `window.CodexPlus` when
 diagnosing app-only behavior that tests or ASAR readback cannot prove.
+For the full side-by-side dev launch, remote debugging port, and live proof
+workflow, follow `docs/plugin-debugging.md`.
 
 For native menu issues, launch the workspace app with menu diagnostics enabled:
 
@@ -90,7 +92,7 @@ CODEX_PLUS_MENU_DIAGNOSTICS=1 \
 You can also inspect a generated ASAR for menu-related patch markers:
 
 ```sh
-rtk codex-plus-patcher menu-diagnostics \
+codex-plus-patcher menu-diagnostics \
   --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar"
 ```
 
@@ -103,6 +105,9 @@ into Codex core with the smallest versioned patch needed.
 Keep host hooks small, fail-closed, and reusable across more than one plugin or
 feature when practical. Avoid putting large feature bodies directly into
 minified bundle transforms if a runtime/plugin interface can carry the behavior.
+For the required layer boundaries, glue-size limits, and forbidden minified
+patch shapes, follow `docs/plugin-architecture.md` before editing plugin or
+patch injection code.
 
 ## Porting A New Codex Version
 
@@ -110,9 +115,9 @@ minified bundle transforms if a runtime/plugin interface can carry the behavior.
 2. Read the app identity:
 
    ```sh
-   rtk /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Codex.app/Contents/Info.plist
-   rtk /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Applications/Codex.app/Contents/Info.plist
-   rtk shasum -a 256 /Applications/Codex.app/Contents/Resources/app.asar
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Codex.app/Contents/Info.plist
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Applications/Codex.app/Contents/Info.plist
+   shasum -a 256 /Applications/Codex.app/Contents/Resources/app.asar
    ```
 
 3. Inspect ASAR chunk names with `readAsar` and `walkFiles` from
@@ -138,7 +143,7 @@ older patch less strict.
 Before publishing or attaching release assets, run:
 
 ```sh
-rtk npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
+npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
 ```
 
 Confirm the package includes only intended source files, README, and package
@@ -160,21 +165,21 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 - Before creating, updating, pushing for, or marking a PR ready, run:
 
   ```sh
-  rtk npm run check:pr
+  npm run check:pr
   ```
 
   If the PR does not exist yet, pass the intended title:
 
   ```sh
-  rtk npm run check:pr -- --title "feat: add project selector shortcut"
+  npm run check:pr -- --title "feat: add project selector shortcut"
   ```
 
 - Use the guarded automerge npm script so the squash subject is the current PR
   title and the merge is pinned to the inspected head commit:
 
   ```sh
-  rtk npm run pr:automerge -- --dry-run <pr-number-or-url>
-  rtk npm run pr:automerge -- <pr-number-or-url>
+  npm run pr:automerge -- --dry-run <pr-number-or-url>
+  npm run pr:automerge -- <pr-number-or-url>
   ```
 
   It runs `gh pr merge --auto --squash --subject "$title" --body "" \

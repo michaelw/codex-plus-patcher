@@ -36,14 +36,71 @@
     ].map((value) => normalizeForFzf(value).text.trim()).filter(Boolean).join(" ");
   }
 
+  function projectSearchFields(project) {
+    return [
+      { text: project?.label, weight: 0 },
+      { text: project?.repositoryData?.rootFolder, weight: 10 },
+      { text: project?.hostDisplayName, weight: 20 },
+      { text: project?.path, weight: 40 },
+    ].map((field) => ({ ...field, text: normalizeForFzf(field.text).text.trim() })).filter((field) => field.text);
+  }
+
   function fzfConstructor() {
     return window.fzf?.Fzf;
   }
 
-  function fallbackFilter(items, query) {
-    const needle = normalizeForFzf(query).text.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) => projectSearchText(item).toLowerCase().includes(needle));
+  function fallbackPositions(text, query) {
+    const normalizedText = normalizeForFzf(text);
+    const normalizedQuery = normalizeForFzf(query).text.trim().toLowerCase();
+    if (!normalizedText.text || !normalizedQuery) return null;
+
+    const haystack = normalizedText.text.toLowerCase();
+    const positions = [];
+    let cursor = 0;
+
+    for (const char of normalizedQuery) {
+      cursor = haystack.indexOf(char, cursor);
+      if (cursor === -1) return null;
+      positions.push(cursor);
+      cursor += 1;
+    }
+
+    return positions;
+  }
+
+  function fallbackScore(text, query) {
+    const positions = fallbackPositions(text, query);
+    if (positions == null) return null;
+
+    let score = positions[0] + (positions[positions.length - 1] - positions[0]);
+    for (let index = 1; index < positions.length; index += 1) {
+      score += positions[index] - positions[index - 1] - 1;
+    }
+    for (const position of positions) {
+      if (position === 0 || /\s/.test(text[position - 1] ?? "")) score -= 2;
+    }
+
+    return score;
+  }
+
+  function rankedFilter(items, query) {
+    return items
+      .map((item, index) => {
+        const scores = projectSearchFields(item)
+          .map((field) => {
+            const score = fallbackScore(field.text, query);
+            return score == null ? null : score + field.weight;
+          })
+          .filter((score) => score != null);
+        return { item, index, score: scores.length === 0 ? null : Math.min(...scores) };
+      })
+      .filter((entry) => entry.score != null)
+      .sort((left, right) =>
+        left.score - right.score ||
+        projectSearchText(left.item).length - projectSearchText(right.item).length ||
+        left.index - right.index,
+      )
+      .map((entry) => entry.item);
   }
 
   function fuzzyFilter(items, query) {
@@ -51,18 +108,16 @@
     const normalizedQuery = normalizeForFzf(query).text.trim();
     if (!normalizedQuery) return list;
 
-    const Fzf = fzfConstructor();
-    if (typeof Fzf !== "function") return fallbackFilter(list, query);
-
-    return new Fzf(
-      list.map((project) => ({ project, searchText: projectSearchText(project) })),
-      { selector: (entry) => entry.searchText },
-    ).find(normalizedQuery).map((entry) => entry.item.project);
+    return rankedFilter(list, query);
   }
 
   function labelPositions(text, query) {
     const Fzf = fzfConstructor();
-    if (typeof Fzf !== "function") return null;
+    if (typeof Fzf !== "function") {
+      const positions = fallbackPositions(text, query);
+      const normalizedText = normalizeForFzf(text);
+      return positions?.map((index) => normalizedText.map[index]).filter((index) => Number.isInteger(index)) ?? null;
+    }
 
     const normalizedText = normalizeForFzf(text);
     const normalizedQuery = normalizeForFzf(query).text.trim();

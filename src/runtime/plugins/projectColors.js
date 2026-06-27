@@ -58,6 +58,90 @@
     return palette[fnv1a32(colorKey(project)) % palette.length];
   }
 
+  const projectByPath = new Map();
+  const projectByName = new Map();
+
+  function pathBasename(value) {
+    const trimmed = String(value || "").replace(/\/+$/, "");
+    if (trimmed === "") return "";
+    return trimmed.split("/").pop() || "";
+  }
+
+  function projectPathKeys(project) {
+    if (project == null || typeof project === "string") return [];
+    const host = project.hostId ?? project.host ?? project.remoteHostId ?? "local";
+    const paths = [project.path, project.cwd, project.projectPath, project.remotePath, project.root, project.workspaceRoot]
+      .filter((value) => value != null && String(value).trim() !== "")
+      .map((value) => String(value).trim());
+    return paths.map((path) => `${host}:${path}`);
+  }
+
+  function projectNameKeys(project) {
+    if (project == null || typeof project === "string") return [];
+    const repositoryRoot = project.repositoryData?.rootFolder;
+    const values = [
+      project.label,
+      project.name,
+      repositoryRoot,
+      pathBasename(project.projectId),
+      pathBasename(project.id),
+      ...projectPathKeys(project).map((key) => pathBasename(key)),
+    ];
+    return Array.from(new Set(values
+      .filter((value) => value != null && String(value).trim() !== "")
+      .map((value) => String(value).trim())));
+  }
+
+  function rememberProjectName(key, project) {
+    if (key === "") return;
+    const existing = projectByName.get(key);
+    if (existing === undefined) {
+      projectByName.set(key, project);
+      return;
+    }
+    if (existing != null && colorKey(existing) !== colorKey(project)) projectByName.set(key, null);
+  }
+
+  function rememberProject(project) {
+    const key = colorKey(project);
+    if (key.trim() === "") return project;
+    for (const pathKey of projectPathKeys(project)) projectByPath.set(pathKey, project);
+    for (const nameKey of projectNameKeys(project)) rememberProjectName(nameKey, project);
+    return project;
+  }
+
+  function resolveProject(project) {
+    for (const pathKey of projectPathKeys(project)) {
+      const knownProject = projectByPath.get(pathKey);
+      if (knownProject) return knownProject;
+    }
+    for (const nameKey of projectNameKeys(project)) {
+      const knownProject = projectByName.get(nameKey);
+      if (knownProject) return knownProject;
+    }
+    return null;
+  }
+
+  function activeSidebarStyle() {
+    const active = document.querySelector('[data-app-action-sidebar-thread-active="true"][data-codex-plus-project-color]');
+    if (!active) return undefined;
+    const computed = getComputedStyle(active);
+    const accent = computed.getPropertyValue("--codex-plus-project-accent").trim();
+    if (accent === "") return undefined;
+    return {
+      "--codex-plus-project-accent": accent,
+      "--codex-plus-project-bg-light": computed.getPropertyValue("--codex-plus-project-bg-light").trim(),
+      "--codex-plus-project-fg-light": computed.getPropertyValue("--codex-plus-project-fg-light").trim(),
+      "--codex-plus-project-soft-light": computed.getPropertyValue("--codex-plus-project-soft-light").trim(),
+      "--codex-plus-project-bg-dark": computed.getPropertyValue("--codex-plus-project-bg-dark").trim(),
+      "--codex-plus-project-fg-dark": computed.getPropertyValue("--codex-plus-project-fg-dark").trim(),
+      "--codex-plus-project-border-dark": computed.getPropertyValue("--codex-plus-project-border-dark").trim(),
+      "--codex-plus-project-separator-light": computed.getPropertyValue("--codex-plus-project-separator-light").trim(),
+      "--codex-plus-project-separator-dark": computed.getPropertyValue("--codex-plus-project-separator-dark").trim(),
+      borderLeft: `6px solid ${accent}`,
+    };
+  }
+
   function style(project) {
     const key = colorKey(project);
     if (!readEnabled() || key.trim() === "") return undefined;
@@ -77,7 +161,9 @@
   }
 
   function dataAttributes(project, sidebar) {
-    const inlineStyle = style(project);
+    const resolvedProject = sidebar ? rememberProject(project) : resolveProject(project);
+    const directStyle = style(project);
+    const inlineStyle = resolvedProject ? style(resolvedProject) : directStyle ?? activeSidebarStyle();
     if (inlineStyle == null) return undefined;
     return {
       "data-codex-plus-project-color": "",
@@ -114,14 +200,15 @@
       description: "Provides deterministic project accent colors across sidebar, messages, and composer surfaces.",
       required: true,
       styles:
-        ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-sidebar-color]{border-radius:0;background-color:var(--codex-plus-project-soft-light);border-left-color:var(--codex-plus-project-accent)}" +
-        ":root:not(.dark):not(.electron-dark) [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color]{background-color:var(--codex-plus-project-bg-light);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
-        ":root.dark [data-codex-plus-project-sidebar-color],:root.electron-dark [data-codex-plus-project-sidebar-color]{border-radius:0;background-color:var(--codex-plus-project-bg-dark);border-left-color:var(--codex-plus-project-border-dark)}" +
-        ":root.dark [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color],:root.electron-dark [data-app-action-sidebar-thread-active=\"true\"][data-codex-plus-project-sidebar-color]{background-color:color-mix(in srgb,var(--codex-plus-project-accent) 38%,transparent);border-left-color:color-mix(in srgb,var(--codex-plus-project-accent) 88%,transparent);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
+        ":root:not(.dark):not(.electron-dark) :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]){border-radius:0;background-color:var(--codex-plus-project-soft-light);border-left-color:var(--codex-plus-project-accent)}" +
+        ":root:not(.dark):not(.electron-dark) :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"]{background-color:var(--codex-plus-project-bg-light);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
+        ":root.dark :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]),:root.electron-dark :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]){border-radius:0;background-color:var(--codex-plus-project-bg-dark);border-left-color:var(--codex-plus-project-border-dark)}" +
+        ":root.dark :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"],:root.electron-dark :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"]{background-color:color-mix(in srgb,var(--codex-plus-project-accent) 38%,transparent);border-left-color:color-mix(in srgb,var(--codex-plus-project-accent) 88%,transparent);box-shadow:inset 5px 0 0 var(--codex-plus-project-accent)}" +
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-color],:root.electron-dark [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-border-dark)}" +
-        ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){background-image:linear-gradient(to right,var(--codex-plus-project-separator-light),var(--codex-plus-project-separator-light));background-repeat:no-repeat;background-size:2px 100%;background-position:left top}" +
-        ":root.dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]),:root.electron-dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){background-image:linear-gradient(to right,var(--codex-plus-project-separator-dark),var(--codex-plus-project-separator-dark));background-repeat:no-repeat;background-size:2px 100%;background-position:left top}",
+        ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-accent)}" +
+        ":root.dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]),:root.electron-dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-border-dark)}" +
+        "[data-codex-plus-user-entry][data-codex-plus-project-color]{box-shadow:inset 6px 0 0 var(--codex-plus-project-accent),0 0 0 .5px rgba(255,255,255,.2)!important}",
       exports: {
         colorFor,
         colorKey,

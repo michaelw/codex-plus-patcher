@@ -6,7 +6,7 @@
       name: "Sidebar Name Blur",
       description: "Registers the session-only Toggle sidebar blur command.",
       required: true,
-      styles: ':root[data-codex-plus-sidebar-names-blurred="true"] :is([data-thread-title],[data-codex-plus-sidebar-name]){filter:blur(4px);user-select:none}',
+      styles: ':root[data-codex-plus-sidebar-names-blurred="true"] :is([data-thread-title],[data-codex-plus-sidebar-name],[data-app-action-sidebar-project-row]){filter:blur(4px);user-select:none}',
       commands: [
         {
           id: "codexPlusToggleSidebarNameBlur",

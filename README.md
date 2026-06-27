@@ -40,7 +40,8 @@ The generated app includes a readable Codex Plus runtime under
 built-in plugins, and the small Codex core hooks those plugins use. See
 [Runtime Plugin Support](docs/plugin-support.md) for the currently supported
 plugin interfaces and [Plugin Architecture](docs/plugin-architecture.md) for
-the layer rules.
+the layer rules. Use [Plugin Debugging](docs/plugin-debugging.md) for the
+side-by-side dev launch and live proof workflow.
 
 ## How It Works
 

@@ -1,5 +1,5 @@
 function messageComposerHook() {
-  return "let CPXMC=window.CodexPlusHost.adapters.messageComposer,CPXBubbleProps=e=>CPXMC.userBubbleProps(e),CPXSurfaceProps=e=>CPXMC.composerSurfaceProps(e);";
+  return "var CPXMC=window.CodexPlusHost.adapters.messageComposer,CPXBubbleProps=e=>CPXMC.userBubbleProps(e),CPXSurfaceProps=e=>CPXMC.composerSurfaceProps(e);";
 }
 
 module.exports = {
