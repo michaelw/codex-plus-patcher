@@ -49,14 +49,22 @@ while symlinking only `worktrees/` back to the original Codex home.
 Run the reusable live audit before declaring plugin work complete:
 
 ```sh
-npm run audit:plugins
+codex-plus-patcher audit-plugins
 ```
 
 The audit applies the current patch set to `work/Codex Plus.app`, syncs the
 default dev home, launches with a remote debugging port, attaches to
-`app://-/index.html`, and emits JSON with `ok`, `failures`, `pluginResults`,
-`target`, and `devHome`. It exits nonzero when any required built-in plugin
-probe fails.
+`app://-/index.html`, and prints a human-readable progress summary by default.
+It exits nonzero when any required built-in plugin probe fails.
+
+Use JSON for automation:
+
+```sh
+codex-plus-patcher audit-plugins --json
+```
+
+Pass `--keep-open` to leave the workspace-local audit app running for manual
+DevTools inspection after the probes finish.
 
 ## Live Proof Recipes
 

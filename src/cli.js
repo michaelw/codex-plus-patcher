@@ -2,6 +2,13 @@
 const os = require("node:os");
 const path = require("node:path");
 
+const {
+  createAuditProgress,
+  DEFAULT_TARGET: DEFAULT_AUDIT_TARGET,
+  formatAuditJson,
+  formatAuditResult,
+  runAudit,
+} = require("./core/plugin-audit");
 const { readAsar, walkFiles } = require("./core/asar");
 const {
   DEFAULT_DEV_HOME,
@@ -35,9 +42,15 @@ function parseArgs(argv) {
     dryRun: false,
     json: false,
     debug: false,
+    apply: true,
+    launch: true,
+    keepOpen: false,
+    noProgress: false,
+    quiet: false,
   };
   const rest = [...argv];
   if (rest[0] && !rest[0].startsWith("--")) args.command = rest.shift();
+  if (args.command === "audit-plugins") args.target = DEFAULT_AUDIT_TARGET;
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = () => {
@@ -50,7 +63,10 @@ function parseArgs(argv) {
     else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
     else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
     else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
-    else if (arg === "--remote-debugging-port") args.remoteDebuggingPort = next();
+    else if (arg === "--remote-debugging-port" || arg === "--port") {
+      const value = next();
+      args.remoteDebuggingPort = args.command === "audit-plugins" ? Number(value) : value;
+    }
     else if (arg === "--asar") args.asar = path.resolve(expandPath(next()));
     else if (arg === "--file") args.file = next();
     else if (arg === "--contains") args.contains = next();
@@ -60,6 +76,11 @@ function parseArgs(argv) {
     else if (arg === "--release-tag") args.releaseTag = next();
     else if (arg === "--release-asset") args.releaseAsset = next();
     else if (arg === "--dry-run") args.dryRun = true;
+    else if (arg === "--no-apply") args.apply = false;
+    else if (arg === "--no-launch") args.launch = false;
+    else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--no-progress") args.noProgress = true;
+    else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--debug") args.debug = true;
     else if (arg === "--json" || arg === "--format=json") args.json = true;
     else if (arg === "--format") {
@@ -77,6 +98,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
+  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -91,7 +113,7 @@ Options:
   --electron-user-data <path>
                            Isolated Electron userData for launch-dev. Default: ./work/codex-plus-electron-user-data
   --remote-debugging-port <port>
-                           Remote debugging port passed to launch-dev
+                           Remote debugging port passed to launch-dev or audit-plugins
   --asar <path>            app.asar path for ASAR readback commands
   --file <asar-path>       Packed file path for asar-cat
   --contains <text>        Filter asar-list paths by substring
@@ -101,6 +123,11 @@ Options:
   --release-tag <tag>      Release mode tag. Default: latest
   --release-asset <name>   Release mode asset. Default: codex-plus-patches.tgz
   --dry-run                Select and report the patch without copying/signing
+  --no-apply               Reuse an existing audit target without applying patches
+  --no-launch              Attach to an existing audit app instead of launching
+  --keep-open              Leave the audit-launched app open after probes finish
+  --no-progress            Suppress audit progress and print only the final summary
+  --quiet                  Print minimal audit output
   --debug                  Print stack traces for CLI errors
   --json                   Print the machine-readable result
 `;
@@ -365,6 +392,13 @@ async function main() {
     process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatLaunchDevResult(result));
     return;
   }
+  if (args.command === "audit-plugins") {
+    const progress = await createAuditProgress(args);
+    const result = await runAudit(args, { progress });
+    process.stdout.write(args.json ? formatAuditJson(result) : formatAuditResult(result, args));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
   if (args.command !== "apply") throw new Error(`Unknown command: ${args.command}`);
 
   const patchSets = await loadPatchSets(args);
@@ -395,9 +429,12 @@ if (require.main === module) {
 
 module.exports = {
   createApplyProgress,
+  createAuditProgress,
   expandPath,
   formatAsarCatResult,
   formatAsarListResult,
+  formatAuditJson,
+  formatAuditResult,
   formatError,
   formatLaunchDevResult,
   formatMenuDiagnosticsResult,
@@ -411,6 +448,7 @@ module.exports = {
   parseArgs,
   readAsarFile,
   requirePatchSetModule,
+  runAudit,
   shouldShowApplyProgress,
   syncDevHome,
 };

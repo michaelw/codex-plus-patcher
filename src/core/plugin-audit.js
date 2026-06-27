@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+const childProcess = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
@@ -9,9 +9,10 @@ const {
   DEFAULT_ELECTRON_USER_DATA,
   launchDevApp,
   syncDevHome,
-} = require("../src/core/dev-mode");
-const { patchCodexApp } = require("../src/core/patch-engine");
-const { patchSets } = require("../src/patches");
+} = require("./dev-mode");
+const { patchCodexApp } = require("./patch-engine");
+const { patchSets } = require("../patches");
+const packageJson = require("../../package.json");
 
 const DEFAULT_SOURCE = "/Applications/Codex.app";
 const DEFAULT_TARGET = path.resolve("work/Codex Plus.app");
@@ -33,6 +34,10 @@ function parseArgs(argv) {
     remoteDebuggingPort: DEFAULT_PORT,
     apply: true,
     launch: true,
+    json: false,
+    keepOpen: false,
+    noProgress: false,
+    quiet: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -49,9 +54,41 @@ function parseArgs(argv) {
     else if (arg === "--remote-debugging-port" || arg === "--port") args.remoteDebuggingPort = Number(next());
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
+    else if (arg === "--json" || arg === "--format=json") args.json = true;
+    else if (arg === "--quiet") args.quiet = true;
+    else if (arg === "--no-progress") args.noProgress = true;
+    else if (arg === "--keep-open") args.keepOpen = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return args;
+}
+
+function auditIdentity({ cwd = path.resolve(__dirname, "../.."), execFileSync = childProcess.execFileSync } = {}) {
+  const identity = {
+    packageName: packageJson.name,
+    packageVersion: packageJson.version,
+    gitSha: "unknown",
+    gitDirty: null,
+    gitAvailable: false,
+  };
+  try {
+    identity.gitSha = execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || "unknown";
+    identity.gitAvailable = true;
+    identity.gitDirty = execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim().length > 0;
+  } catch {
+    identity.gitSha = "unknown";
+    identity.gitDirty = null;
+    identity.gitAvailable = false;
+  }
+  return identity;
 }
 
 function portIsFree(port) {
@@ -192,6 +229,189 @@ async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
     await delay(250);
   }
   throw new Error(`Timed out waiting for Codex Plus runtime plugins: ${JSON.stringify(lastStatus)}`);
+}
+
+function failedPlugins(result) {
+  return Array.from(new Set((result.failures || [])
+    .map((failure) => failure.plugin)
+    .filter((plugin) => plugin && plugin !== "audit")));
+}
+
+function failedPatches(result) {
+  return Array.from(new Set((result.failures || [])
+    .flatMap((failure) => [
+      failure.patch,
+      failure.patchId,
+      failure.details?.patch,
+      failure.details?.patchId,
+    ])
+    .filter(Boolean)));
+}
+
+function formatAuditJson(result) {
+  return `${JSON.stringify(result, null, 2)}\n`;
+}
+
+function formatAuditResult(result, { quiet = false } = {}) {
+  if (quiet) {
+    return result.ok
+      ? "All plugin probes passed.\n"
+      : `Plugin audit failed: ${result.failures.length} failures\n`;
+  }
+
+  if (!result.ok) {
+    const plugins = failedPlugins(result);
+    const patches = failedPatches(result);
+    const lines = [
+      `Plugin audit failed: ${result.failures.length} failures`,
+      "",
+    ];
+    if (plugins.length > 0) lines.push(`Failed plugins: ${plugins.join(", ")}`);
+    if (patches.length > 0) lines.push(`Failed patches: ${patches.join(", ")}`);
+    if (plugins.length > 0 || patches.length > 0) lines.push("");
+    for (const failure of result.failures) {
+      lines.push(`${failure.plugin || "audit"}`);
+      lines.push(`  ${failure.message || "probe failed"}`);
+      if (failure.patch || failure.patchId || failure.details?.patch || failure.details?.patchId) {
+        lines.push(`  patch: ${failure.patch || failure.patchId || failure.details?.patch || failure.details?.patchId}`);
+      }
+      lines.push("");
+    }
+    lines.push("Re-run with --json for full probe details.");
+    return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+  }
+
+  const probeCount = Object.keys(result.pluginResults || {}).length;
+  const runtime = result.runtimeStatus || {};
+  const cleanup = result.cleanupResult;
+  const cleanupText = cleanup?.keptOpen
+    ? "kept open"
+    : cleanup?.attempted
+      ? cleanup.ok ? "cleaned up" : `cleanup failed: ${cleanup.message}`
+      : "not launched";
+  const lines = [
+    "Audit Codex Plus plugins",
+    `Source: ${result.applyResult?.sourceApp || result.source || DEFAULT_SOURCE}`,
+    `Target: ${result.target?.app || DEFAULT_TARGET}`,
+  ];
+  if (result.applyResult?.patchSet) lines.push(`Patch set: ${result.applyResult.patchSet}`);
+  lines.push(
+    "",
+    `Port: ${result.target?.remoteDebuggingPort ?? "unknown"}`,
+    `Runtime ready: ${runtime.registered ?? result.registeredPlugins?.length ?? 0} registered, ${runtime.started ?? result.startedPlugins?.length ?? 0} started`,
+    `Probed ${probeCount} plugins`,
+    `Cleanup: ${cleanupText}`,
+    "",
+    "All plugin probes passed.",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function shouldShowAuditProgress(args, stream = process.stdout) {
+  return !args.json && !args.quiet && !args.noProgress && stream != null;
+}
+
+function timestamp(date = new Date()) {
+  return date.toISOString();
+}
+
+async function createAuditProgress(args, {
+  stream = process.stdout,
+  importOra = (specifier) => import(specifier),
+  now = () => new Date(),
+} = {}) {
+  if (!shouldShowAuditProgress(args, stream)) return null;
+  if (stream.isTTY) {
+    const { default: ora } = await importOra("ora");
+    const spinner = ora({ color: "cyan", spinner: "dots", stream });
+    let active = false;
+    return {
+      start(text) {
+        if (active) spinner.succeed();
+        spinner.text = text;
+        spinner.start();
+        active = true;
+      },
+      succeed(text) {
+        if (!active) return;
+        spinner.succeed(text);
+        active = false;
+      },
+      fail(text) {
+        if (!active) return;
+        spinner.fail(text);
+        active = false;
+      },
+    };
+  }
+  return {
+    start(text) {
+      stream.write(`[${timestamp(now())}] ${text}\n`);
+    },
+    succeed(text) {
+      stream.write(`[${timestamp(now())}] OK ${text}\n`);
+    },
+    fail(text) {
+      stream.write(`[${timestamp(now())}] FAIL ${text}\n`);
+    },
+  };
+}
+
+function progressStart(progress, text) {
+  progress?.start?.(text);
+}
+
+function progressSucceed(progress, text) {
+  progress?.succeed?.(text);
+}
+
+function progressFail(progress, text) {
+  progress?.fail?.(text);
+}
+
+async function withAuditProgress(progress, startText, doneText, action) {
+  progressStart(progress, startText);
+  try {
+    const result = await action();
+    progressSucceed(progress, doneText);
+    return result;
+  } catch (error) {
+    progressFail(progress, startText);
+    throw error;
+  }
+}
+
+async function cleanupLaunchedAuditApp(launchResult, {
+  keepOpen = false,
+  kill = process.kill,
+  wait = delay,
+} = {}) {
+  const pid = launchResult?.pid;
+  if (keepOpen) return { attempted: false, keptOpen: true, ok: true, pid };
+  if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
+  const signals = ["SIGTERM", "SIGKILL"];
+  for (const signal of signals) {
+    try {
+      kill(-pid, signal);
+    } catch (groupError) {
+      try {
+        kill(pid, signal);
+      } catch (processError) {
+        if (processError.code === "ESRCH") return { attempted: true, keptOpen: false, ok: true, pid };
+        if (signal === "SIGKILL") {
+          return {
+            attempted: true,
+            keptOpen: false,
+            ok: false,
+            pid,
+            message: processError.message || groupError.message,
+          };
+        }
+      }
+    }
+    await wait(signal === "SIGTERM" ? 500 : 0);
+  }
+  return { attempted: true, keptOpen: false, ok: true, pid };
 }
 
 function pluginAuditExpression() {
@@ -467,47 +687,95 @@ function pluginAuditExpression() {
   }}())`;
 }
 
-async function runAudit(args) {
-  const port = await findFreePort(args.remoteDebuggingPort);
+async function runAudit(args, {
+  progress = null,
+  operations = {},
+} = {}) {
+  const findPort = operations.findFreePort || findFreePort;
+  const patchApp = operations.patchCodexApp || patchCodexApp;
+  const syncHome = operations.syncDevHome || syncDevHome;
+  const launchApp = operations.launchDevApp || launchDevApp;
+  const waitRenderer = operations.waitForRendererTarget || waitForRendererTarget;
+  const Session = operations.CdpSession || CdpSession;
+  const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
+  const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
+  const readIdentity = operations.auditIdentity || auditIdentity;
+  const port = await findPort(args.remoteDebuggingPort);
+  const identity = readIdentity();
   let applyResult = null;
   let syncResult = null;
   let launchResult = null;
-  if (args.apply) {
-    applyResult = await patchCodexApp({
-      sourceApp: args.source,
-      targetApp: args.target,
-      patchSets,
-      progress: undefined,
-    });
-  }
-  syncResult = syncDevHome({
-    sourceHome: args.sourceHome,
-    devHome: args.devHome,
-  });
-  if (args.launch) {
-    launchResult = launchDevApp({
-      targetApp: args.target,
-      devHome: args.devHome,
-      electronUserDataPath: args.electronUserDataPath,
-      remoteDebuggingPort: port,
-    });
-  }
-  const target = await waitForRendererTarget(port);
-  const cdp = new CdpSession(target.webSocketDebuggerUrl);
-  await cdp.connect();
+  let target = null;
+  let cdp = null;
+  let runtimeStatus = null;
+  let cleanupResult = null;
+  let result = null;
   try {
+    if (args.apply) {
+      applyResult = await withAuditProgress(
+        progress,
+        `Applying patch set to ${args.target}`,
+        "Applied patch set",
+        () => patchApp({
+          sourceApp: args.source,
+          targetApp: args.target,
+          patchSets,
+          progress: undefined,
+        }),
+      );
+    }
+    syncResult = await withAuditProgress(
+      progress,
+      "Syncing dev home",
+      "Synced dev home",
+      () => syncHome({
+        sourceHome: args.sourceHome,
+        devHome: args.devHome,
+      }),
+    );
+    if (args.launch) {
+      launchResult = await withAuditProgress(
+        progress,
+        `Launching Codex Plus on port ${port}`,
+        `Launched app on port ${port}`,
+        () => launchApp({
+          targetApp: args.target,
+          devHome: args.devHome,
+          electronUserDataPath: args.electronUserDataPath,
+          remoteDebuggingPort: port,
+        }),
+      );
+    }
+    target = await withAuditProgress(
+      progress,
+      "Waiting for app://-/index.html",
+      "Found app://-/index.html",
+      () => waitRenderer(port),
+    );
+    cdp = new Session(target.webSocketDebuggerUrl);
+    await cdp.connect();
     await cdp.send("Runtime.enable");
-    const runtimeStatus = await waitForLiveRuntime(cdp);
-    const live = await cdp.evaluate(pluginAuditExpression());
-    return {
+    runtimeStatus = await withAuditProgress(
+      progress,
+      "Waiting for Codex Plus runtime",
+      "Runtime ready",
+      () => waitRuntime(cdp),
+    );
+    const live = await withAuditProgress(
+      progress,
+      "Running plugin probes",
+      "Probed plugins",
+      () => cdp.evaluate(pluginAuditExpression()),
+    );
+    result = {
       ok: live.ok,
       failures: live.failures,
       pluginResults: live.pluginResults,
       target: {
         app: path.resolve(args.target),
         remoteDebuggingPort: port,
-        url: target.url,
-        webSocketDebuggerUrl: target.webSocketDebuggerUrl,
+        url: target?.url,
+        webSocketDebuggerUrl: target?.webSocketDebuggerUrl,
         pid: launchResult?.pid,
       },
       devHome: path.resolve(args.devHome),
@@ -527,32 +795,96 @@ async function runAudit(args) {
       registeredPlugins: live.registeredPlugins,
       startedPlugins: live.startedPlugins,
       runtimeStatus,
+      audit: identity,
     };
-  } finally {
-    await cdp.close();
-  }
-}
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  try {
-    const result = await runAudit(args);
-    console.log(JSON.stringify(result, null, 2));
-    if (!result.ok) process.exitCode = 1;
+    return result;
   } catch (error) {
-    const result = {
+    result = {
       ok: false,
       failures: [{ plugin: "audit", message: error.message }],
       pluginResults: {},
       target: {
         app: path.resolve(args.target),
-        remoteDebuggingPort: args.remoteDebuggingPort,
+        remoteDebuggingPort: port,
+        url: target?.url,
+        webSocketDebuggerUrl: target?.webSocketDebuggerUrl,
+        pid: launchResult?.pid,
       },
       devHome: path.resolve(args.devHome),
+      electronUserDataPath: path.resolve(args.electronUserDataPath),
+      applyResult,
+      syncResult: syncResult && {
+        copied: syncResult.copied,
+        scrubbedGlobalState: syncResult.scrubbedGlobalState,
+        sqliteSnapshots: syncResult.sqliteSnapshots,
+        worktrees: syncResult.worktrees,
+      },
+      launchResult: launchResult && {
+        command: launchResult.command,
+        args: launchResult.args,
+        pid: launchResult.pid,
+      },
+      registeredPlugins: null,
+      startedPlugins: null,
+      runtimeStatus,
+      audit: identity,
     };
-    console.log(JSON.stringify(result, null, 2));
-    process.exitCode = 1;
+    return result;
+  } finally {
+    if (cdp) await cdp.close();
+    try {
+      cleanupResult = launchResult
+        ? await withAuditProgress(
+            progress,
+            "Cleaning up launched audit app",
+            args.keepOpen ? "Kept audit app open" : "Cleaned up launched audit app",
+            () => cleanupApp(launchResult, { keepOpen: args.keepOpen }),
+          )
+        : await cleanupApp(launchResult, { keepOpen: false });
+    } catch (error) {
+      cleanupResult = {
+        attempted: Boolean(launchResult?.pid),
+        keptOpen: false,
+        ok: false,
+        pid: launchResult?.pid ?? null,
+        message: error.message || String(error),
+      };
+      progressFail(progress, "Cleaning up launched audit app");
+    }
+    if (result) result.cleanupResult = cleanupResult;
   }
 }
 
-main();
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const progress = await createAuditProgress(args);
+  const result = await runAudit(args, { progress });
+  process.stdout.write(args.json ? formatAuditJson(result) : formatAuditResult(result, args));
+  if (!result.ok) process.exitCode = 1;
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  auditIdentity,
+  cleanupLaunchedAuditApp,
+  createAuditProgress,
+  DEFAULT_PORT,
+  DEFAULT_SOURCE,
+  DEFAULT_TARGET,
+  failedPatches,
+  failedPlugins,
+  findFreePort,
+  formatAuditJson,
+  formatAuditResult,
+  parseArgs,
+  runAudit,
+  shouldShowAuditProgress,
+  waitForLiveRuntime,
+  waitForRendererTarget,
+};

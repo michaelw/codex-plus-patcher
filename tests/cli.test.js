@@ -7,9 +7,12 @@ const test = require("node:test");
 
 const {
   createApplyProgress,
+  createAuditProgress,
   expandPath,
   formatAsarCatResult,
   formatAsarListResult,
+  formatAuditJson,
+  formatAuditResult,
   formatError,
   formatLaunchDevResult,
   formatMenuDiagnosticsResult,
@@ -24,6 +27,10 @@ const {
   shouldShowApplyProgress,
   syncDevHome,
 } = require("../src/cli");
+const {
+  auditIdentity,
+  cleanupLaunchedAuditApp,
+} = require("../src/core/plugin-audit");
 
 test("empty invocation shows help", () => {
   assert.equal(parseArgs([]).command, "help");
@@ -33,6 +40,7 @@ test("help documents codex-plus-patcher as the only command", () => {
   const output = helpText();
 
   assert.match(output, /codex-plus-patcher apply/);
+  assert.match(output, /codex-plus-patcher audit-plugins/);
   assert.match(output, /codex-plus-patcher dev-sync/);
   assert.match(output, /codex-plus-patcher launch-dev/);
   assert.match(output, /codex-plus-patcher menu-diagnostics/);
@@ -110,6 +118,47 @@ test("dev mode commands parse isolated state flags", () => {
   assert.equal(launchArgs.remoteDebuggingPort, "9234");
 });
 
+test("audit-plugins parses output, launch, and path flags", () => {
+  const args = parseArgs([
+    "audit-plugins",
+    "--json",
+    "--quiet",
+    "--no-progress",
+    "--keep-open",
+    "--no-apply",
+    "--no-launch",
+    "--source",
+    "~/Codex.app",
+    "--target",
+    "~/audit/Codex Plus.app",
+    "--source-home",
+    "~/real-codex",
+    "--dev-home",
+    "~/dev-codex",
+    "--electron-user-data",
+    "~/dev-electron",
+    "--remote-debugging-port",
+    "9240",
+  ]);
+
+  assert.equal(args.command, "audit-plugins");
+  assert.equal(args.json, true);
+  assert.equal(args.quiet, true);
+  assert.equal(args.noProgress, true);
+  assert.equal(args.keepOpen, true);
+  assert.equal(args.apply, false);
+  assert.equal(args.launch, false);
+  assert.equal(args.source, path.join(os.homedir(), "Codex.app"));
+  assert.equal(args.target, path.join(os.homedir(), "audit/Codex Plus.app"));
+  assert.equal(args.sourceHome, path.join(os.homedir(), "real-codex"));
+  assert.equal(args.devHome, path.join(os.homedir(), "dev-codex"));
+  assert.equal(args.electronUserDataPath, path.join(os.homedir(), "dev-electron"));
+  assert.equal(args.remoteDebuggingPort, 9240);
+
+  const defaults = parseArgs(["audit-plugins"]);
+  assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
+});
+
 test("formatResult prints a concise open command for created apps", () => {
   const output = formatResult({
     sourceApp: "/Applications/Codex.app",
@@ -124,6 +173,93 @@ test("formatResult prints a concise open command for created apps", () => {
   assert.match(output, /Codex Plus app created\./);
   assert.match(output, /Open: open "\/Users\/example\/Applications\/Codex Plus\.app"/);
   assert.doesNotMatch(output, /Added files:/);
+});
+
+function sampleAuditResult(overrides = {}) {
+  return {
+    ok: true,
+    failures: [],
+    pluginResults: {
+      aboutMetadata: { ok: true },
+      devTools: { ok: true },
+    },
+    target: {
+      app: "/repo/work/Codex Plus.app",
+      remoteDebuggingPort: 9234,
+      url: "app://-/index.html",
+      pid: 123,
+    },
+    devHome: "/repo/work/codex-plus-dev-home",
+    applyResult: {
+      sourceApp: "/Applications/Codex.app",
+      targetApp: "/repo/work/Codex Plus.app",
+      patchSet: "codex-26.623.41415-4505",
+      patches: ["bundle-identity", "project-colors"],
+    },
+    registeredPlugins: ["aboutMetadata", "devTools"],
+    startedPlugins: ["aboutMetadata", "devTools"],
+    runtimeStatus: {
+      registered: 2,
+      started: 2,
+    },
+    cleanupResult: {
+      attempted: true,
+      keptOpen: false,
+      ok: true,
+      pid: 123,
+    },
+    ...overrides,
+  };
+}
+
+test("audit human formatter prints success summary", () => {
+  const output = formatAuditResult(sampleAuditResult());
+
+  assert.match(output, /Audit Codex Plus plugins/);
+  assert.match(output, /Source: \/Applications\/Codex\.app/);
+  assert.match(output, /Target: \/repo\/work\/Codex Plus\.app/);
+  assert.match(output, /Patch set: codex-26\.623\.41415-4505/);
+  assert.match(output, /Port: 9234/);
+  assert.match(output, /Runtime ready: 2 registered, 2 started/);
+  assert.match(output, /Probed 2 plugins/);
+  assert.match(output, /Cleanup: cleaned up/);
+  assert.match(output, /All plugin probes passed\./);
+});
+
+test("audit human formatter prints failure summary with failed plugins and patches", () => {
+  const output = formatAuditResult(sampleAuditResult({
+    ok: false,
+    failures: [
+      { plugin: "nestedRepositories", message: "Review body was not wrapped", patch: "multi-repository-review" },
+      { plugin: "mermaidFullscreen", message: "Mermaid diagram marker is missing", details: { patchId: "mermaid-fullscreen-viewer" } },
+    ],
+  }));
+
+  assert.match(output, /Plugin audit failed: 2 failures/);
+  assert.match(output, /Failed plugins: nestedRepositories, mermaidFullscreen/);
+  assert.match(output, /Failed patches: multi-repository-review, mermaid-fullscreen-viewer/);
+  assert.match(output, /nestedRepositories\n  Review body was not wrapped\n  patch: multi-repository-review/);
+  assert.match(output, /mermaidFullscreen\n  Mermaid diagram marker is missing\n  patch: mermaid-fullscreen-viewer/);
+  assert.match(output, /Re-run with --json for full probe details\./);
+});
+
+test("audit quiet formatter prints minimal output", () => {
+  assert.equal(formatAuditResult(sampleAuditResult(), { quiet: true }), "All plugin probes passed.\n");
+  assert.equal(
+    formatAuditResult(sampleAuditResult({ ok: false, failures: [{ plugin: "x", message: "bad" }] }), { quiet: true }),
+    "Plugin audit failed: 1 failures\n",
+  );
+});
+
+test("audit json formatter preserves the machine payload shape", () => {
+  const result = sampleAuditResult();
+  const parsed = JSON.parse(formatAuditJson(result));
+
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.failures, []);
+  assert.deepEqual(Object.keys(parsed.pluginResults), ["aboutMetadata", "devTools"]);
+  assert.equal(parsed.target.app, "/repo/work/Codex Plus.app");
+  assert.equal(parsed.devHome, "/repo/work/codex-plus-dev-home");
 });
 
 function writeFile(root, relativePath, text = relativePath) {
@@ -252,6 +388,90 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   assert.equal(calls[1].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
   assert.deepEqual(calls[2], { unref: true });
   assert.match(formatLaunchDevResult(result), /CODEX_ELECTRON_USER_DATA_PATH/);
+});
+
+test("audit cleanup handles launched, kept-open, missing, and failed process cleanup", async () => {
+  const killed = [];
+  const cleaned = await cleanupLaunchedAuditApp(
+    { pid: 123 },
+    {
+      kill(pid, signal) {
+        killed.push([pid, signal]);
+      },
+      wait() {},
+    },
+  );
+  assert.deepEqual(cleaned, { attempted: true, keptOpen: false, ok: true, pid: 123 });
+  assert.deepEqual(killed, [[-123, "SIGTERM"], [-123, "SIGKILL"]]);
+
+  assert.deepEqual(await cleanupLaunchedAuditApp({ pid: 456 }, { keepOpen: true }), {
+    attempted: false,
+    keptOpen: true,
+    ok: true,
+    pid: 456,
+  });
+  assert.deepEqual(await cleanupLaunchedAuditApp(null), {
+    attempted: false,
+    keptOpen: false,
+    ok: true,
+    pid: null,
+  });
+
+  const failed = await cleanupLaunchedAuditApp(
+    { pid: 789 },
+    {
+      kill() {
+        const error = new Error("no permission");
+        error.code = "EPERM";
+        throw error;
+      },
+      wait() {},
+    },
+  );
+  assert.equal(failed.attempted, true);
+  assert.equal(failed.keptOpen, false);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.pid, 789);
+  assert.match(failed.message, /no permission/);
+});
+
+test("audit identity helper handles clean, dirty, and non-git cases", () => {
+  const clean = auditIdentity({
+    cwd: "/repo",
+    execFileSync(command, args) {
+      assert.equal(command, "git");
+      if (args[0] === "rev-parse") return "abc123\n";
+      if (args[0] === "status") return "";
+      throw new Error("unexpected git command");
+    },
+  });
+  assert.equal(clean.packageName, "codex-plus-patcher");
+  assert.equal(clean.packageVersion, "0.7.0");
+  assert.equal(clean.gitSha, "abc123");
+  assert.equal(clean.gitDirty, false);
+  assert.equal(clean.gitAvailable, true);
+
+  const dirty = auditIdentity({
+    cwd: "/repo",
+    execFileSync(command, args) {
+      if (args[0] === "rev-parse") return "def456\n";
+      if (args[0] === "status") return " M package.json\n";
+      throw new Error("unexpected git command");
+    },
+  });
+  assert.equal(dirty.gitSha, "def456");
+  assert.equal(dirty.gitDirty, true);
+  assert.equal(dirty.gitAvailable, true);
+
+  const nonGit = auditIdentity({
+    cwd: "/repo",
+    execFileSync() {
+      throw new Error("not a git repository");
+    },
+  });
+  assert.equal(nonGit.gitSha, "unknown");
+  assert.equal(nonGit.gitDirty, null);
+  assert.equal(nonGit.gitAvailable, false);
 });
 
 function makeAsar(fileMap) {
@@ -460,5 +680,86 @@ test("enabled apply progress reports and completes spinner steps", async () => {
     ["succeed", "[1/2] Inspect source app"],
     ["start", "[2/2] Finish"],
     ["succeed", "[2/2] Finish"],
+  ]);
+});
+
+test("audit progress is suppressed in json, quiet, and no-progress modes", async () => {
+  for (const args of [{ json: true }, { quiet: true }, { noProgress: true }]) {
+    const progress = await createAuditProgress(args, {
+      stream: { isTTY: true, write() {} },
+      importOra() {
+        throw new Error("ora should not be imported");
+      },
+    });
+    assert.equal(progress, null);
+  }
+});
+
+test("audit progress uses ora for tty output", async () => {
+  const calls = [];
+  const spinner = {
+    succeed(text) {
+      calls.push(["succeed", text]);
+    },
+    start() {
+      calls.push(["start", this.text]);
+    },
+    fail(text) {
+      calls.push(["fail", text]);
+    },
+  };
+  const progress = await createAuditProgress(
+    {},
+    {
+      stream: { isTTY: true },
+      async importOra(specifier) {
+        assert.equal(specifier, "ora");
+        return {
+          default(options) {
+            calls.push(["ora", options.stream.isTTY]);
+            return spinner;
+          },
+        };
+      },
+    },
+  );
+
+  progress.start("Running plugin probes");
+  progress.succeed("Probed plugins");
+  progress.start("Cleaning up launched audit app");
+  progress.fail("Cleaning up launched audit app");
+
+  assert.deepEqual(calls, [
+    ["ora", true],
+    ["start", "Running plugin probes"],
+    ["succeed", "Probed plugins"],
+    ["start", "Cleaning up launched audit app"],
+    ["fail", "Cleaning up launched audit app"],
+  ]);
+});
+
+test("audit progress prints timestamped plain lines for non-tty output", async () => {
+  const writes = [];
+  const progress = await createAuditProgress(
+    {},
+    {
+      stream: {
+        isTTY: false,
+        write(text) {
+          writes.push(text);
+        },
+      },
+      now: () => new Date("2026-06-27T12:00:00.000Z"),
+    },
+  );
+
+  progress.start("Waiting for Codex Plus runtime");
+  progress.succeed("Runtime ready");
+  progress.fail("Running plugin probes");
+
+  assert.deepEqual(writes, [
+    "[2026-06-27T12:00:00.000Z] Waiting for Codex Plus runtime\n",
+    "[2026-06-27T12:00:00.000Z] OK Runtime ready\n",
+    "[2026-06-27T12:00:00.000Z] FAIL Running plugin probes\n",
   ]);
 });
