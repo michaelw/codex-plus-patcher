@@ -1429,12 +1429,13 @@ test("header patch renders project path accessories from thread context", () => 
       assert.match(transformed, /deps:\{jsx:\$\.jsx,jsxs:\$\.jsxs,Tooltip:me\}/);
       assert.match(transformed, /children:\[\(0,\$\.jsx\)\(Qn,\{onClick:c\}\),\(0,\$\.jsx\)\(q,\{color:`ghostActive`/);
       assert.match(transformed, /\}\),CPX_headerAccessories\]\}\):\(0,\$\.jsx\)\(`span`/);
-      assert.match(transformed, /t\[66\]!==CPX_headerAccessories/);
+      assert.doesNotMatch(transformed, /t\[\d+\]!==CPX_headerAccessories/);
+      assert.doesNotMatch(transformed, /t\[\d+\]=CPX_headerAccessories/);
 
       const localConversationTransform = findTransform(patchSet, "local-conversation-page");
       const transformedLocalConversation = localConversationTransform([
         "function mi(e){let t=(0,U.c)(32),",
-        "let t=(0,U.c)(33),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:i,projectIcon:a,projectHoverCardContent:s,projectName:c,title:l,titleSuffix:u,cwd:d,canPin:f,hideForkActions:p}=e,g=f===void 0?!0:f,_=N(),v=h(),y;",
+        "let t=(0,U.c)(32),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:i,projectIcon:a,projectHoverCardContent:s,projectName:c,title:l,titleSuffix:u,cwd:d,canPin:f,hideForkActions:p}=e,g=f===void 0?!0:f,_=N(),v=h(),y;",
         "let O;t[26]===Symbol.for(`react.memo_cache_sentinel`)?(O=null,t[26]=O):O=t[26];",
         "let k;return t[27]!==C||t[28]!==T||t[29]!==E||t[30]!==D?(k=(0,W.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,W.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[C,T,E,D,O]})}),t[27]=C,t[28]=T,t[29]=E,t[30]=D,t[31]=k):k=t[31],k}",
       ].join(""));
@@ -1444,7 +1445,9 @@ test("header patch renders project path accessories from thread context", () => 
       assert.match(transformedLocalConversation, /surface:`local-conversation`/);
       assert.match(transformedLocalConversation, /deps:\{jsx:W\.jsx,jsxs:W\.jsxs,Tooltip:wt\}/);
       assert.match(transformedLocalConversation, /children:\[C,T,E,D,O\]/);
-      assert.match(transformedLocalConversation, /t\[32\]!==O/);
+      assert.match(transformedLocalConversation, /let O=CPX_headerAccessories/);
+      assert.doesNotMatch(transformedLocalConversation, /t\[32\]!==O/);
+      assert.doesNotMatch(transformedLocalConversation, /t\[32\]=O/);
       continue;
     }
 
@@ -1462,7 +1465,8 @@ test("header patch renders project path accessories from thread context", () => 
     assert.match(transformed, /children:\[\(0,Q\.jsx\)\(mt,\{onClick:c\}\),\(0,Q\.jsx\)\(x,\{color:`ghostActive`/);
     assert.match(transformed, /\}\),CPX_headerAccessories\]\}\):\(0,Q\.jsx\)\(`span`/);
     assert.match(transformed, /children:\[S,C,A\]/);
-    assert.match(transformed, /t\[68\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformed, /t\[\d+\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformed, /t\[\d+\]=CPX_headerAccessories/);
 
     const threadPageTransform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("thread-page-header-D_hZ50OA"))?.[1];
     assert.equal(typeof threadPageTransform, "function", `${patchSet.id} has thread page header transform`);
@@ -1475,7 +1479,8 @@ test("header patch renders project path accessories from thread context", () => 
     assert.match(transformedThreadPageHeader, /header:\{env:u,hostDisplayName:p\?\.display_name\?\?null/);
     assert.match(transformedThreadPageHeader, /deps:\{jsx:s\.jsx,jsxs:s\.jsxs\}/);
     assert.match(transformedThreadPageHeader, /children:\[v,y,b,CPX_headerAccessories,l\]/);
-    assert.match(transformedThreadPageHeader, /t\[21\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformedThreadPageHeader, /t\[\d+\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformedThreadPageHeader, /t\[\d+\]=CPX_headerAccessories/);
 
     const localConversationTransform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("local-conversation-page-dVDt8SxG"))?.[1];
     assert.equal(typeof localConversationTransform, "function", `${patchSet.id} has local conversation header transform`);
@@ -1485,7 +1490,8 @@ test("header patch renders project path accessories from thread context", () => 
     assert.match(transformedLocalConversation, /surface:`local-conversation`/);
     assert.match(transformedLocalConversation, /deps:\{jsx:Z\.jsx,jsxs:Z\.jsxs\}/);
     assert.match(transformedLocalConversation, /children:\[F,I,L,CPX_headerAccessories,R\]/);
-    assert.match(transformedLocalConversation, /t\[42\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformedLocalConversation, /t\[\d+\]!==CPX_headerAccessories/);
+    assert.doesNotMatch(transformedLocalConversation, /t\[\d+\]=CPX_headerAccessories/);
   }
 
   for (const patchSet of patchSets.filter((patchSet) => !patchSet.patches.some((patch) => patch.id === "project-path-header"))) {
@@ -1729,6 +1735,10 @@ test("diagnostic error patches delegate detail rendering to the runtime plugin",
 
     assert.match(appShell, /function CPXDiagnosticDetails\(e\)\{return window\.CodexPlus\?\.ui\?\.errors\?\.renderDetails\?\.\(e\)\?\?null\}/);
     assert.match(appShell, /CPXDiagnosticDetails\(\{jsx:Q\.jsx,error:e\.error\}\)/);
+    assert.doesNotMatch(appShell, /t\[3\]===e\.error/);
+    assert.doesNotMatch(appShell, /t\[3\]=e\.error/);
+    assert.doesNotMatch(appShell, /t\[3\]===CPX_error/);
+    assert.doesNotMatch(appShell, /t\[3\]=CPX_error/);
     assert.doesNotMatch(appShell, /max-h-80 max-w-full/);
     assert.match(errorBoundary, /error:CPX_error,componentStack:CPX_componentStack/);
     assert.match(errorBoundary, /CPXDiagnosticDetails\(\{jsx:\$\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
@@ -2244,7 +2254,7 @@ test("composer patch applies the user entry marker and shared color variables", 
     let fakeBundle = patchSet.id === "codex-26.623.41415-4505"
       ? [
         "function Wbe(e){let t=(0,gW.c)(13),",
-        "function Wbe(e){let t=(0,gW.c)(14),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,",
+        "{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,",
         "return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,_W.jsx)(Su.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
         "Ls=(0,PY.jsx)(Lte,{active:Ra.ui?.active===!0&&Ra.ui.activation===`synthetic`,onOpen:()=>{ns.prepare(),fn.toggleContextSuggestions()}});return",
         "(0,PY.jsx)(sEe,{className:w,externalFooterVariant:C,hasDropTargetPortal:As,",
@@ -2272,21 +2282,28 @@ test("composer patch applies the user entry marker and shared color variables", 
     assert.match(transformed, /CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
     assert.match(transformed, /CPXSurfaceProps=e=>CPXMC\.composerSurfaceProps\(e\)/);
     if (patchSet.id === "codex-26.623.41415-4505") {
-      assert.match(transformed, /CPX_surfaceProps=CPX_hostSurfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+      assert.match(transformed, /function Wbe\(e\)\{let t=\(0,gW\.c\)\(13\)/);
+      assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_surfaceProps\?\?=CPXSurfaceProps\(\{\}\)/);
       assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
       assert.match(transformed, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:\{cwd:ln\?\?an,hostId:\$n\}\}\)/);
       assert.match(transformed, /codexPlusProps:CPX_composerSurfaceProps/);
+      assert.match(transformed, /key:CPX_composerSurfaceProps\?\.\[`data-codex-plus-project-color`\]\?\?``/);
+      assert.doesNotMatch(transformed, /t\[12\]!==CPX_surfaceProps/);
+      assert.doesNotMatch(transformed, /t\[12\]=CPX_surfaceProps/);
       assert.doesNotMatch(transformed, /CPX_localThreadKey/);
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;
     }
     assert.ok(transformed.includes(`import{t as CPX_localThreadKey}from"./${names.sidebarThreadKeysFile}";`));
     assert.ok(transformed.includes(`import{s as CPX_threadProjectId}from"./${names.sidebarThreadRowSignalsFile}";`));
-    assert.match(transformed, /function oh\(e\)\{let t=\(0,\$\.c\)\(14\)/);
+    assert.match(transformed, /function oh\(e\)\{let t=\(0,\$\.c\)\(13\)/);
     assert.doesNotMatch(transformed, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\].*background-color:var\(--codex-plus-project/);
     assert.doesNotMatch(transformed, /--codex-plus-user-bubble-light-bg/);
     assert.doesNotMatch(transformed, /CPX_userBubbleTextColor/);
     assert.match(transformed, /\.\.\.CPX_surfaceProps,className:v/);
+    assert.match(transformed, /key:CPX_composerSurfaceProps\?\.\[`data-codex-plus-project-color`\]\?\?``/);
+    assert.doesNotMatch(transformed, /t\[12\]!==CPX_surfaceProps/);
+    assert.doesNotMatch(transformed, /t\[12\]=CPX_surfaceProps/);
     assert.doesNotMatch(transformed, /CPX_projectColorInlineStyle/);
     assert.match(transformed, /CPX_composerThreadProjectId=a\(CPX_threadProjectId,G==null\?null:CPX_localThreadKey\(G\)\)/);
     assert.match(transformed, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:G==null\?On\?\{hostId:On\.hostId,path:On\.remotePath,projectId:kn,label:On\.label\?\?On\.name\}:x\?\?void 0:CPX_composerThreadProjectId\}\);return/);
