@@ -9,26 +9,24 @@ patched app is launched and checked through DevTools.
 Apply patches to a workspace-local app under `work/`:
 
 ```sh
-rtk node src/cli.js apply \
-  --source /Applications/Codex.app \
-  --target "work/Codex Plus 26.623.41415.app"
+rtk codex-plus-patcher apply \
+  --mode dev \
+  --patch-dir ./src/patches \
+  --target "work/Codex Plus.app"
 ```
 
 Sync a private development `CODEX_HOME` that shares the original worktrees:
 
 ```sh
-rtk node src/cli.js dev-sync \
-  --source-home ~/.codex \
-  --dev-home work/codex-plus-dev-home
+rtk codex-plus-patcher dev-sync
 ```
 
 Launch the copied app with private Electron user data and a remote debugging
 port:
 
 ```sh
-rtk node src/cli.js launch-dev \
-  --target "work/Codex Plus 26.623.41415.app" \
-  --dev-home work/codex-plus-dev-home \
+rtk codex-plus-patcher launch-dev \
+  --target "work/Codex Plus.app" \
   --remote-debugging-port 9234
 ```
 
@@ -38,6 +36,13 @@ page whose URL is `app://-/index.html`.
 Dev mode intentionally shares real worktrees while keeping sqlite and Electron
 user data private. Use it for plugin and UI validation, not for starting
 concurrent turns or edits against the same checkout from both apps.
+
+Production Codex and production Codex Plus cannot safely run side-by-side. Both
+use the same default `~/.codex` state, including sqlite databases and their WAL
+and lock files. When both apps open those databases, sqlite locking can prevent
+startup or leave one app waiting on the other. The dev launch avoids that clash
+by giving Codex Plus a private `CODEX_HOME` and Electron user data directory
+while symlinking only `worktrees/` back to the original Codex home.
 
 ## Live Proof Recipes
 
