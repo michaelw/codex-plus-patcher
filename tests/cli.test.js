@@ -157,6 +157,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
 
   const defaults = parseArgs(["audit-plugins"]);
   assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
+  assert.equal(defaults.remoteDebuggingPort, 9234);
 });
 
 test("formatResult prints a concise open command for created apps", () => {

@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const {
   createAuditProgress,
+  DEFAULT_PORT: DEFAULT_AUDIT_PORT,
   DEFAULT_TARGET: DEFAULT_AUDIT_TARGET,
   formatAuditJson,
   formatAuditResult,
@@ -50,7 +51,10 @@ function parseArgs(argv) {
   };
   const rest = [...argv];
   if (rest[0] && !rest[0].startsWith("--")) args.command = rest.shift();
-  if (args.command === "audit-plugins") args.target = DEFAULT_AUDIT_TARGET;
+  if (args.command === "audit-plugins") {
+    args.target = DEFAULT_AUDIT_TARGET;
+    args.remoteDebuggingPort = DEFAULT_AUDIT_PORT;
+  }
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = () => {
