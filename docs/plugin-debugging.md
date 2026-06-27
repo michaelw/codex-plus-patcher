@@ -44,6 +44,20 @@ startup or leave one app waiting on the other. The dev launch avoids that clash
 by giving Codex Plus a private `CODEX_HOME` and Electron user data directory
 while symlinking only `worktrees/` back to the original Codex home.
 
+## Deterministic Plugin Audit
+
+Run the reusable live audit before declaring plugin work complete:
+
+```sh
+rtk npm run audit:plugins
+```
+
+The audit applies the current patch set to `work/Codex Plus.app`, syncs the
+default dev home, launches with a remote debugging port, attaches to
+`app://-/index.html`, and emits JSON with `ok`, `failures`, `pluginResults`,
+`target`, and `devHome`. It exits nonzero when any required built-in plugin
+probe fails.
+
 ## Live Proof Recipes
 
 - Plugins: in the renderer target, check

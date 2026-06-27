@@ -679,6 +679,8 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   );
 
   assert.equal(api.plugins.get("sample").settingsStore.get("enabled"), true);
+  assert.equal(typeof api.plugins.get, "function");
+  assert.deepEqual(plain(api.plugins.list().map((plugin) => plugin.id)), ["sample"]);
   assert.equal(api.commands.run("sample.command"), "ok");
   assert.deepEqual(Array.from(api.commands.menuItems("suggested").map((command) => command.id)), ["sample.command"]);
   assert.deepEqual(Array.from(api.ui.commands.commandMetadata().map((command) => command.id)), ["sample.command"]);
