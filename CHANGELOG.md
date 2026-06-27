@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.7.0...v0.7.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* restore Mermaid popout coverage ([#49](https://github.com/michaelw/codex-plus-patcher/issues/49)) ([3b719ab](https://github.com/michaelw/codex-plus-patcher/commit/3b719ab1cb52c1823b79a2db2717d3f270bf5018))
+* stabilize Codex Plus dev audit and project colors ([9f9af3e](https://github.com/michaelw/codex-plus-patcher/commit/9f9af3e1cec6f182bba9cf220fe1525b8c2a4059))
+
 ## [0.7.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.6.0...v0.7.0) (2026-06-25)
 
 
