@@ -9,6 +9,13 @@ This repo ships patch source only. Never commit `Codex.app`, generated
   original `app.asar` SHA-256.
 - Prefer adding a new versioned patch file over weakening anchors or broadening
   matching.
+- For plugin or patch injection work, read `docs/plugin-architecture.md` before
+  editing and follow its layering rules: feature behavior belongs in readable
+  runtime/plugin or host adapter code, while minified transforms should only
+  install small extension points.
+- Use `docs/plugin-debugging.md` for the side-by-side dev launch and live proof
+  workflow. Transform tests and ASAR readback are not enough for UI/plugin
+  changes that depend on runtime mount points.
 - Validate real patch application against a workspace-local target under
   `work/`, not the user's real app target.
 - Before creating, updating, pushing for, or marking a PR ready, run

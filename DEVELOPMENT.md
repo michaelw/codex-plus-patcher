@@ -79,6 +79,8 @@ moved feature bodies are no longer inside versioned chunks.
 Generated Codex Plus apps expose **View > Open Developer Tools**. Use DevTools
 to inspect runtime plugin loading, console errors, and `window.CodexPlus` when
 diagnosing app-only behavior that tests or ASAR readback cannot prove.
+For the full side-by-side dev launch, remote debugging port, and live proof
+workflow, follow `docs/plugin-debugging.md`.
 
 For native menu issues, launch the workspace app with menu diagnostics enabled:
 
@@ -103,6 +105,9 @@ into Codex core with the smallest versioned patch needed.
 Keep host hooks small, fail-closed, and reusable across more than one plugin or
 feature when practical. Avoid putting large feature bodies directly into
 minified bundle transforms if a runtime/plugin interface can carry the behavior.
+For the required layer boundaries, glue-size limits, and forbidden minified
+patch shapes, follow `docs/plugin-architecture.md` before editing plugin or
+patch injection code.
 
 ## Porting A New Codex Version
 
