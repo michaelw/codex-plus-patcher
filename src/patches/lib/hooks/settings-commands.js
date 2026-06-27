@@ -1,5 +1,6 @@
-function appearanceSettingsHook() {
-  return "function CPXAppearanceRows(e){return window.CodexPlus?.ui?.settings?.appearance?.renderRows?.({deps:{React:X,jsx:Z.jsx,SettingRow:J,ColorInput:sn,Switch:q},variant:e})??[]}";
+function appearanceSettingsHook(depsExpression) {
+  const deps = depsExpression || "{React:X,jsx:Z.jsx,SettingRow:J,ColorInput:sn,Switch:q}";
+  return `function CPXAppearanceRows(e){return window.CodexPlus?.ui?.settings?.appearance?.renderRows?.({deps:${deps},variant:e})??[]}`;
 }
 
 function commandMenuItemsExpression(group, jsx, menuItem, register) {

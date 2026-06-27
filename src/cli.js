@@ -3,6 +3,14 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { readAsar, walkFiles } = require("./core/asar");
+const {
+  DEFAULT_DEV_HOME,
+  DEFAULT_ELECTRON_USER_DATA,
+  formatLaunchDevResult,
+  formatSyncDevHomeResult,
+  launchDevApp,
+  syncDevHome,
+} = require("./core/dev-mode");
 const { patchCodexApp } = require("./core/patch-engine");
 const { resolveReleasePatchDirectory } = require("./core/release");
 const { patchSets: builtInPatchSets } = require("./patches");
@@ -18,6 +26,9 @@ function parseArgs(argv) {
     command: argv.length === 0 ? "help" : "apply",
     source: "/Applications/Codex.app",
     target: path.join(os.homedir(), "Applications", "Codex Plus.app"),
+    sourceHome: path.join(os.homedir(), ".codex"),
+    devHome: DEFAULT_DEV_HOME,
+    electronUserDataPath: DEFAULT_ELECTRON_USER_DATA,
     mode: "builtin",
     releaseAsset: "codex-plus-patches.tgz",
     releaseTag: "latest",
@@ -36,6 +47,10 @@ function parseArgs(argv) {
     };
     if (arg === "--source") args.source = path.resolve(expandPath(next()));
     else if (arg === "--target") args.target = path.resolve(expandPath(next()));
+    else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
+    else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
+    else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
+    else if (arg === "--remote-debugging-port") args.remoteDebuggingPort = next();
     else if (arg === "--asar") args.asar = path.resolve(expandPath(next()));
     else if (arg === "--file") args.file = next();
     else if (arg === "--contains") args.contains = next();
@@ -62,6 +77,8 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
+  codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
+  codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
   codex-plus-patcher asar-list --asar <path> [--contains <text>] [--json]
   codex-plus-patcher asar-cat --asar <path> --file <asar-path> [--json]
@@ -69,6 +86,12 @@ function helpText() {
 Options:
   --source <path>          Source Codex.app. Default: /Applications/Codex.app
   --target <path>          Target Codex Plus.app. Default: ~/Applications/Codex Plus.app
+  --source-home <path>     Original Codex home for dev-sync. Default: ~/.codex
+  --dev-home <path>        Isolated CODEX_HOME for dev mode. Default: ./work/codex-plus-dev-home
+  --electron-user-data <path>
+                           Isolated Electron userData for launch-dev. Default: ./work/codex-plus-electron-user-data
+  --remote-debugging-port <port>
+                           Remote debugging port passed to launch-dev
   --asar <path>            app.asar path for ASAR readback commands
   --file <asar-path>       Packed file path for asar-cat
   --contains <text>        Filter asar-list paths by substring
@@ -327,6 +350,21 @@ async function main() {
     process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatMenuDiagnosticsResult(result));
     return;
   }
+  if (args.command === "dev-sync") {
+    const result = syncDevHome(args);
+    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatSyncDevHomeResult(result));
+    return;
+  }
+  if (args.command === "launch-dev") {
+    const result = launchDevApp({
+      targetApp: args.target,
+      devHome: args.devHome,
+      electronUserDataPath: args.electronUserDataPath,
+      remoteDebuggingPort: args.remoteDebuggingPort,
+    });
+    process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatLaunchDevResult(result));
+    return;
+  }
   if (args.command !== "apply") throw new Error(`Unknown command: ${args.command}`);
 
   const patchSets = await loadPatchSets(args);
@@ -361,14 +399,18 @@ module.exports = {
   formatAsarCatResult,
   formatAsarListResult,
   formatError,
+  formatLaunchDevResult,
   formatMenuDiagnosticsResult,
   formatResult,
+  formatSyncDevHomeResult,
   helpText,
   listAsarFiles,
   loadPatchSets,
+  launchDevApp,
   menuDiagnostics,
   parseArgs,
   readAsarFile,
   requirePatchSetModule,
   shouldShowApplyProgress,
+  syncDevHome,
 };

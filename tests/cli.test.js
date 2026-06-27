@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -10,14 +11,18 @@ const {
   formatAsarCatResult,
   formatAsarListResult,
   formatError,
+  formatLaunchDevResult,
   formatMenuDiagnosticsResult,
   formatResult,
+  formatSyncDevHomeResult,
   helpText,
   listAsarFiles,
+  launchDevApp,
   menuDiagnostics,
   parseArgs,
   readAsarFile,
   shouldShowApplyProgress,
+  syncDevHome,
 } = require("../src/cli");
 
 test("empty invocation shows help", () => {
@@ -28,6 +33,8 @@ test("help documents codex-plus-patcher as the only command", () => {
   const output = helpText();
 
   assert.match(output, /codex-plus-patcher apply/);
+  assert.match(output, /codex-plus-patcher dev-sync/);
+  assert.match(output, /codex-plus-patcher launch-dev/);
   assert.match(output, /codex-plus-patcher menu-diagnostics/);
   assert.match(output, /codex-plus-patcher asar-list/);
   assert.match(output, /codex-plus-patcher asar-cat/);
@@ -78,6 +85,31 @@ test("asar commands parse readback flags", () => {
   assert.equal(diagnosticsArgs.json, true);
 });
 
+test("dev mode commands parse isolated state flags", () => {
+  const syncArgs = parseArgs(["dev-sync", "--source-home", "~/real-codex", "--dev-home", "~/dev-codex", "--json"]);
+  assert.equal(syncArgs.command, "dev-sync");
+  assert.equal(syncArgs.sourceHome, path.join(os.homedir(), "real-codex"));
+  assert.equal(syncArgs.devHome, path.join(os.homedir(), "dev-codex"));
+  assert.equal(syncArgs.json, true);
+
+  const launchArgs = parseArgs([
+    "launch-dev",
+    "--target",
+    "~/tmp/Codex Plus.app",
+    "--dev-home",
+    "~/dev-codex",
+    "--electron-user-data",
+    "~/dev-electron",
+    "--remote-debugging-port",
+    "9234",
+  ]);
+  assert.equal(launchArgs.command, "launch-dev");
+  assert.equal(launchArgs.target, path.join(os.homedir(), "tmp", "Codex Plus.app"));
+  assert.equal(launchArgs.devHome, path.join(os.homedir(), "dev-codex"));
+  assert.equal(launchArgs.electronUserDataPath, path.join(os.homedir(), "dev-electron"));
+  assert.equal(launchArgs.remoteDebuggingPort, "9234");
+});
+
 test("formatResult prints a concise open command for created apps", () => {
   const output = formatResult({
     sourceApp: "/Applications/Codex.app",
@@ -92,6 +124,122 @@ test("formatResult prints a concise open command for created apps", () => {
   assert.match(output, /Codex Plus app created\./);
   assert.match(output, /Open: open "\/Users\/example\/Applications\/Codex Plus\.app"/);
   assert.doesNotMatch(output, /Added files:/);
+});
+
+function writeFile(root, relativePath, text = relativePath) {
+  const filePath = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+test("dev-sync copies allowed config and symlinks original worktrees", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-dev-sync-"));
+  const sourceHome = path.join(tmpDir, "source-home");
+  const devHome = path.join(tmpDir, "dev-home");
+  fs.mkdirSync(path.join(sourceHome, "worktrees", "ffde"), { recursive: true });
+  writeFile(devHome, "cache/stale.txt", "remove me");
+  writeFile(devHome, "sqlite/codex-dev.db", "remove me");
+  writeFile(devHome, "logs_2.sqlite", "remove me");
+  writeFile(devHome, "logs_2.sqlite-wal", "remove me");
+  writeFile(sourceHome, "config.toml", "model = 'gpt-5'\n");
+  writeFile(sourceHome, "auth.json", "{}\n");
+  writeFile(sourceHome, ".codex-global-state.json", "{}\n");
+  writeFile(sourceHome, "rules/default.rules", "rule\n");
+  writeFile(sourceHome, "skills/example/SKILL.md", "# Skill\n");
+  writeFile(sourceHome, "plugins/example/plugin.json", "{}\n");
+  writeFile(sourceHome, "vendor_imports/skills-curated-cache.json", "{}\n");
+  writeFile(sourceHome, "computer-use/config.json", "{}\n");
+  childProcess.execFileSync("sqlite3", [
+    path.join(sourceHome, "state_5.sqlite"),
+    "create table threads(id text primary key, title text); insert into threads values('thread-1','Visible in dev');",
+  ]);
+  writeFile(sourceHome, "sqlite/codex.db", "do not copy");
+  writeFile(sourceHome, "logs_2.sqlite", "do not copy");
+  writeFile(sourceHome, "state_5.sqlite-wal", "do not copy");
+  writeFile(sourceHome, "state_5.sqlite-shm", "do not copy");
+  writeFile(sourceHome, "cache/generated.txt", "do not copy");
+
+  const result = syncDevHome({ sourceHome, devHome });
+
+  assert.equal(fs.readFileSync(path.join(devHome, "config.toml"), "utf8"), "model = 'gpt-5'\n");
+  assert.equal(fs.readFileSync(path.join(devHome, "rules/default.rules"), "utf8"), "rule\n");
+  assert.equal(fs.readFileSync(path.join(devHome, "computer-use/config.json"), "utf8"), "{}\n");
+  assert.equal(fs.lstatSync(path.join(devHome, "worktrees")).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(path.join(devHome, "worktrees")), path.join(sourceHome, "worktrees"));
+  assert.equal(
+    childProcess.execFileSync("sqlite3", [path.join(devHome, "state_5.sqlite"), "select title from threads where id = 'thread-1';"], { encoding: "utf8" }).trim(),
+    "Visible in dev",
+  );
+  assert.equal(fs.existsSync(path.join(devHome, "sqlite")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "logs_2.sqlite")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "logs_2.sqlite-wal")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "state_5.sqlite-wal")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "state_5.sqlite-shm")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "cache", "generated.txt")), false);
+  assert.equal(fs.existsSync(path.join(devHome, "cache", "stale.txt")), false);
+  assert.deepEqual(result.sqliteSnapshots, ["state_5.sqlite"]);
+  assert.deepEqual(result.worktrees, {
+    source: path.join(sourceHome, "worktrees"),
+    target: path.join(devHome, "worktrees"),
+  });
+  assert.match(formatSyncDevHomeResult(result), /SQLite snapshots: state_5\.sqlite/);
+  assert.match(formatSyncDevHomeResult(result), /Dev mode shares the original Codex worktrees/);
+});
+
+test("dev-sync rejects the real source home as dev home", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-dev-sync-"));
+
+  assert.throws(
+    () => syncDevHome({ sourceHome: tmpDir, devHome: tmpDir }),
+    /--dev-home must not be the same as --source-home/,
+  );
+});
+
+test("launch-dev uses isolated Codex and Electron state", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-launch-dev-"));
+  const targetApp = path.join(tmpDir, "Codex Plus.app");
+  const devHome = path.join(tmpDir, "dev-home");
+  const electronUserDataPath = path.join(tmpDir, "electron-user-data");
+  const calls = [];
+  const result = launchDevApp({
+    targetApp,
+    devHome,
+    electronUserDataPath,
+    remoteDebuggingPort: "9234",
+    env: { KEEP_ME: "yes" },
+    markDevRuntimeConfigImpl(appPath) {
+      calls.push({ markDevRuntimeConfig: appPath });
+      return { asar: path.join(appPath, "Contents/Resources/app.asar"), patchedAsarSha: "dev-sha" };
+    },
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return {
+        pid: 12345,
+        unref() {
+          calls.push({ unref: true });
+        },
+      };
+    },
+  });
+
+  assert.equal(result.command, path.join(targetApp, "Contents/MacOS/Codex"));
+  assert.deepEqual(result.args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.equal(result.env.CODEX_HOME, devHome);
+  assert.equal(result.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
+  assert.deepEqual(result.devRuntimeConfig, {
+    asar: path.join(targetApp, "Contents/Resources/app.asar"),
+    patchedAsarSha: "dev-sha",
+  });
+  assert.equal(fs.statSync(devHome).isDirectory(), true);
+  assert.equal(fs.statSync(electronUserDataPath).isDirectory(), true);
+  assert.deepEqual(calls[0], { markDevRuntimeConfig: targetApp });
+  assert.deepEqual(calls[1].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.equal(calls[1].options.detached, true);
+  assert.equal(calls[1].options.env.KEEP_ME, "yes");
+  assert.equal(calls[1].options.env.CODEX_HOME, devHome);
+  assert.equal(calls[1].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
+  assert.deepEqual(calls[2], { unref: true });
+  assert.match(formatLaunchDevResult(result), /CODEX_ELECTRON_USER_DATA_PATH/);
 });
 
 function makeAsar(fileMap) {

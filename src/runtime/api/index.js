@@ -63,6 +63,7 @@
   }
 
   const CodexPlus = {
+    config: globalObject.__CodexPlusRuntimeConfig || {},
     definePlugin,
     registerPlugin,
     startPlugin,

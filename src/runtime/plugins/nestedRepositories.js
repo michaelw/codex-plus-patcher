@@ -13,6 +13,43 @@
     return JSON.stringify([hostId, conversationId, cwd]);
   }
 
+  function workerRequest(workerId, method, params, signal) {
+    const bridge = window.electronBridge;
+    if (typeof bridge?.sendWorkerMessageFromView !== "function" || typeof bridge?.subscribeToWorkerMessages !== "function") {
+      return Promise.reject(new Error("Electron worker bridge is unavailable"));
+    }
+    if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+    const id = `codex-plus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const request = { id, method, params };
+    return new Promise((resolve, reject) => {
+      let unsubscribe = null;
+      let done = false;
+      const cleanup = () => {
+        if (done) return;
+        done = true;
+        unsubscribe?.();
+        signal?.removeEventListener?.("abort", abort);
+      };
+      const abort = () => {
+        cleanup();
+        bridge.sendWorkerMessageFromView(workerId, { type: "worker-request-cancel", workerId, id }).catch(() => {});
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      unsubscribe = bridge.subscribeToWorkerMessages(workerId, (message) => {
+        if (message?.type !== "worker-response" || message?.workerId !== workerId || message?.response?.id !== id) return;
+        cleanup();
+        const result = message.response.result;
+        if (result?.type === "ok") resolve(result.value);
+        else reject(new Error(result?.error?.message || "Worker request failed"));
+      });
+      signal?.addEventListener?.("abort", abort, { once: true });
+      bridge.sendWorkerMessageFromView(workerId, { type: "worker-request", workerId, request }).catch((error) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+  }
+
   function debugText(value) {
     try {
       return JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? String(item) : item), 2) ?? "";
@@ -86,6 +123,7 @@
   function RepoDiffBody({ cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading }, deps) {
     const { jsx, createElement, parseDiff, DiffCard, pathValue } = deps;
     if (error != null || isLoading || diffText == null) return PlainDiff({ text: statusText }, deps);
+    if (typeof parseDiff !== "function" || typeof DiffCard !== "function") return PlainDiff({ text: diffText }, deps);
     let parsed;
     try {
       parsed = parseDiff(diffText);
@@ -193,6 +231,27 @@
     }, [open, query, repo.root, hostConfig.id]);
 
     const title = selected || "Unstaged";
+    if (!Button || !Tooltip || !Icon || !Dropdown || !DropdownMenu || !BranchPickerDropdownContent) {
+      const options = branches.length > 0 ? branches : searchedBranches;
+      return jsxs("label", {
+        className: "flex min-w-32 max-w-52 shrink-0 items-center gap-1 text-xs text-token-description-foreground",
+        children: [
+          jsx("span", { className: "sr-only", children: "Base branch" }),
+          jsx("select", {
+            className:
+              "min-w-0 flex-1 rounded-md border border-token-border bg-token-main-surface-primary px-1.5 py-1 text-xs text-token-foreground",
+            value: selected,
+            disabled: loading || error != null,
+            onFocus: loadBranches,
+            onChange: (event) => setBaseBranch(event.target.value),
+            children: [
+              jsx("option", { value: "", children: loading ? "Loading..." : "Unstaged" }, "unstaged"),
+              ...options.map((branch) => jsx("option", { value: branch.name ?? branch, children: branch.name ?? branch }, branch.name ?? branch)),
+            ],
+          }),
+        ],
+      });
+    }
     const button = jsxs(Button, {
       type: "button",
       color: selected ? "ghostActive" : "ghost",
@@ -317,14 +376,16 @@
               ],
             }),
             jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, deps }),
-            jsx(ReviewToolbar, {
-              conversationId,
-              cwd: repo.cwd,
-              hostId,
-              codexWorktree: false,
-              surface: "review-toolbar",
-              reviewToolbarCompact: true,
-            }, repo.id),
+            ReviewToolbar
+              ? jsx(ReviewToolbar, {
+                  conversationId,
+                  cwd: repo.cwd,
+                  hostId,
+                  codexWorktree: false,
+                  surface: "review-toolbar",
+                  reviewToolbarCompact: true,
+                }, repo.id)
+              : null,
           ],
         }),
         collapsed ? null : RepoDiffBody({ cwd: repo.cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading: loading }, deps),
@@ -338,7 +399,7 @@
     const cwd = useAtom(cwdAtom);
     const hostId = useAtom(hostIdAtom);
     const hostConfig = useAtom(hostConfigAtom);
-    const conversationAtomValue = useAtom(conversationIdAtom);
+    const conversationAtomValue = conversationIdAtom ? useAtom(conversationIdAtom) : null;
     const conversationId = routeStore.value.routeKind === "local-thread" ? routeStore.value.conversationId : null;
     const [targets, setTargets] = React.useState(null);
     const [collapsed, setCollapsedState] = React.useState(() => new Map());
@@ -438,8 +499,8 @@
       start(api) {
         api.ui.review.wrapBody((props, deps) => ReviewMux(props, deps));
         api.modules.registerHostModule("codex-plus:native:repository-targets", {
-          request(params) {
-            return api.native.request("repository-targets", params);
+          request(params, signal) {
+            return workerRequest("git", "repository-targets", params, signal);
           },
         });
       },

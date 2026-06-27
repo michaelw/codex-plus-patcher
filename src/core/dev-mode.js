@@ -1,0 +1,245 @@
+const childProcess = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const { patchAsar } = require("./asar");
+const { setPlistBuddyValue } = require("./plist");
+
+const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
+const RUNTIME_MANIFEST_FILE = "webview/assets/codex-plus/runtime-manifest.js";
+const DEFAULT_DEV_HOME = path.resolve("work/codex-plus-dev-home");
+const DEFAULT_ELECTRON_USER_DATA = path.resolve("work/codex-plus-electron-user-data");
+const DEV_MODE_WARNING =
+  "Dev mode shares the original Codex worktrees. Use it for UI/plugin validation; do not edit the same checkout from regular Codex and Codex Plus at the same time.";
+
+const COPY_ENTRIES = [
+  "config.toml",
+  "auth.json",
+  ".codex-global-state.json",
+  "models_cache.json",
+  "version.json",
+  "installation_id",
+  "history.jsonl",
+  "session_index.jsonl",
+  "AGENTS.md",
+  "RTK.md",
+  "rules",
+  "skills",
+  "plugins",
+  "vendor_imports",
+  "chrome-native-hosts.json",
+  "chrome-native-hosts-v2.json",
+  "computer-use/config.json",
+];
+const SQLITE_SNAPSHOT_ENTRIES = ["state_5.sqlite"];
+const EXCLUDED_DEV_STATE_ENTRIES = [
+  "sqlite",
+  "cache",
+  "log",
+  "tmp",
+  "process_manager",
+  "generated_images",
+  "attachments",
+  "shell_snapshots",
+];
+
+function isSqlitePath(filePath) {
+  const base = path.basename(filePath);
+  return base.includes(".sqlite") || base.endsWith(".sqlite-wal") || base.endsWith(".sqlite-shm");
+}
+
+function assertSafeDevHome(devHome, sourceHome) {
+  const resolvedDevHome = path.resolve(devHome);
+  const resolvedSourceHome = path.resolve(sourceHome);
+  if (resolvedDevHome === resolvedSourceHome) throw new Error("--dev-home must not be the same as --source-home");
+  if (resolvedDevHome === os.homedir() || resolvedDevHome === path.join(os.homedir(), ".codex")) {
+    throw new Error("--dev-home must not point at the user's real home or ~/.codex");
+  }
+}
+
+function copyEntry({ sourceHome, devHome, relativePath, fsImpl = fs }) {
+  const source = path.join(sourceHome, relativePath);
+  const target = path.join(devHome, relativePath);
+  if (!fsImpl.existsSync(source)) return null;
+  if (isSqlitePath(source) || relativePath.split(path.sep).includes("sqlite")) return null;
+  fsImpl.mkdirSync(path.dirname(target), { recursive: true });
+  fsImpl.rmSync(target, { recursive: true, force: true });
+  fsImpl.cpSync(source, target, { recursive: true, force: true, dereference: false });
+  return relativePath;
+}
+
+function cleanExcludedDevState(devHome, fsImpl = fs) {
+  for (const relativePath of EXCLUDED_DEV_STATE_ENTRIES) {
+    fsImpl.rmSync(path.join(devHome, relativePath), { recursive: true, force: true });
+  }
+  if (!fsImpl.existsSync(devHome)) return;
+  for (const entry of fsImpl.readdirSync(devHome)) {
+    if (isSqlitePath(entry) || entry.endsWith(".db")) {
+      fsImpl.rmSync(path.join(devHome, entry), { recursive: true, force: true });
+    }
+  }
+}
+
+function sqliteLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function snapshotSqlite({ sourceHome, devHome, relativePath, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
+  const source = path.join(sourceHome, relativePath);
+  const target = path.join(devHome, relativePath);
+  if (!fsImpl.existsSync(source)) return null;
+  fsImpl.mkdirSync(path.dirname(target), { recursive: true });
+  fsImpl.rmSync(target, { force: true });
+  fsImpl.rmSync(`${target}-wal`, { force: true });
+  fsImpl.rmSync(`${target}-shm`, { force: true });
+  execFileSync("sqlite3", [source, `VACUUM INTO ${sqliteLiteral(target)}`], { stdio: "pipe" });
+  return relativePath;
+}
+
+function syncDevHome({
+  sourceHome = path.join(os.homedir(), ".codex"),
+  devHome = DEFAULT_DEV_HOME,
+  fsImpl = fs,
+  execFileSync = childProcess.execFileSync,
+} = {}) {
+  const resolvedSourceHome = path.resolve(sourceHome);
+  const resolvedDevHome = path.resolve(devHome);
+  assertSafeDevHome(resolvedDevHome, resolvedSourceHome);
+
+  fsImpl.mkdirSync(resolvedDevHome, { recursive: true });
+  cleanExcludedDevState(resolvedDevHome, fsImpl);
+
+  const copied = [];
+  for (const relativePath of COPY_ENTRIES) {
+    const copiedPath = copyEntry({
+      sourceHome: resolvedSourceHome,
+      devHome: resolvedDevHome,
+      relativePath,
+      fsImpl,
+    });
+    if (copiedPath) copied.push(copiedPath);
+  }
+
+  const sqliteSnapshots = [];
+  for (const relativePath of SQLITE_SNAPSHOT_ENTRIES) {
+    const snapshotPath = snapshotSqlite({
+      sourceHome: resolvedSourceHome,
+      devHome: resolvedDevHome,
+      relativePath,
+      fsImpl,
+      execFileSync,
+    });
+    if (snapshotPath) sqliteSnapshots.push(snapshotPath);
+  }
+
+  const sourceWorktrees = path.join(resolvedSourceHome, "worktrees");
+  const devWorktrees = path.join(resolvedDevHome, "worktrees");
+  let worktrees = null;
+  fsImpl.rmSync(devWorktrees, { recursive: true, force: true });
+  if (fsImpl.existsSync(sourceWorktrees)) {
+    fsImpl.symlinkSync(sourceWorktrees, devWorktrees, "dir");
+    worktrees = { source: sourceWorktrees, target: devWorktrees };
+  }
+
+  return {
+    sourceHome: resolvedSourceHome,
+    devHome: resolvedDevHome,
+    copied,
+    sqliteSnapshots,
+    worktrees,
+    warning: DEV_MODE_WARNING,
+  };
+}
+
+function buildLaunchDev({ targetApp, devHome = DEFAULT_DEV_HOME, electronUserDataPath = DEFAULT_ELECTRON_USER_DATA, remoteDebuggingPort } = {}) {
+  if (!targetApp) throw new Error("--target is required");
+  const appBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  const resolvedDevHome = path.resolve(devHome);
+  const resolvedElectronUserDataPath = path.resolve(electronUserDataPath);
+  const args = [`--user-data-dir=${resolvedElectronUserDataPath}`];
+  if (remoteDebuggingPort != null) args.push(`--remote-debugging-port=${remoteDebuggingPort}`);
+  return {
+    command: appBinary,
+    args,
+    env: {
+      CODEX_HOME: resolvedDevHome,
+      CODEX_ELECTRON_USER_DATA_PATH: resolvedElectronUserDataPath,
+    },
+    warning: DEV_MODE_WARNING,
+  };
+}
+
+function markDevRuntimeConfig(targetApp, { patchAsarImpl = patchAsar, setPlistBuddyValueImpl = setPlistBuddyValue } = {}) {
+  const target = path.resolve(targetApp);
+  const asarPath = path.join(target, ASAR_PATH_IN_BUNDLE);
+  const patchedAsarSha = patchAsarImpl(asarPath, [
+    [RUNTIME_MANIFEST_FILE, (text) => {
+      const match = text.match(/^window\.__CodexPlusRuntimeConfig=({.*?});/);
+      if (!match) throw new Error("Could not find Codex Plus runtime config in runtime manifest");
+      const config = JSON.parse(match[1]);
+      config.devModeStatsigFallback = true;
+      return text.replace(match[0], `window.__CodexPlusRuntimeConfig=${JSON.stringify(config)};`);
+    }],
+  ]);
+  setPlistBuddyValueImpl(
+    path.join(target, "Contents/Info.plist"),
+    ":ElectronAsarIntegrity:Resources/app.asar:hash",
+    patchedAsarSha,
+  );
+  return { asar: asarPath, patchedAsarSha };
+}
+
+function launchDevApp({ spawn = childProcess.spawn, env = process.env, markDevRuntimeConfigImpl = markDevRuntimeConfig, ...options } = {}) {
+  const launch = buildLaunchDev(options);
+  fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
+  fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
+  const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
+  const child = spawn(launch.command, launch.args, {
+    detached: true,
+    env: { ...env, ...launch.env },
+    stdio: "ignore",
+  });
+  child.unref();
+  return { ...launch, devRuntimeConfig, pid: child.pid };
+}
+
+function formatSyncDevHomeResult(result) {
+  const lines = [
+    "Codex Plus dev home synced.",
+    `Source home: ${result.sourceHome}`,
+    `Dev home: ${result.devHome}`,
+    `Copied: ${result.copied.length === 0 ? "(none)" : result.copied.join(", ")}`,
+    `SQLite snapshots: ${result.sqliteSnapshots?.length ? result.sqliteSnapshots.join(", ") : "(none)"}`,
+    result.worktrees ? `Worktrees: ${result.worktrees.target} -> ${result.worktrees.source}` : "Worktrees: (missing)",
+    `Warning: ${result.warning}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function formatLaunchDevResult(result) {
+  const lines = [
+    "Codex Plus dev app launched.",
+    `Command: ${result.command}`,
+    `Args: ${result.args.length === 0 ? "(none)" : result.args.join(" ")}`,
+    `CODEX_HOME: ${result.env.CODEX_HOME}`,
+    `CODEX_ELECTRON_USER_DATA_PATH: ${result.env.CODEX_ELECTRON_USER_DATA_PATH}`,
+  ];
+  if (result.pid != null) lines.push(`PID: ${result.pid}`);
+  lines.push(`Warning: ${result.warning}`);
+  return `${lines.join("\n")}\n`;
+}
+
+module.exports = {
+  COPY_ENTRIES,
+  DEFAULT_DEV_HOME,
+  DEFAULT_ELECTRON_USER_DATA,
+  DEV_MODE_WARNING,
+  SQLITE_SNAPSHOT_ENTRIES,
+  buildLaunchDev,
+  formatLaunchDevResult,
+  formatSyncDevHomeResult,
+  launchDevApp,
+  markDevRuntimeConfig,
+  syncDevHome,
+};
