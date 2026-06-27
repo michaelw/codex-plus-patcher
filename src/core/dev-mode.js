@@ -23,7 +23,6 @@ const COPY_ENTRIES = [
   "history.jsonl",
   "session_index.jsonl",
   "AGENTS.md",
-  "RTK.md",
   "rules",
   "skills",
   "plugins",

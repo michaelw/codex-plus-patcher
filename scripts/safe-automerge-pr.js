@@ -233,7 +233,7 @@ function buildReadinessReport(options, commandRunner = runCommand) {
   if (!pullRequest && !options.title) {
     failures.push({
       title: "No PR exists for this branch and no proposed title was provided.",
-      fix: 'rtk npm run check:pr -- --title "feat: add project selector shortcut"',
+      fix: 'npm run check:pr -- --title "feat: add project selector shortcut"',
     });
   } else if (!isSemanticTitle(title)) {
     failures.push({

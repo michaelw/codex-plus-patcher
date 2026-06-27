@@ -9,7 +9,7 @@ patched app is launched and checked through DevTools.
 Apply patches to a workspace-local app under `work/`:
 
 ```sh
-rtk codex-plus-patcher apply \
+codex-plus-patcher apply \
   --mode dev \
   --patch-dir ./src/patches \
   --target "work/Codex Plus.app"
@@ -18,14 +18,14 @@ rtk codex-plus-patcher apply \
 Sync a private development `CODEX_HOME` that shares the original worktrees:
 
 ```sh
-rtk codex-plus-patcher dev-sync
+codex-plus-patcher dev-sync
 ```
 
 Launch the copied app with private Electron user data and a remote debugging
 port:
 
 ```sh
-rtk codex-plus-patcher launch-dev \
+codex-plus-patcher launch-dev \
   --target "work/Codex Plus.app" \
   --remote-debugging-port 9234
 ```
@@ -49,7 +49,7 @@ while symlinking only `worktrees/` back to the original Codex home.
 Run the reusable live audit before declaring plugin work complete:
 
 ```sh
-rtk npm run audit:plugins
+npm run audit:plugins
 ```
 
 The audit applies the current patch set to `work/Codex Plus.app`, syncs the
