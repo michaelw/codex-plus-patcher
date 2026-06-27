@@ -4,7 +4,13 @@
   const BUTTON_CLASS = "codex-plus-mermaid-expand-button";
 
   function sourceFor(container) {
-    return container.querySelector("pre.sr-only")?.textContent || "";
+    return container.querySelector("pre.sr-only")?.textContent ||
+      container.parentElement?.querySelector(":scope > pre.sr-only")?.textContent ||
+      "";
+  }
+
+  function hostFor(container) {
+    return container.closest('[data-markdown-copy="code-block"]') || container;
   }
 
   function assetUrl(assetPath) {
@@ -229,11 +235,13 @@ renderFromSource().catch((error) => {
   }
 
   function decorate(container) {
-    if (container.querySelector(`:scope > .${BUTTON_CLASS}`)) return;
-    container.style.position ||= "relative";
+    const host = hostFor(container);
+    if (host.querySelector(`:scope > .${BUTTON_CLASS}`)) return;
+    host.setAttribute("data-codex-plus-mermaid-host", "");
+    host.style.position ||= "relative";
     const control = button("Open Mermaid diagram fullscreen");
-    control.addEventListener("click", () => openViewer(container));
-    container.prepend(control);
+    control.addEventListener("click", () => openViewer(host));
+    host.prepend(control);
   }
 
   function decorateAll(root = document) {
@@ -247,6 +255,7 @@ renderFromSource().catch((error) => {
       description: "Adds a separate fullscreen viewer with zoom controls to rendered Mermaid diagrams.",
       required: true,
       styles:
+        `[data-codex-plus-mermaid-host]{position:relative}` +
         `[data-codex-plus-mermaid-diagram]{position:relative}` +
         `.${BUTTON_CLASS}{position:absolute;left:.5rem;top:.5rem;z-index:30;display:inline-flex;width:1.75rem;height:1.75rem;align-items:center;justify-content:center;border:1px solid var(--color-token-input-border,rgba(127,127,127,.35));border-radius:.375rem;background:var(--color-background-elevated-primary,#fff);color:var(--color-token-foreground,#111);box-shadow:0 2px 8px rgba(0,0,0,.12);opacity:.82}` +
         `.${BUTTON_CLASS}::before,.${BUTTON_CLASS}::after{content:"";position:absolute;width:.42rem;height:.42rem;border-color:currentColor;border-style:solid}` +

@@ -948,25 +948,37 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const diagramProps = window.CodexPlus.ui.mermaid.diagramProps({ code: "graph TD;A-->B" });
       const marker = Object.prototype.hasOwnProperty.call(diagramProps || {}, "data-codex-plus-mermaid-diagram");
       if (!marker) throw new Error("Mermaid diagram marker is missing");
+      const plugin = window.CodexPlus.plugins.get("mermaidFullscreen");
       const container = document.createElement("div");
-      container.setAttribute("data-codex-plus-mermaid-diagram", "");
+      container.setAttribute("data-markdown-copy", "code-block");
+      const diagram = document.createElement("div");
+      diagram.setAttribute("data-codex-plus-mermaid-diagram", "");
       const source = document.createElement("pre");
       source.className = "sr-only";
       source.textContent = "graph TD;A-->B";
+      container.appendChild(diagram);
       container.appendChild(source);
       document.body.appendChild(container);
-      window.CodexPlus.plugins.get("mermaidFullscreen")?.exports?.decorateAll?.(document);
-      const buttonRendered = Boolean(container.querySelector(".codex-plus-mermaid-expand-button"));
+      plugin?.exports?.decorateAll?.(document);
+      const buttonRendered = Boolean(container.querySelector(":scope > .codex-plus-mermaid-expand-button"));
       container.remove();
       if (!buttonRendered) throw new Error("Mermaid expand button did not render");
+      plugin?.exports?.decorateAll?.(document);
+      const liveDiagrams = Array.from(document.querySelectorAll('[data-codex-plus-mermaid-diagram], [aria-label="Mermaid diagram"][role="img"]'))
+        .filter((element) => element.querySelector("svg") || element.getAttribute("aria-label") === "Mermaid diagram");
+      const liveMissingButtons = liveDiagrams.filter((element) => {
+        const host = element.closest('[data-markdown-copy="code-block"]') || element;
+        return !host.querySelector(":scope > .codex-plus-mermaid-expand-button");
+      });
+      if (liveMissingButtons.length > 0) throw new Error(`Live Mermaid diagrams missing popout buttons: ${liveMissingButtons.length}`);
       if (options.includeNativeOpenProbes) {
         const nativeResult = await window.CodexPlus.native.request("mermaid/openViewer", {
           html: "<!doctype html><meta charset='utf-8'><title>Codex Plus Mermaid Audit</title><div>ok</div>",
         });
         if (!nativeResult?.ok) throw new Error(`Mermaid native viewer returned ${JSON.stringify(nativeResult)}`);
-        pass("mermaidFullscreen", { ...details, marker, buttonRendered, nativeOpenProbe: true, nativeResult });
+        pass("mermaidFullscreen", { ...details, marker, buttonRendered, liveDiagramCount: liveDiagrams.length, nativeOpenProbe: true, nativeResult });
       } else {
-        pass("mermaidFullscreen", { ...details, marker, buttonRendered, nativeOpenProbe: false });
+        pass("mermaidFullscreen", { ...details, marker, buttonRendered, liveDiagramCount: liveDiagrams.length, nativeOpenProbe: false });
       }
     } catch (error) {
       fail("mermaidFullscreen", error);

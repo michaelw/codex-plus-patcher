@@ -1606,6 +1606,11 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
   assert.match(pluginSource, /function openViewer/);
   assert.match(pluginSource, /CodexPlus\.native\.request\("mermaid\/openViewer", \{ html \}\)/);
   assert.match(pluginSource, /window\.open\(liveUrl, "_blank", "noopener"\)/);
+  assert.match(pluginSource, /function hostFor\(container\)/);
+  assert.match(pluginSource, /container\.closest\('\[data-markdown-copy="code-block"\]'\) \|\| container/);
+  assert.match(pluginSource, /container\.parentElement\?\.querySelector\(":scope > pre\.sr-only"\)\?\.textContent/);
+  assert.match(pluginSource, /host\.setAttribute\("data-codex-plus-mermaid-host", ""\)/);
+  assert.match(pluginSource, /host\.prepend\(control\)/);
   assert.match(nativeMainSource, /electron\.shell\.openExternal\(event\.url\)/);
   assert.match(nativeMainSource, /url\.hostname === "mermaid\.live"/);
   assert.doesNotMatch(commonPatches, /function CPXOpenMermaidViewer/);

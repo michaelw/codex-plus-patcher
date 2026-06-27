@@ -356,6 +356,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /rendererSourceEvidence/);
   assert.match(defaultExpression, /Sidebar blur command is not wired into the renderer command palette/);
   assert.match(defaultExpression, /Renderer command palette cannot read literal Codex Plus command titles/);
+  assert.match(defaultExpression, /Live Mermaid diagrams missing popout buttons/);
+  assert.match(defaultExpression, /liveDiagramCount/);
 });
 
 test("keep-open stability check reports live and exited audit apps", async () => {
