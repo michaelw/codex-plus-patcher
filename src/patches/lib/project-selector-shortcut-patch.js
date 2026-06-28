@@ -2,6 +2,62 @@ const { replaceOnce } = require("./replace");
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
+  if (text.includes("function rt(e){let t=(0,it.c)(44),") && text.includes("function St({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "var et,tt,nt=e((()=>{et=L(),Je(),_e(),tt=o()}));function rt(e){let t=(0,it.c)(44),",
+      `var et,tt,nt=e((()=>{et=L(),Je(),_e(),tt=o()}));${projectSelectorSearchHook()}function rt(e){let t=(0,it.c)(44),`,
+      "project selector fuzzy search adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "b=CPXP.fuzzyFilter(r,_);",
+      "project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "T=(0,X.jsx)(fe,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "T=(0,X.jsx)(fe,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,b,o,_),placeholder:c,className:`mb-1`})",
+      "project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,X.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,X.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,X.jsx)})",
+      "project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "var wt,$,Tt=e((()=>{Se(),F(),r(),ge(),wt=t(b(),1),",
+      `${projectSelectorTriggerHook("wt")}var wt,$,Tt=e((()=>{Se(),F(),r(),ge(),wt=t(b(),1),`,
+      "project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,$.jsx)(gt,{categoryLabel:(0,$.jsx)(z,{id:`composer.localCwdDropdown.footerCategory`",
+      "children:(0,$.jsx)(gt,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":c,categoryLabel:(0,$.jsx)(z,{id:`composer.localCwdDropdown.footerCategory`",
+      "project selector default button marker anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "Ze=()=>(0,$.jsxs)(`button`,{className:a(`heading-xl text-token-text-tertiary",
+      "Ze=()=>(0,$.jsxs)(`button`,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":c,className:a(`heading-xl text-token-text-tertiary",
+      "project selector hero button marker anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "triggerButton:h??J(),contentWidth:`menu`",
+      "triggerButton:CPXPST(h??J(),c),contentWidth:`menu`",
+      "project selector empty trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:h??(c===`hero`?Ze():c===`home`?J():Je()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(h??(c===`hero`?Ze():c===`home`?J():Je()),c),contentWidth:`workspace`",
+      "project selector shortcut final dropdown trigger anchor",
+    );
+  }
   if (text.includes("function Ti(e){let t=(0,Oi.c)(109),")) {
     return replaceOnce(
       text,
@@ -163,6 +219,14 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
 
 function patchRunCommandProjectSelectorShortcut(text) {
   const runtimeCommandEntries = "...(window.CodexPlus?.commands?.all?.()??[]).map(e=>[e.id,()=>window.CodexPlus?.commands?.run?.(e.id)])";
+  if (text.includes("Xi(`toggleSidebar`,r);")) {
+    return replaceOnce(
+      text,
+      "Xi(`toggleSidebar`,r);",
+      "Xi(`toggleSidebar`,r);for(let e of window.CodexPlus?.commands?.all?.()??[])Xi(e.id,()=>window.CodexPlus?.commands?.run?.(e.id));",
+      "codex plus runtime command dispatch anchor",
+    );
+  }
   if (text.includes("Jy(`toggleSidebar`,r);")) {
     return replaceOnce(
       text,

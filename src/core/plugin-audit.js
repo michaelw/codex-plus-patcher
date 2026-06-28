@@ -252,6 +252,70 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
   }
 }
 
+async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 5000 } = {}) {
+  const setup = await cdp.evaluate(`new Promise((resolve) => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+    const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && (button.innerText || "").includes("New chat");
+    });
+    newChatButton?.click?.();
+    let attempts = 0;
+    const check = () => {
+      const triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
+      if (triggerCount > 0 || attempts >= 30) {
+        resolve({ triggerCount, clickedNewChat: Boolean(newChatButton) });
+        return;
+      }
+      attempts += 1;
+      setTimeout(check, 100);
+    };
+    check();
+  })`);
+  if (!setup?.triggerCount) {
+    return { ok: false, ...setup, message: "Project selector shortcut trigger marker is missing from the main composer" };
+  }
+
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: ".",
+    code: "Period",
+    windowsVirtualKeyCode: 190,
+    nativeVirtualKeyCode: 47,
+    modifiers: 4,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: ".",
+    code: "Period",
+    windowsVirtualKeyCode: 190,
+    nativeVirtualKeyCode: 47,
+    modifiers: 4,
+  });
+
+  const deadline = Date.now() + timeoutMs;
+  let status = null;
+  while (Date.now() < deadline) {
+    status = await cdp.evaluate(`(() => {
+      const searchInput = document.querySelector("input[placeholder='Search projects']");
+      const menuCount = document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']").length;
+      return {
+        triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
+        menuCount,
+        opened: Boolean(searchInput || menuCount > 0),
+        activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
+      };
+    })()`);
+    if (status.opened) {
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+      return { ok: true, ...setup, ...status };
+    }
+    await wait(100);
+  }
+  return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
+}
+
 function listRunningAuditApps({
   targetApp = DEFAULT_TARGET,
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
@@ -1237,7 +1301,34 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (ranked[0] !== "hassio-dev") throw new Error(`Fuzzy ranking returned ${ranked.join(", ")}`);
       if (highlightCount === 0) throw new Error("Fuzzy match highlight did not render");
       if (selected[0] !== "hassio-dev" || events.length !== 2) throw new Error("Enter-to-first-result adapter did not select first ranked result");
-      pass("projectSelectorShortcut", { ...details, ranked, highlightCount, selected });
+      document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+      const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && (button.innerText || "").includes("New chat");
+      });
+      newChatButton?.click?.();
+      let triggerCount = 0;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
+        if (triggerCount > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (triggerCount === 0) throw new Error("Project selector shortcut trigger marker is missing from the main composer");
+      const syntheticShortcut = await new Promise((resolve) => {
+        const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: ".", metaKey: true });
+        document.dispatchEvent(event);
+        setTimeout(() => {
+          const searchInput = document.querySelector("input[placeholder='Search projects']");
+          const menu = document.querySelector("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']");
+          resolve({
+            defaultPrevented: event.defaultPrevented,
+            opened: Boolean(searchInput || menu),
+            activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
+          });
+        }, 400);
+      });
+      document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+      pass("projectSelectorShortcut", { ...details, ranked, highlightCount, selected, triggerCount, syntheticShortcut });
     } catch (error) {
       fail("projectSelectorShortcut", error);
     }
@@ -1310,6 +1401,7 @@ async function runAudit(args, {
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
   const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
+  const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
   const checkStability = operations.checkKeepOpenAppStability || checkKeepOpenAppStability;
   const preflightAudit = operations.auditPreflight || auditPreflight;
@@ -1394,6 +1486,23 @@ async function runAudit(args, {
       "Probed plugins",
       () => cdp.evaluate(pluginAuditExpression({ includeNativeOpenProbes: args.includeNativeOpenProbes })),
     );
+    if (live.pluginResults?.projectSelectorShortcut?.ok) {
+      const shortcut = await withAuditProgress(
+        progress,
+        "Verifying project selector shortcut",
+        "Project selector shortcut opened",
+        () => verifyProjectSelectorShortcut(cdp),
+      );
+      live.pluginResults.projectSelectorShortcut.shortcut = shortcut;
+      if (!shortcut.ok) {
+        live.ok = false;
+        live.pluginResults.projectSelectorShortcut.ok = false;
+        live.failures.push({
+          plugin: "projectSelectorShortcut",
+          message: shortcut.message || "Cmd+. did not open the project selector",
+        });
+      }
+    }
     const shouldProbeMermaidViewer = live.pluginResults?.mermaidFullscreen?.ok;
     const mermaidViewerRender = shouldProbeMermaidViewer
       ? await withAuditProgress(
@@ -1601,5 +1710,6 @@ module.exports = {
   waitForAppShellMounted,
   waitForLiveRuntime,
   verifyMermaidViewerRender,
+  verifyProjectSelectorShortcutKey,
   waitForRendererTarget,
 };
