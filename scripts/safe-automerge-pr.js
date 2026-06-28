@@ -13,6 +13,7 @@ function parseArgs(argv, env = process.env) {
     help: false,
     issue: null,
     pr: null,
+    strictWorktree: false,
     title: null,
   };
 
@@ -22,6 +23,8 @@ function parseArgs(argv, env = process.env) {
       args.check = true;
     } else if (arg === "--dry-run" || arg === "-n") {
       args.dryRun = true;
+    } else if (arg === "--strict-worktree") {
+      args.strictWorktree = true;
     } else if (arg === "--help" || arg === "-h") {
       args.help = true;
     } else if (arg === "--title") {
@@ -49,6 +52,9 @@ function parseArgs(argv, env = process.env) {
   }
   if (!args.check && args.issue != null) {
     throw new Error("--issue and CHECK_PR_ISSUE are only valid with --check.");
+  }
+  if (!args.check && args.strictWorktree) {
+    throw new Error("--strict-worktree is only valid with --check.");
   }
   if (args.check && args.dryRun) {
     throw new Error("--dry-run is only valid for automerge.");
@@ -86,7 +92,7 @@ function isForbiddenTrackedPath(file) {
 }
 
 function inferIssueNumber(branchName) {
-  const match = /(?:^|[-_/])(?:issue|fix)?[-_/]?(\d+)(?=$|[-_/])/.exec(branchName);
+  const match = /(?:^|[-_/])(?:issue|fix|gh|pr)[-_/](\d+)(?=$|[-_/])/.exec(branchName);
   return match ? match[1] : null;
 }
 
@@ -198,13 +204,15 @@ function buildReadinessReport(options, commandRunner = runCommand) {
     });
   }
 
-  const status = readCommand(commandRunner, "git", ["status", "--porcelain"]);
-  if (status.trim()) {
-    failures.push({
-      title: "Worktree is not clean.",
-      value: status,
-      fix: "git status --short",
-    });
+  if (options.strictWorktree) {
+    const status = readCommand(commandRunner, "git", ["status", "--porcelain"]);
+    if (status.trim()) {
+      failures.push({
+        title: "Worktree is not clean.",
+        value: status,
+        fix: "git status --short",
+      });
+    }
   }
 
   const commitSubject = readCommand(commandRunner, "git", ["log", "-1", "--pretty=%s"]).trim();
@@ -279,7 +287,7 @@ function formatFailuresAndWarnings(report) {
 
 function usage() {
   return `Usage:
-  npm run check:pr -- [--title <semantic-title>] [--issue <number>]
+  npm run check:pr -- [--title <semantic-title>] [--issue <number>] [--strict-worktree]
   npm run pr:automerge -- [--dry-run] [<pr-number-or-url>]
 
 Checks PR readiness or enables guarded squash automerge.`;
