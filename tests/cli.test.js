@@ -117,6 +117,8 @@ test("dev mode commands parse isolated state flags", () => {
     "~/dev-codex",
     "--electron-user-data",
     "~/dev-electron",
+    "--dev-instance-id",
+    "manual-check",
     "--remote-debugging-port",
     "9234",
   ]);
@@ -124,6 +126,7 @@ test("dev mode commands parse isolated state flags", () => {
   assert.equal(launchArgs.target, path.join(os.homedir(), "tmp", "Codex Plus.app"));
   assert.equal(launchArgs.devHome, path.join(os.homedir(), "dev-codex"));
   assert.equal(launchArgs.electronUserDataPath, path.join(os.homedir(), "dev-electron"));
+  assert.equal(launchArgs.devInstanceId, "manual-check");
   assert.equal(launchArgs.remoteDebuggingPort, "9234");
 });
 
@@ -147,6 +150,8 @@ test("audit-plugins parses output, launch, and path flags", () => {
     "~/dev-codex",
     "--electron-user-data",
     "~/dev-electron",
+    "--dev-instance-id",
+    "manual-audit",
     "--remote-debugging-port",
     "9240",
   ]);
@@ -164,12 +169,14 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(args.sourceHome, path.join(os.homedir(), "real-codex"));
   assert.equal(args.devHome, path.join(os.homedir(), "dev-codex"));
   assert.equal(args.electronUserDataPath, path.join(os.homedir(), "dev-electron"));
+  assert.equal(args.devInstanceId, "manual-audit");
   assert.equal(args.remoteDebuggingPort, 9240);
 
   const defaults = parseArgs(["audit-plugins"]);
   assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
   assert.equal(defaults.remoteDebuggingPort, 9234);
   assert.equal(defaults.includeNativeOpenProbes, false);
+  assert.equal(defaults.devInstanceId, "audit");
 });
 
 test("formatResult prints a concise open command for created apps", () => {
@@ -192,6 +199,7 @@ function sampleAuditResult(overrides = {}) {
   return {
     ok: true,
     failures: [],
+    expectedWarnings: [],
     pluginResults: {
       aboutMetadata: { ok: true },
       devTools: { ok: true },
@@ -248,9 +256,27 @@ test("audit human formatter prints success summary", () => {
   assert.match(output, /Runtime ready: 2 registered, 2 started/);
   assert.match(output, /App shell: mounted/);
   assert.match(output, /Probed 2 plugins/);
+  assert.match(output, /Warnings: 0 expected/);
   assert.match(output, /Native open probes: skipped/);
   assert.match(output, /Cleanup: cleaned up/);
   assert.match(output, /All plugin probes passed\./);
+});
+
+test("audit human formatter prints success summary with expected warnings", () => {
+  const output = formatAuditResult(sampleAuditResult({
+    expectedWarnings: [{
+      plugin: "audit",
+      code: "composer-permission-picker-disabled",
+      message: "Composer permissions picker is disabled while the composer is editable",
+      details: { triggerText: "Full access" },
+    }],
+  }));
+
+  assert.match(output, /Warnings: 1 expected/);
+  assert.match(output, /All plugin probes passed\./);
+  assert.match(output, /Expected warnings:/);
+  assert.match(output, /audit composer-permission-picker-disabled: Composer permissions picker is disabled while the composer is editable/);
+  assert.doesNotMatch(output, /Plugin audit failed/);
 });
 
 test("audit human formatter prints failure summary with failed plugins and patches", () => {
@@ -291,6 +317,10 @@ test("audit human formatter prints live audit app rerun guidance", () => {
 test("audit quiet formatter prints minimal output", () => {
   assert.equal(formatAuditResult(sampleAuditResult(), { quiet: true }), "All plugin probes passed.\n");
   assert.equal(
+    formatAuditResult(sampleAuditResult({ expectedWarnings: [{ plugin: "audit", code: "x", message: "warning" }] }), { quiet: true }),
+    "All plugin probes passed with expected warnings.\n",
+  );
+  assert.equal(
     formatAuditResult(sampleAuditResult({ ok: false, failures: [{ plugin: "x", message: "bad" }] }), { quiet: true }),
     "Plugin audit failed: 1 failures\n",
   );
@@ -302,6 +332,7 @@ test("audit json formatter preserves the machine payload shape", () => {
 
   assert.equal(parsed.ok, true);
   assert.deepEqual(parsed.failures, []);
+  assert.deepEqual(parsed.expectedWarnings, []);
   assert.deepEqual(Object.keys(parsed.pluginResults), ["aboutMetadata", "devTools"]);
   assert.equal(parsed.target.app, "/repo/work/Codex Plus.app");
   assert.equal(parsed.devHome, "/repo/work/codex-plus-dev-home");
@@ -364,6 +395,16 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /waitForMountedProjectComposer/);
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
+  assert.match(defaultExpression, /composerPermissionPickerStatus/);
+  assert.match(defaultExpression, /const expectedWarnings = \[\]/);
+  assert.match(defaultExpression, /const warn = \(id, code, message, details = \{\}\)/);
+  assert.match(defaultExpression, /Composer permissions picker text is unreadable/);
+  assert.match(defaultExpression, /composer-permission-picker-disabled/);
+  assert.match(defaultExpression, /expectedWarnings/);
+  assert.match(defaultExpression, /triggerAriaDisabled/);
+  assert.match(defaultExpression, /surfaceBackground/);
+  assert.match(defaultExpression, /labelTextFillTransparent/);
+  assert.match(defaultExpression, /webkitTextFillColor/);
 });
 
 test("keep-open stability check reports live and exited audit apps", async () => {
@@ -436,6 +477,7 @@ test("core audit json preserves shape with stability metadata", () => {
 
   assert.equal(parsed.ok, true);
   assert.deepEqual(parsed.failures, []);
+  assert.deepEqual(parsed.expectedWarnings, []);
   assert.deepEqual(Object.keys(parsed.pluginResults), ["aboutMetadata", "devTools"]);
   assert.equal(parsed.target.app, "/repo/work/Codex Plus.app");
   assert.equal(parsed.devHome, "/repo/work/codex-plus-dev-home");
@@ -910,6 +952,12 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
       return Promise.resolve({
         ok: true,
         failures: [],
+        expectedWarnings: [{
+          plugin: "audit",
+          code: "composer-permission-picker-disabled",
+          message: "Composer permissions picker is disabled while the composer is editable",
+          details: { triggerText: "Full access" },
+        }],
         pluginResults: { aboutMetadata: { ok: true } },
         registeredPlugins: ["aboutMetadata"],
         startedPlugins: ["aboutMetadata"],
@@ -980,7 +1028,15 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
   );
 
   assert.equal(result.ok, true);
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(result.expectedWarnings, [{
+    plugin: "audit",
+    code: "composer-permission-picker-disabled",
+    message: "Composer permissions picker is disabled while the composer is editable",
+    details: { triggerText: "Full access" },
+  }]);
   assert.equal(result.target.remoteDebuggingPort, 9234);
+  assert.equal(result.syncResult, null);
 });
 
 function writeFile(root, relativePath, text = relativePath) {
@@ -1125,6 +1181,15 @@ test("launch-dev uses isolated Codex and Electron state", () => {
       calls.push({ markDevRuntimeConfig: appPath });
       return { asar: path.join(appPath, "Contents/Resources/app.asar"), patchedAsarSha: "dev-sha" };
     },
+    markDevBundleIdentityImpl(appPath, devInstanceId) {
+      calls.push({ markDevBundleIdentity: appPath, devInstanceId });
+      return {
+        id: "dev",
+        bundleIdentifier: "com.openai.codex-plus.dev",
+        displayName: "Codex Plus (dev)",
+        name: "Codex Plus dev",
+      };
+    },
     signDevAppImpl(appPath) {
       calls.push({ signDevApp: appPath });
       return { signed: true };
@@ -1148,18 +1213,27 @@ test("launch-dev uses isolated Codex and Electron state", () => {
     asar: path.join(targetApp, "Contents/Resources/app.asar"),
     patchedAsarSha: "dev-sha",
   });
+  assert.deepEqual(result.devBundle, {
+    id: "dev",
+    bundleIdentifier: "com.openai.codex-plus.dev",
+    displayName: "Codex Plus (dev)",
+    name: "Codex Plus dev",
+  });
+  assert.deepEqual(result.instanceIdentity, result.devBundle);
   assert.deepEqual(result.devSignature, { signed: true });
   assert.equal(fs.statSync(devHome).isDirectory(), true);
   assert.equal(fs.statSync(electronUserDataPath).isDirectory(), true);
   assert.deepEqual(calls[0], { markDevRuntimeConfig: targetApp });
-  assert.deepEqual(calls[1], { signDevApp: targetApp });
-  assert.deepEqual(calls[2].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
-  assert.equal(calls[2].options.detached, true);
-  assert.equal(calls[2].options.env.KEEP_ME, "yes");
-  assert.equal(calls[2].options.env.CODEX_HOME, devHome);
-  assert.equal(calls[2].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
-  assert.deepEqual(calls[3], { unref: true });
+  assert.deepEqual(calls[1], { markDevBundleIdentity: targetApp, devInstanceId: undefined });
+  assert.deepEqual(calls[2], { signDevApp: targetApp });
+  assert.deepEqual(calls[3].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.equal(calls[3].options.detached, true);
+  assert.equal(calls[3].options.env.KEEP_ME, "yes");
+  assert.equal(calls[3].options.env.CODEX_HOME, devHome);
+  assert.equal(calls[3].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
+  assert.deepEqual(calls[4], { unref: true });
   assert.match(formatLaunchDevResult(result), /CODEX_ELECTRON_USER_DATA_PATH/);
+  assert.match(formatLaunchDevResult(result), /com\.openai\.codex-plus\.dev/);
 });
 
 test("audit cleanup handles launched, kept-open, missing, and failed process cleanup", async () => {

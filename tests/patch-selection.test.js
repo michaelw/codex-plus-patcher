@@ -2400,6 +2400,12 @@ test("user message patch applies variant-specific bubble colors with default fal
   const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-light-bg/);
+  assert.match(bubblePlugin, /button\[aria-disabled="true"\]/);
+  assert.match(bubblePlugin, /opacity:1!important/);
+  assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
+  assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
+  assert.match(bubblePlugin, /background-image:none!important/);
 });
 
 test("composer patch applies the user entry marker and shared color variables", () => {

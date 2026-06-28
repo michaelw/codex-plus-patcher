@@ -129,6 +129,7 @@ test("safe automerge parses dry-run and PR arguments", () => {
     help: false,
     issue: null,
     pr: "31",
+    strictWorktree: false,
     title: null,
   });
   assert.deepEqual(parseArgs(["-n", "https://github.com/michaelw/codex-plus-patcher/pull/31"]), {
@@ -137,6 +138,7 @@ test("safe automerge parses dry-run and PR arguments", () => {
     help: false,
     issue: null,
     pr: "https://github.com/michaelw/codex-plus-patcher/pull/31",
+    strictWorktree: false,
     title: null,
   });
 });
@@ -186,6 +188,7 @@ test("safe automerge check mode rejects forbidden tracked paths", () => {
 
 test("safe automerge check mode warns when inferred issue lacks a closing keyword", () => {
   const report = reportWith({
+    "git rev-parse --abbrev-ref HEAD": { ok: true, stdout: "issue-27-readiness\n" },
     "gh pr view --json title,body,headRefName,baseRefName,isDraft": {
       ok: true,
       stdout: JSON.stringify({ title: "feat: add guard", body: "Adds a local guard." }),
@@ -195,6 +198,20 @@ test("safe automerge check mode warns when inferred issue lacks a closing keywor
   assert.equal(report.failures.length, 0);
   assert.equal(report.warnings.length, 1);
   assert.equal(report.warnings[0].title, "PR body is missing a closing keyword for #27.");
+});
+
+test("safe automerge check mode does not infer issues from version-number branch segments", () => {
+  const report = reportWith({
+    "git rev-parse --abbrev-ref HEAD": { ok: true, stdout: "mw/add-codex-26-623-42026\n" },
+    "gh pr view --json title,body,headRefName,baseRefName,isDraft": {
+      ok: true,
+      stdout: JSON.stringify({ title: "fix: support Codex 26.623.42026", body: "Adds a patch set." }),
+    },
+  });
+
+  assert.equal(inferIssueNumber("mw/add-codex-26-623-42026"), null);
+  assert.equal(report.failures.length, 0);
+  assert.equal(report.warnings.length, 0);
 });
 
 test("safe automerge check mode fails when explicit issue lacks a closing keyword", () => {
@@ -261,12 +278,27 @@ test("safe automerge check mode parses arguments and infers issue numbers", () =
     help: false,
     issue: "27",
     pr: null,
+    strictWorktree: false,
     title: "feat: x",
   });
   assert.equal(inferIssueNumber("issue-27-readiness"), "27");
   assert.equal(inferIssueNumber("fix-27"), "27");
-  assert.equal(inferIssueNumber("27-description"), "27");
+  assert.equal(inferIssueNumber("gh-27-readiness"), "27");
+  assert.equal(inferIssueNumber("pr-27"), "27");
+  assert.equal(inferIssueNumber("27-description"), null);
   assert.equal(inferIssueNumber("feature-readiness"), null);
+});
+
+test("safe automerge check mode parses strict worktree", () => {
+  assert.deepEqual(parseArgs(["--check", "--strict-worktree"], {}), {
+    check: true,
+    dryRun: false,
+    help: false,
+    issue: null,
+    pr: null,
+    strictWorktree: true,
+    title: null,
+  });
 });
 
 test("safe automerge ignores CHECK_PR_ISSUE outside check mode", () => {
@@ -274,11 +306,31 @@ test("safe automerge ignores CHECK_PR_ISSUE outside check mode", () => {
   assert.equal(parseArgs(["--check"], { CHECK_PR_ISSUE: "27" }).issue, "27");
 });
 
+test("safe automerge default check mode allows dirty worktree", () => {
+  const report = reportWith({
+    "git status --porcelain": { ok: true, stdout: " M scripts/safe-automerge-pr.js\n" },
+  });
+
+  assert.equal(report.failures.length, 0);
+});
+
+test("safe automerge strict worktree check fails on dirty worktree", () => {
+  const report = reportWith(
+    {
+      "git status --porcelain": { ok: true, stdout: " M scripts/safe-automerge-pr.js\n" },
+    },
+    { strictWorktree: true },
+  );
+
+  assert.equal(report.failures.length, 1);
+  assert.equal(report.failures[0].title, "Worktree is not clean.");
+});
+
 test("safe automerge check mode exits 1 on failures and 0 on warnings only", () => {
   withMutedConsole(() => {
     assert.equal(
       main(["--check", "--title", "feat: add guard"], {}, createCommandRunner({
-        "git rev-parse --abbrev-ref HEAD": { ok: true, stdout: "feat-27-readiness\n" },
+        "git rev-parse --abbrev-ref HEAD": { ok: true, stdout: "issue-27-readiness\n" },
         "gh pr view --json title,body,headRefName,baseRefName,isDraft": {
           ok: true,
           stdout: JSON.stringify({ title: "feat: add guard", body: "" }),

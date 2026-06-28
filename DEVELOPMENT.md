@@ -162,7 +162,7 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 - When a PR should close a tracked issue, include a GitHub closing keyword such
   as `Closes #123` in the PR body so the issue closes automatically when the PR
   merges.
-- Before creating, updating, pushing for, or marking a PR ready, run:
+- Before creating, updating, or pushing a PR, run:
 
   ```sh
   npm run check:pr
@@ -172,6 +172,19 @@ metadata. It must not include generated apps, `work/`, `outputs/`,
 
   ```sh
   npm run check:pr -- --title "feat: add project selector shortcut"
+  ```
+
+- Before marking a PR ready or enabling automerge, include the clean-worktree
+  gate:
+
+  ```sh
+  npm run check:pr -- --strict-worktree
+  ```
+
+- For PRs that should close a tracked issue, pass the issue explicitly:
+
+  ```sh
+  npm run check:pr -- --issue 123
   ```
 
 - Use the guarded automerge npm script so the squash subject is the current PR

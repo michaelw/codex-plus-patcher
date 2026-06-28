@@ -18,10 +18,12 @@ This repo ships patch source only. Never commit `Codex.app`, generated
   changes that depend on runtime mount points.
 - Validate real patch application against a workspace-local target under
   `work/`, not the user's real app target.
-- Before creating, updating, pushing for, or marking a PR ready, run
-  `npm run check:pr`. If the PR does not exist yet, pass the intended title
-  with `npm run check:pr -- --title "feat: ..."`. For automerge, use
-  `npm run pr:automerge -- --dry-run <pr-number-or-url>` and then
+- Before creating, updating, or pushing a PR, run `npm run check:pr`. If the PR
+  does not exist yet, pass the intended title with
+  `npm run check:pr -- --title "feat: ..."`. Before marking ready or enabling
+  automerge, run `npm run check:pr -- --strict-worktree`. For issue-closing PRs,
+  pass `--issue <number>` or include `Closes #<number>` in the PR body. For
+  automerge, use `npm run pr:automerge -- --dry-run <pr-number-or-url>` and then
   `npm run pr:automerge -- <pr-number-or-url>`.
 - Run these before commits:
 
