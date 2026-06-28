@@ -40,12 +40,13 @@
   }
 
   function trigger(element, variant, React) {
-    return typeof React?.cloneElement === "function" &&
+    const cloneElement = typeof React?.cloneElement === "function" ? React.cloneElement : React?.default?.cloneElement;
+    return typeof cloneElement === "function" &&
       element != null &&
       typeof element === "object" &&
       "props" in element &&
       "type" in element
-      ? React.cloneElement(element, {
+      ? cloneElement(element, {
           ...element.props,
           "data-codex-plus-project-selector-trigger": true,
           "data-codex-plus-project-selector-variant": variant,

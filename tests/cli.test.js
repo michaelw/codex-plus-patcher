@@ -38,6 +38,7 @@ const {
   listRunningAuditApps,
   pluginAuditExpression,
   runAudit,
+  verifyProjectSelectorShortcutKey,
   waitForAppShellMounted,
 } = require("../src/core/plugin-audit");
 
@@ -405,6 +406,54 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /surfaceBackground/);
   assert.match(defaultExpression, /labelTextFillTransparent/);
   assert.match(defaultExpression, /webkitTextFillColor/);
+  assert.match(defaultExpression, /Project selector shortcut trigger marker is missing from the main composer/);
+  assert.match(defaultExpression, /includes\("New chat"\)/);
+  assert.match(defaultExpression, /input\[placeholder='Search projects'\]/);
+  assert.match(defaultExpression, /syntheticShortcut/);
+});
+
+test("project selector shortcut verifier uses trusted CDP key events", async () => {
+  const sent = [];
+  const evaluations = [
+    { triggerCount: 1, clickedNewChat: true },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.opened, true);
+  assert.deepEqual(sent.map((call) => call.method), [
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+  ]);
+  assert.deepEqual(sent[0].params, {
+    type: "keyDown",
+    key: ".",
+    code: "Period",
+    windowsVirtualKeyCode: 190,
+    nativeVirtualKeyCode: 47,
+    modifiers: 4,
+  });
+  assert.deepEqual(sent[1].params, {
+    type: "keyUp",
+    key: ".",
+    code: "Period",
+    windowsVirtualKeyCode: 190,
+    nativeVirtualKeyCode: 47,
+    modifiers: 4,
+  });
 });
 
 test("keep-open stability check reports live and exited audit apps", async () => {

@@ -182,16 +182,30 @@
     return true;
   }
 
-  function visibleTriggerCandidates() {
-    return Array.from(document.querySelectorAll(triggerSelector)).filter((trigger) => {
-      if (!(trigger instanceof HTMLElement)) return false;
-      if (trigger.disabled || trigger.getAttribute("aria-disabled") === "true") return false;
-      const rect = trigger.getBoundingClientRect?.();
-      return rect && rect.width > 0 && rect.height > 0;
-    });
+  function elementRect(element) {
+    const rect = element?.getBoundingClientRect?.();
+    return rect && rect.width > 0 && rect.height > 0 ? rect : null;
   }
 
-  function triggerPriority(trigger) {
+  function visibleTriggerTarget(trigger) {
+    const rect = elementRect(trigger);
+    if (rect) return { element: trigger, rect };
+
+    const child = trigger?.querySelector?.("button,[role='button'],[tabindex]");
+    const childRect = elementRect(child);
+    return childRect ? { element: child, rect: childRect } : null;
+  }
+
+  function visibleTriggerCandidates() {
+    return Array.from(document.querySelectorAll(triggerSelector)).map((trigger) => {
+      if (!(trigger instanceof HTMLElement)) return false;
+      if (trigger.disabled || trigger.getAttribute("aria-disabled") === "true") return false;
+      const target = visibleTriggerTarget(trigger);
+      return target ? { trigger, target } : false;
+    }).filter(Boolean);
+  }
+
+  function triggerPriority({ trigger }) {
     const variant = trigger.getAttribute("data-codex-plus-project-selector-variant");
     if (variant === "default") return 0;
     if (variant == null || variant === "") return 1;
@@ -199,20 +213,21 @@
   }
 
   function projectSelectorTrigger() {
-    const [trigger] = visibleTriggerCandidates().sort((left, right) => {
+    const [candidate] = visibleTriggerCandidates().sort((left, right) => {
       const priority = triggerPriority(left) - triggerPriority(right);
       if (priority !== 0) return priority;
-      const leftRect = left.getBoundingClientRect();
-      const rightRect = right.getBoundingClientRect();
+      const leftRect = left.target.rect;
+      const rightRect = right.target.rect;
       return rightRect.top - leftRect.top || rightRect.left - leftRect.left;
     });
-    return trigger ?? null;
+    return candidate ?? null;
   }
 
   function focusProjectSelector() {
-    const trigger = projectSelectorTrigger();
-    if (trigger == null) return false;
-    trigger.focus?.();
+    const candidate = projectSelectorTrigger();
+    if (candidate == null) return false;
+    const { trigger, target } = candidate;
+    target.element.focus?.();
     const dispatched = [
       dispatchMouseEvent(trigger, "pointerdown"),
       dispatchMouseEvent(trigger, "mousedown"),
