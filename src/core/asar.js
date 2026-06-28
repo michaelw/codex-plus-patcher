@@ -11,9 +11,10 @@ function sha256File(file) {
 
 function readAsar(asarPath) {
   const buffer = fs.readFileSync(asarPath);
+  const headerSize = buffer.readUInt32LE(4);
   const jsonSize = buffer.readUInt32LE(12);
   const header = JSON.parse(buffer.subarray(16, 16 + jsonSize).toString("utf8"));
-  return { buffer, dataStart: 16 + jsonSize, header };
+  return { buffer, dataStart: 8 + headerSize, header };
 }
 
 function walkFiles(node, prefix = "", out = []) {
@@ -99,13 +100,14 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   }
 
   const json = Buffer.from(JSON.stringify(archive.header), "utf8");
+  const padding = Buffer.alloc((4 - (json.length % 4)) % 4);
   const header = Buffer.alloc(16);
   header.writeUInt32LE(4, 0);
-  header.writeUInt32LE(json.length + 8, 4);
-  header.writeUInt32LE(json.length + 4, 8);
+  header.writeUInt32LE(json.length + padding.length + 8, 4);
+  header.writeUInt32LE(json.length + padding.length + 4, 8);
   header.writeUInt32LE(json.length, 12);
 
-  fs.writeFileSync(asarPath, Buffer.concat([header, json, ...dataBuffers]));
+  fs.writeFileSync(asarPath, Buffer.concat([header, json, padding, ...dataBuffers]));
   return sha256File(asarPath);
 }
 

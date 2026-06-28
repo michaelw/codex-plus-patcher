@@ -217,18 +217,30 @@ function markDevRuntimeConfig(targetApp, { patchAsarImpl = patchAsar, setPlistBu
   return { asar: asarPath, patchedAsarSha };
 }
 
-function launchDevApp({ spawn = childProcess.spawn, env = process.env, markDevRuntimeConfigImpl = markDevRuntimeConfig, ...options } = {}) {
+function signDevApp(targetApp, execFileSync = childProcess.execFileSync) {
+  execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", path.resolve(targetApp)], { stdio: "pipe" });
+  return { signed: true };
+}
+
+function launchDevApp({
+  spawn = childProcess.spawn,
+  env = process.env,
+  markDevRuntimeConfigImpl = markDevRuntimeConfig,
+  signDevAppImpl = signDevApp,
+  ...options
+} = {}) {
   const launch = buildLaunchDev(options);
   fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
   fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
+  const devSignature = signDevAppImpl(options.targetApp);
   const child = spawn(launch.command, launch.args, {
     detached: true,
     env: { ...env, ...launch.env },
     stdio: "ignore",
   });
   child.unref();
-  return { ...launch, devRuntimeConfig, pid: child.pid };
+  return { ...launch, devRuntimeConfig, devSignature, pid: child.pid };
 }
 
 function formatSyncDevHomeResult(result) {
@@ -270,5 +282,6 @@ module.exports = {
   formatSyncDevHomeResult,
   launchDevApp,
   markDevRuntimeConfig,
+  signDevApp,
   syncDevHome,
 };

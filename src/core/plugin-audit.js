@@ -168,6 +168,88 @@ async function findRendererTargetOnPort(port) {
   }
 }
 
+async function waitForMermaidViewerTarget(port, beforeIds = new Set(), timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const targets = await getJson(`http://127.0.0.1:${port}/json/list`);
+      const target = targets.find((entry) =>
+        !beforeIds.has(entry.id) &&
+        entry.url?.startsWith("file://") &&
+        entry.url.includes("codex-plus-mermaid-"));
+      if (target) return target;
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(250);
+  }
+  throw new Error(`Timed out waiting for Mermaid viewer target on port ${port}${lastError ? `: ${lastError.message}` : ""}`);
+}
+
+async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, timeoutMs = 15000 } = {}) {
+  const beforeTargets = await getJson(`http://127.0.0.1:${port}/json/list`).catch(() => []);
+  const beforeIds = new Set(beforeTargets.map((target) => target.id));
+  await appCdp.evaluate(`(() => {
+    const host = document.createElement("div");
+    host.setAttribute("data-markdown-copy", "code-block");
+    const pre = document.createElement("pre");
+    pre.className = "sr-only";
+    pre.textContent = "graph TD;A-->B";
+    const diagram = document.createElement("div");
+    diagram.setAttribute("data-codex-plus-mermaid-diagram", "");
+    host.append(pre, diagram);
+    document.body.appendChild(host);
+    window.CodexPlus.plugins.get("mermaidFullscreen").exports.openViewer(diagram);
+    setTimeout(() => host.remove(), 1000);
+    return true;
+  })()`);
+  const viewerTarget = await waitForMermaidViewerTarget(port, beforeIds, timeoutMs);
+  const viewer = new Session(viewerTarget.webSocketDebuggerUrl);
+  try {
+    await viewer.connect();
+    await viewer.send("Runtime.enable");
+    const deadline = Date.now() + timeoutMs;
+    let status = null;
+    while (Date.now() < deadline) {
+      status = await viewer.evaluate(`(() => {
+        const svg = document.querySelector("#stage svg");
+        const status = document.getElementById("render-status")?.textContent || "";
+        return {
+          hasSvg: Boolean(svg && svg.outerHTML.length > 1000),
+          status,
+          statusHidden: document.getElementById("render-status")?.hidden ?? null,
+          svgLength: svg?.outerHTML?.length || 0,
+          bodyText: document.body?.innerText?.slice(0, 500) || "",
+        };
+      })()`);
+      if (status.hasSvg && !/Mermaid render failed:/i.test(status.status)) {
+        return {
+          ok: true,
+          url: viewerTarget.url,
+          status: status.status,
+          svgLength: status.svgLength,
+        };
+      }
+      if (/Mermaid render failed:/i.test(status.status) || /Mermaid render failed:/i.test(status.bodyText)) break;
+      await delay(250);
+    }
+    return {
+      ok: false,
+      url: viewerTarget.url,
+      message: status?.status || "Mermaid viewer did not render an SVG",
+      status,
+    };
+  } finally {
+    try {
+      await viewer.send("Page.close");
+    } catch {
+      // The viewer may already be closed.
+    }
+    await viewer.close();
+  }
+}
+
 function listRunningAuditApps({
   targetApp = DEFAULT_TARGET,
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
@@ -361,16 +443,21 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
       const root = document.getElementById("root");
       const bodyText = document.body?.innerText?.trim() ?? "";
       const interactiveCount = document.querySelectorAll("button,a,nav,[role=navigation]").length;
+      const hasErrorBoundary = /^Oops, an error has occurred\\b/.test(bodyText);
       return {
         readyState: document.readyState,
         hasRoot: Boolean(root),
         hasStartupLoader: Boolean(document.querySelector("#root .startup-loader")),
+        hasErrorBoundary,
         bodyTextLength: bodyText.length,
         elementCount: document.querySelectorAll("*").length,
         interactiveCount,
         sampleText: bodyText.slice(0, 120),
       };
     })()`);
+    if (lastStatus.hasErrorBoundary) {
+      throw new Error(`Codex app shell rendered error boundary: ${JSON.stringify(lastStatus)}`);
+    }
     if (
       lastStatus.readyState === "complete" &&
       lastStatus.hasRoot &&
@@ -721,6 +808,50 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         evidence,
       };
     };
+    const waitForProjectThreadRows = async (timeoutMs = 45000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const rows = document.querySelectorAll("[data-app-action-sidebar-project-list-id] [data-app-action-sidebar-thread-row]");
+        if (rows.length > 0) return rows.length;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      return 0;
+    };
+    const isTransparentColor = (value) => value === "rgba(0, 0, 0, 0)" || value === "transparent";
+    const waitForMountedProjectComposer = async (expectedAccent, timeoutMs = 20000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const editor = document.querySelector("[data-codex-composer]");
+        const surface = editor?.closest("[data-codex-plus-user-entry]") || editor?.closest(".composer-surface-chrome");
+        if (surface) {
+          const computed = getComputedStyle(surface);
+          const surfaceAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
+          if (
+            surface.hasAttribute("data-codex-plus-user-entry") &&
+            surface.hasAttribute("data-codex-plus-project-color") &&
+            surfaceAccent === expectedAccent &&
+            computed.boxShadow !== "none"
+          ) {
+            return {
+              marked: true,
+              projectMarked: true,
+              accent: surfaceAccent,
+              boxShadow: computed.boxShadow,
+            };
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      const editor = document.querySelector("[data-codex-composer]");
+      const surface = editor?.closest("[data-codex-plus-user-entry]") || editor?.closest(".composer-surface-chrome");
+      const computed = surface ? getComputedStyle(surface) : null;
+      return {
+        marked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
+        projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
+        accent: computed?.getPropertyValue("--codex-plus-project-accent").trim() || "",
+        boxShadow: computed?.boxShadow || "",
+      };
+    };
     const jsx = (type, props, key) => ({ type, props: props || {}, key });
     const jsxs = jsx;
     const reviewDeps = {
@@ -835,14 +966,63 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         props?.style?.["--codex-plus-project-accent"] === accent);
       const liveRows = Array.from(document.querySelectorAll("[data-codex-plus-project-color]"));
       const liveAccents = liveRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
+      const projectThreadRowCount = await waitForProjectThreadRows();
+      let selectedProjectAccent = "";
+      let mountedComposer = null;
+      const unstyledProjectThreadLists = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-list-id]"))
+        .map((list) => {
+          const projectId = list.getAttribute("data-app-action-sidebar-project-list-id") || "";
+          const projectRow = document.querySelector(`[data-app-action-sidebar-project-row][data-app-action-sidebar-project-id="${CSS.escape(projectId)}"]`);
+          const threadRows = Array.from(list.querySelectorAll("[data-app-action-sidebar-thread-row]"));
+          if (!projectRow || threadRows.length === 0) return null;
+          const projectAccent = getComputedStyle(projectRow).getPropertyValue("--codex-plus-project-accent").trim();
+          const listComputed = getComputedStyle(list);
+          const listAccent = listComputed.getPropertyValue("--codex-plus-project-accent").trim();
+          const listBackground = listComputed.backgroundColor;
+          if (!selectedProjectAccent) {
+            selectedProjectAccent = projectAccent;
+            threadRows[0].click();
+          }
+          const unstyledRows = threadRows.filter((row) => {
+            const computed = getComputedStyle(row);
+            const rowAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
+            return rowAccent !== projectAccent || isTransparentColor(computed.backgroundColor);
+          });
+          return list.hasAttribute("data-codex-plus-project-sidebar-color") &&
+            listAccent === projectAccent &&
+            !isTransparentColor(listBackground) &&
+            unstyledRows.length === 0
+            ? null
+            : {
+                projectId,
+                projectLabel: projectRow.getAttribute("data-app-action-sidebar-project-label") || projectRow.innerText.trim(),
+                projectAccent,
+                listAccent,
+                listBackground,
+                threadRows: threadRows.length,
+                unstyledRows: unstyledRows.length,
+                listMarked: list.hasAttribute("data-codex-plus-project-sidebar-color"),
+              };
+        })
+        .filter(Boolean);
+      if (selectedProjectAccent) mountedComposer = await waitForMountedProjectComposer(selectedProjectAccent);
       if (!accent) throw new Error("Project accent was not computed");
       if (!matchingProps) throw new Error("Project, thread, bubble, and composer props do not share an accent");
+      if (projectThreadRowCount === 0) throw new Error("No visible project child thread rows appeared; project sidebar styling was not proven");
+      if (unstyledProjectThreadLists.length > 0) {
+        throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
+      }
+      if (!mountedComposer?.marked || !mountedComposer?.projectMarked || mountedComposer?.accent !== selectedProjectAccent) {
+        throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
+      }
       pass("projectColors", {
         ...details,
         accent,
         matchingProps,
         liveRows: liveRows.length,
         liveAccents: Array.from(new Set(liveAccents)).slice(0, 8),
+        styledProjectThreadLists: projectThreadRowCount,
+        mountedComposer,
       });
     } catch (error) {
       fail("projectColors", error);
@@ -1009,6 +1189,7 @@ async function runAudit(args, {
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
+  const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
   const checkStability = operations.checkKeepOpenAppStability || checkKeepOpenAppStability;
   const preflightAudit = operations.auditPreflight || auditPreflight;
@@ -1090,6 +1271,32 @@ async function runAudit(args, {
       "Probed plugins",
       () => cdp.evaluate(pluginAuditExpression({ includeNativeOpenProbes: args.includeNativeOpenProbes })),
     );
+    const shouldProbeMermaidViewer = live.pluginResults?.mermaidFullscreen?.ok;
+    const mermaidViewerRender = shouldProbeMermaidViewer
+      ? await withAuditProgress(
+        progress,
+        "Verifying Mermaid viewer render",
+        "Mermaid viewer rendered",
+        () => verifyMermaidViewer(cdp, port, { Session }),
+      )
+      : null;
+    if (mermaidViewerRender != null) {
+      live.pluginResults.mermaidFullscreen.viewerRenderProbe = mermaidViewerRender;
+      if (!mermaidViewerRender.ok) {
+        live.ok = false;
+        live.pluginResults.mermaidFullscreen.ok = false;
+        live.failures.push({
+          plugin: "mermaidFullscreen",
+          message: `Mermaid viewer render failed: ${mermaidViewerRender.message || "no SVG rendered"}`,
+        });
+      }
+    }
+    appShellStatus = await withAuditProgress(
+      progress,
+      "Verifying Codex app shell after probes",
+      "App shell still healthy",
+      () => waitAppShell(cdp),
+    );
     result = {
       ok: live.ok,
       failures: live.failures,
@@ -1124,6 +1331,7 @@ async function runAudit(args, {
       nativeOpenProbes: {
         included: Boolean(args.includeNativeOpenProbes),
       },
+      mermaidViewerRender,
       preflight,
     };
     return result;
@@ -1263,5 +1471,6 @@ module.exports = {
   shouldShowAuditProgress,
   waitForAppShellMounted,
   waitForLiveRuntime,
+  verifyMermaidViewerRender,
   waitForRendererTarget,
 };

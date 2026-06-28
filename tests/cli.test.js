@@ -359,6 +359,11 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Renderer command palette cannot read literal Codex Plus command titles/);
   assert.match(defaultExpression, /Live Mermaid diagrams missing popout buttons/);
   assert.match(defaultExpression, /liveDiagramCount/);
+  assert.match(defaultExpression, /Project sidebar child rows or list containers are not styled like their project rows/);
+  assert.match(defaultExpression, /Mounted composer does not carry the selected project accent/);
+  assert.match(defaultExpression, /waitForMountedProjectComposer/);
+  assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
+  assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
 });
 
 test("keep-open stability check reports live and exited audit apps", async () => {
@@ -495,6 +500,169 @@ test("app shell wait returns once real UI has mounted", async () => {
   assert.equal(status.sampleText, "New chat");
 });
 
+test("app shell wait rejects the React error boundary", async () => {
+  await assert.rejects(
+    () => waitForAppShellMounted(
+      {
+        evaluate() {
+          return Promise.resolve({
+            readyState: "complete",
+            hasRoot: true,
+            hasStartupLoader: false,
+            hasErrorBoundary: true,
+            bodyTextLength: 50,
+            elementCount: 171,
+            interactiveCount: 2,
+            sampleText: "Oops, an error has occurred\nUpdate Codex\nTry again",
+          });
+        },
+      },
+      1000,
+    ),
+    /Codex app shell rendered error boundary/,
+  );
+});
+
+test("runAudit fails when probes leave the app shell in the error boundary", async () => {
+  let shellChecks = 0;
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    evaluate() {
+      return Promise.resolve({
+        ok: true,
+        failures: [],
+        pluginResults: {},
+        registeredPlugins: [],
+        startedPlugins: [],
+      });
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: true,
+      launch: true,
+      keepOpen: false,
+      includeNativeOpenProbes: false,
+    },
+    {
+      progress: { start() {}, succeed() {}, fail() {} },
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({ port: 9234, launch: true, reuseExisting: false });
+        },
+        findFreePort() { return Promise.resolve(9234); },
+        patchCodexApp() { return Promise.resolve({ patchSet: "codex-test" }); },
+        syncDevHome() { return Promise.resolve({ copied: [] }); },
+        launchDevApp() { return Promise.resolve({ pid: 123, command: "Codex", args: [] }); },
+        waitForRendererTarget() {
+          return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() { return Promise.resolve({ registered: 0, started: 0 }); },
+        waitForAppShellMounted() {
+          shellChecks += 1;
+          if (shellChecks === 2) throw new Error("Codex app shell rendered error boundary");
+          return Promise.resolve({ hasErrorBoundary: false, sampleText: "New chat" });
+        },
+        cleanupLaunchedAuditApp() {
+          return Promise.resolve({ attempted: true, keptOpen: false, ok: true, pid: 123 });
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(shellChecks, 2);
+  assert.equal(result.ok, false);
+  assert.match(result.failures[0].message, /error boundary/);
+});
+
+test("runAudit fails when the Mermaid viewer cannot render standalone", async () => {
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    evaluate() {
+      return Promise.resolve({
+        ok: true,
+        failures: [],
+        pluginResults: {
+          mermaidFullscreen: {
+            ok: true,
+            registered: true,
+            started: true,
+            marker: true,
+            buttonRendered: true,
+          },
+        },
+        registeredPlugins: ["mermaidFullscreen"],
+        startedPlugins: ["mermaidFullscreen"],
+      });
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: false,
+      launch: false,
+      keepOpen: false,
+      includeNativeOpenProbes: false,
+    },
+    {
+      progress: { start() {}, succeed() {}, fail() {} },
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({ port: 9234, launch: false, reuseExisting: true });
+        },
+        syncDevHome() { return Promise.resolve({ copied: [] }); },
+        waitForRendererTarget() {
+          return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
+        waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, sampleText: "New chat" }); },
+        verifyMermaidViewerRender() {
+          return Promise.resolve({
+            ok: false,
+            message: "Mermaid render failed: Cannot read properties of undefined (reading 'adapters')",
+          });
+        },
+        cleanupLaunchedAuditApp() {
+          return Promise.resolve({ attempted: false, keptOpen: false, ok: true });
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.pluginResults.mermaidFullscreen.ok, false);
+  assert.equal(result.pluginResults.mermaidFullscreen.viewerRenderProbe.ok, false);
+  assert.deepEqual(result.failures, [{
+    plugin: "mermaidFullscreen",
+    message: "Mermaid viewer render failed: Mermaid render failed: Cannot read properties of undefined (reading 'adapters')",
+  }]);
+});
+
 test("runAudit fails keep-open audits when the launched app exits after probes", async () => {
   const progressEvents = [];
   class FakeCdpSession {
@@ -582,6 +750,9 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
             interactiveCount: 5,
             sampleText: "New chat",
           });
+        },
+        verifyMermaidViewerRender() {
+          return Promise.resolve({ ok: true, svgLength: 1200 });
         },
         cleanupLaunchedAuditApp(launchResult, options) {
           assert.equal(launchResult.pid, 123);
@@ -954,6 +1125,10 @@ test("launch-dev uses isolated Codex and Electron state", () => {
       calls.push({ markDevRuntimeConfig: appPath });
       return { asar: path.join(appPath, "Contents/Resources/app.asar"), patchedAsarSha: "dev-sha" };
     },
+    signDevAppImpl(appPath) {
+      calls.push({ signDevApp: appPath });
+      return { signed: true };
+    },
     spawn(command, args, options) {
       calls.push({ command, args, options });
       return {
@@ -973,15 +1148,17 @@ test("launch-dev uses isolated Codex and Electron state", () => {
     asar: path.join(targetApp, "Contents/Resources/app.asar"),
     patchedAsarSha: "dev-sha",
   });
+  assert.deepEqual(result.devSignature, { signed: true });
   assert.equal(fs.statSync(devHome).isDirectory(), true);
   assert.equal(fs.statSync(electronUserDataPath).isDirectory(), true);
   assert.deepEqual(calls[0], { markDevRuntimeConfig: targetApp });
-  assert.deepEqual(calls[1].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
-  assert.equal(calls[1].options.detached, true);
-  assert.equal(calls[1].options.env.KEEP_ME, "yes");
-  assert.equal(calls[1].options.env.CODEX_HOME, devHome);
-  assert.equal(calls[1].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
-  assert.deepEqual(calls[2], { unref: true });
+  assert.deepEqual(calls[1], { signDevApp: targetApp });
+  assert.deepEqual(calls[2].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.equal(calls[2].options.detached, true);
+  assert.equal(calls[2].options.env.KEEP_ME, "yes");
+  assert.equal(calls[2].options.env.CODEX_HOME, devHome);
+  assert.equal(calls[2].options.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
+  assert.deepEqual(calls[3], { unref: true });
   assert.match(formatLaunchDevResult(result), /CODEX_ELECTRON_USER_DATA_PATH/);
 });
 
