@@ -58,6 +58,14 @@ body{display:flex;flex-direction:column;background:var(--viewer-bg);color:var(--
 .toolbar{display:flex;gap:8px;justify-content:flex-end;padding:10px;border-bottom:1px solid var(--viewer-border);background:var(--viewer-toolbar-bg)}
 button{min-width:42px;border:1px solid var(--viewer-button-border);border-radius:6px;background:var(--viewer-button-bg);color:inherit;padding:6px 10px}
 button:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+#theme-toggle{display:inline-flex;width:58px;align-items:center;justify-content:center}
+#theme-toggle:disabled{opacity:.6;cursor:default}
+:root[data-theme="dark"] #theme-toggle:not(:disabled):hover{background:#fff;color:#111;border-color:rgba(0,0,0,.18)}
+:root[data-theme="light"] #theme-toggle:not(:disabled):hover{background:#0a0a0a;color:#fff;border-color:rgba(255,255,255,.22)}
+#copy-source{position:relative;width:32px;min-width:32px;padding:6px}
+#copy-source::before,#copy-source::after{content:"";position:absolute;width:11px;height:13px;border:1.5px solid currentColor;border-radius:2px;background:var(--viewer-toolbar-bg)}
+#copy-source::before{left:9px;top:7px}
+#copy-source::after{left:12px;top:10px;background:var(--viewer-button-bg)}
 .viewport{flex:1;overflow:auto;padding:16px}
 .stage{width:max-content;min-width:100%}
 .stage svg{display:block;max-width:none;background:var(--viewer-bg)}
@@ -76,6 +84,7 @@ button:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
   <button id="theme-toggle" type="button" aria-label="Toggle Mermaid theme">${isDark ? "Dark" : "Light"}</button>
   <button id="open-live" type="button" aria-label="Open in Mermaid Live">Live</button>
   <button id="close" type="button" aria-label="Close Mermaid diagram viewer">Close</button>
+  <button id="copy-source" type="button" aria-label="Copy Mermaid source" title="Copy Mermaid source"></button>
 </div>
 <div class="viewport"><div class="stage" id="stage"></div></div>
 <div class="render-status" id="render-status" hidden>Rendering Mermaid source...</div>
@@ -90,11 +99,13 @@ const stage = document.getElementById("stage");
 const viewport = document.querySelector(".viewport");
 const reset = document.getElementById("zoom-reset");
 const themeToggle = document.getElementById("theme-toggle");
+const copySource = document.getElementById("copy-source");
 const renderStatus = document.getElementById("render-status");
 let fitMode = "fit";
 let renderCount = 0;
 let renderInFlight = false;
 let renderQueued = false;
+let copyFeedbackTimer = 0;
 function diagram() {
   return stage.querySelector("svg");
 }
@@ -136,6 +147,12 @@ function applyThemeChrome() {
   themeToggle.textContent = darkTheme ? "Dark" : "Light";
   themeToggle.setAttribute("aria-pressed", String(darkTheme));
 }
+function previewThemeToggle() {
+  if (!themeToggle.disabled) themeToggle.textContent = darkTheme ? "Light" : "Dark";
+}
+function restoreThemeToggle() {
+  themeToggle.textContent = darkTheme ? "Dark" : "Light";
+}
 function themeDirective() {
   return "%%{init: " + JSON.stringify({ theme: darkTheme ? "dark" : "default" }) + "}%%" + String.fromCharCode(10);
 }
@@ -149,6 +166,43 @@ function sourceForTheme() {
   let rest = trimmed.slice(markerEnd + 3);
   while ([9, 10, 13, 32].includes(rest.charCodeAt(0))) rest = rest.slice(1);
   return themeDirective() + rest;
+}
+function setCopyFeedback(label) {
+  copySource.setAttribute("aria-label", label);
+  copySource.title = label;
+  clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = setTimeout(() => {
+    copySource.setAttribute("aria-label", "Copy Mermaid source");
+    copySource.title = "Copy Mermaid source";
+  }, 1200);
+}
+function fallbackCopySource() {
+  const textarea = document.createElement("textarea");
+  textarea.value = source;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    if (!document.execCommand("copy")) throw new Error("copy command failed");
+  } finally {
+    textarea.remove();
+  }
+}
+async function copySourceToClipboard() {
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(source);
+    else fallbackCopySource();
+    setCopyFeedback("Copied Mermaid source");
+  } catch (error) {
+    try {
+      fallbackCopySource();
+      setCopyFeedback("Copied Mermaid source");
+    } catch {
+      setCopyFeedback("Copy failed");
+    }
+  }
 }
 async function renderFromSource() {
   if (renderInFlight) {
@@ -195,8 +249,13 @@ document.getElementById("zoom-out").addEventListener("click", () => setScale(sca
 reset.addEventListener("click", () => setScale(1));
 document.getElementById("zoom-in").addEventListener("click", () => setScale(scale + 0.2));
 themeToggle.addEventListener("click", () => { darkTheme = !darkTheme; applyThemeChrome(); renderQueued = true; renderFromSource(); });
+themeToggle.addEventListener("mouseenter", previewThemeToggle);
+themeToggle.addEventListener("mouseleave", restoreThemeToggle);
+themeToggle.addEventListener("focus", previewThemeToggle);
+themeToggle.addEventListener("blur", restoreThemeToggle);
 document.getElementById("open-live").addEventListener("click", () => window.open(liveUrl, "_blank", "noopener"));
 document.getElementById("close").addEventListener("click", () => window.close());
+copySource.addEventListener("click", copySourceToClipboard);
 window.addEventListener("resize", () => { if (fitMode) applyFit(fitMode); });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
