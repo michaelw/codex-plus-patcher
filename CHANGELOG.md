@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.7.1...v0.7.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* soften side-by-side audit picker state ([#52](https://github.com/michaelw/codex-plus-patcher/issues/52)) ([4ce756d](https://github.com/michaelw/codex-plus-patcher/commit/4ce756da51ff500135bde4d4c30c43ae9342bb5e))
+* support Codex 26.623.42026 ([210ab19](https://github.com/michaelw/codex-plus-patcher/commit/210ab19fdc2a8a6e63ebcbe20b42bfe317d91fb7))
+
 ## [0.7.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.7.0...v0.7.1) (2026-06-27)
 
 
