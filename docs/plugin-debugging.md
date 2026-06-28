@@ -31,6 +31,13 @@ codex-plus-patcher launch-dev \
   --remote-debugging-port 9234
 ```
 
+`launch-dev` also gives the copied bundle a dev-only app identity by default
+(`com.openai.codex-plus.dev`). Use `--dev-instance-id <id>` when running more
+than one workspace-local copy at the same time. This is the preferred
+lightweight sandbox for plugin work: private sqlite state, private Electron
+user data, a separate remote debugging port, and a distinct macOS app identity
+without needing a VM.
+
 Open the DevTools target at `http://127.0.0.1:9234/json/list` and attach to the
 page whose URL is `app://-/index.html`.
 
@@ -57,6 +64,8 @@ The audit applies the current patch set to `work/Codex Plus.app`, syncs the
 default dev home, launches with a remote debugging port, attaches to
 `app://-/index.html`, and prints a human-readable progress summary by default.
 It exits nonzero when any required built-in plugin probe fails.
+Audit launches use the dev-only `com.openai.codex-plus.audit` bundle identity
+by default so they do not compete with a kept-open manual dev copy.
 
 Use JSON for automation:
 
@@ -69,6 +78,16 @@ DevTools inspection after the probes finish. The default audit avoids opening
 extra native windows so the app remains usable after a keep-open run. Use
 `--include-native-open-probes` when you specifically want the audit to open
 DevTools and a Mermaid viewer window as part of the live probes.
+
+When an audit app is already open, attach instead of relaunching:
+
+```sh
+codex-plus-patcher audit-plugins --no-apply --no-launch --port 9234
+```
+
+If a true clean-room check is needed, use a VM or separate macOS user account,
+but that is heavier than the normal dev workflow and should not be necessary for
+ordinary plugin validation.
 
 ## Live Proof Recipes
 

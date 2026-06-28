@@ -13,6 +13,7 @@ const {
 const { readAsar, walkFiles } = require("./core/asar");
 const {
   DEFAULT_DEV_HOME,
+  DEFAULT_DEV_INSTANCE_ID,
   DEFAULT_ELECTRON_USER_DATA,
   formatLaunchDevResult,
   formatSyncDevHomeResult,
@@ -49,12 +50,14 @@ function parseArgs(argv) {
     includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
+    devInstanceId: DEFAULT_DEV_INSTANCE_ID,
   };
   const rest = [...argv];
   if (rest[0] && !rest[0].startsWith("--")) args.command = rest.shift();
   if (args.command === "audit-plugins") {
     args.target = DEFAULT_AUDIT_TARGET;
     args.remoteDebuggingPort = DEFAULT_AUDIT_PORT;
+    args.devInstanceId = "audit";
   }
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
@@ -68,6 +71,7 @@ function parseArgs(argv) {
     else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
     else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
     else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
+    else if (arg === "--dev-instance-id") args.devInstanceId = next();
     else if (arg === "--remote-debugging-port" || arg === "--port") {
       const value = next();
       args.remoteDebuggingPort = args.command === "audit-plugins" ? Number(value) : value;
@@ -120,6 +124,7 @@ Options:
                            Isolated Electron userData for launch-dev. Default: ./work/codex-plus-electron-user-data
   --remote-debugging-port <port>
                            Remote debugging port passed to launch-dev or audit-plugins
+  --dev-instance-id <id>    Dev-only bundle identity suffix. Default: dev, or audit for audit-plugins
   --asar <path>            app.asar path for ASAR readback commands
   --file <asar-path>       Packed file path for asar-cat
   --contains <text>        Filter asar-list paths by substring
@@ -396,6 +401,7 @@ async function main() {
       devHome: args.devHome,
       electronUserDataPath: args.electronUserDataPath,
       remoteDebuggingPort: args.remoteDebuggingPort,
+      devInstanceId: args.devInstanceId,
     });
     process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatLaunchDevResult(result));
     return;

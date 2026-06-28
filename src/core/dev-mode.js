@@ -4,12 +4,13 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { patchAsar } = require("./asar");
-const { setPlistBuddyValue } = require("./plist");
+const { replacePlistString, setPlistBuddyValue } = require("./plist");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
 const RUNTIME_MANIFEST_FILE = "webview/assets/codex-plus/runtime-manifest.js";
 const DEFAULT_DEV_HOME = path.resolve("work/codex-plus-dev-home");
 const DEFAULT_ELECTRON_USER_DATA = path.resolve("work/codex-plus-electron-user-data");
+const DEFAULT_DEV_INSTANCE_ID = "dev";
 const DEV_MODE_WARNING =
   "Dev mode shares the original Codex worktrees. Use it for UI/plugin validation; do not edit the same checkout from regular Codex and Codex Plus at the same time.";
 
@@ -179,11 +180,40 @@ function syncDevHome({
   };
 }
 
-function buildLaunchDev({ targetApp, devHome = DEFAULT_DEV_HOME, electronUserDataPath = DEFAULT_ELECTRON_USER_DATA, remoteDebuggingPort } = {}) {
+function sanitizeDevInstanceId(devInstanceId) {
+  if (devInstanceId == null || devInstanceId === "") return null;
+  const sanitized = String(devInstanceId)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!sanitized) throw new Error("--dev-instance-id must contain at least one letter or number");
+  return sanitized;
+}
+
+function devBundleIdentity(devInstanceId) {
+  const sanitized = sanitizeDevInstanceId(devInstanceId);
+  if (!sanitized) return null;
+  return {
+    id: sanitized,
+    bundleIdentifier: `com.openai.codex-plus.${sanitized}`,
+    displayName: `Codex Plus (${sanitized})`,
+    name: `Codex Plus ${sanitized}`,
+  };
+}
+
+function buildLaunchDev({
+  targetApp,
+  devHome = DEFAULT_DEV_HOME,
+  electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
+  remoteDebuggingPort,
+  devInstanceId = DEFAULT_DEV_INSTANCE_ID,
+} = {}) {
   if (!targetApp) throw new Error("--target is required");
   const appBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
   const resolvedDevHome = path.resolve(devHome);
   const resolvedElectronUserDataPath = path.resolve(electronUserDataPath);
+  const instanceIdentity = devBundleIdentity(devInstanceId);
   const args = [`--user-data-dir=${resolvedElectronUserDataPath}`];
   if (remoteDebuggingPort != null) args.push(`--remote-debugging-port=${remoteDebuggingPort}`);
   return {
@@ -193,6 +223,7 @@ function buildLaunchDev({ targetApp, devHome = DEFAULT_DEV_HOME, electronUserDat
       CODEX_HOME: resolvedDevHome,
       CODEX_ELECTRON_USER_DATA_PATH: resolvedElectronUserDataPath,
     },
+    instanceIdentity,
     warning: DEV_MODE_WARNING,
   };
 }
@@ -222,10 +253,25 @@ function signDevApp(targetApp, execFileSync = childProcess.execFileSync) {
   return { signed: true };
 }
 
+function markDevBundleIdentity(
+  targetApp,
+  devInstanceId = DEFAULT_DEV_INSTANCE_ID,
+  { replacePlistStringImpl = replacePlistString } = {},
+) {
+  const identity = devBundleIdentity(devInstanceId);
+  if (!identity) return null;
+  const plistPath = path.join(path.resolve(targetApp), "Contents/Info.plist");
+  replacePlistStringImpl(plistPath, "CFBundleIdentifier", identity.bundleIdentifier);
+  replacePlistStringImpl(plistPath, "CFBundleDisplayName", identity.displayName);
+  replacePlistStringImpl(plistPath, "CFBundleName", identity.name);
+  return identity;
+}
+
 function launchDevApp({
   spawn = childProcess.spawn,
   env = process.env,
   markDevRuntimeConfigImpl = markDevRuntimeConfig,
+  markDevBundleIdentityImpl = markDevBundleIdentity,
   signDevAppImpl = signDevApp,
   ...options
 } = {}) {
@@ -233,6 +279,7 @@ function launchDevApp({
   fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
   fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
+  const devBundle = markDevBundleIdentityImpl(options.targetApp, options.devInstanceId);
   const devSignature = signDevAppImpl(options.targetApp);
   const child = spawn(launch.command, launch.args, {
     detached: true,
@@ -240,7 +287,7 @@ function launchDevApp({
     stdio: "ignore",
   });
   child.unref();
-  return { ...launch, devRuntimeConfig, devSignature, pid: child.pid };
+  return { ...launch, devRuntimeConfig, devBundle, devSignature, pid: child.pid };
 }
 
 function formatSyncDevHomeResult(result) {
@@ -267,6 +314,7 @@ function formatLaunchDevResult(result) {
     `CODEX_ELECTRON_USER_DATA_PATH: ${result.env.CODEX_ELECTRON_USER_DATA_PATH}`,
   ];
   if (result.pid != null) lines.push(`PID: ${result.pid}`);
+  if (result.instanceIdentity) lines.push(`Bundle identity: ${result.instanceIdentity.bundleIdentifier}`);
   lines.push(`Warning: ${result.warning}`);
   return `${lines.join("\n")}\n`;
 }
@@ -274,14 +322,18 @@ function formatLaunchDevResult(result) {
 module.exports = {
   COPY_ENTRIES,
   DEFAULT_DEV_HOME,
+  DEFAULT_DEV_INSTANCE_ID,
   DEFAULT_ELECTRON_USER_DATA,
   DEV_MODE_WARNING,
   SQLITE_SNAPSHOT_ENTRIES,
   buildLaunchDev,
+  devBundleIdentity,
   formatLaunchDevResult,
   formatSyncDevHomeResult,
   launchDevApp,
+  markDevBundleIdentity,
   markDevRuntimeConfig,
+  sanitizeDevInstanceId,
   signDevApp,
   syncDevHome,
 };

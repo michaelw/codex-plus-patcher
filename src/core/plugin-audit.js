@@ -40,6 +40,7 @@ function parseArgs(argv) {
     includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
+    devInstanceId: "audit",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -53,6 +54,7 @@ function parseArgs(argv) {
     else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
     else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
     else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
+    else if (arg === "--dev-instance-id") args.devInstanceId = next();
     else if (arg === "--remote-debugging-port" || arg === "--port") args.remoteDebuggingPort = Number(next());
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
@@ -494,10 +496,12 @@ function formatAuditJson(result) {
 }
 
 function formatAuditResult(result, { quiet = false } = {}) {
+  const expectedWarnings = result.expectedWarnings || [];
   if (quiet) {
-    return result.ok
-      ? "All plugin probes passed.\n"
-      : `Plugin audit failed: ${result.failures.length} failures\n`;
+    if (!result.ok) return `Plugin audit failed: ${result.failures.length} failures\n`;
+    return expectedWarnings.length > 0
+      ? "All plugin probes passed with expected warnings.\n"
+      : "All plugin probes passed.\n";
   }
 
   if (!result.ok) {
@@ -527,6 +531,13 @@ function formatAuditResult(result, { quiet = false } = {}) {
       }
       lines.push("");
     }
+    if (expectedWarnings.length > 0) {
+      lines.push("Expected warnings:");
+      for (const warning of expectedWarnings) {
+        lines.push(`  ${warning.plugin || "audit"} ${warning.code || "warning"}: ${warning.message || "expected warning"}`);
+      }
+      lines.push("");
+    }
     lines.push("Re-run with --json for full probe details.");
     return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
   }
@@ -553,11 +564,18 @@ function formatAuditResult(result, { quiet = false } = {}) {
     `Runtime ready: ${runtime.registered ?? result.registeredPlugins?.length ?? 0} registered, ${runtime.started ?? result.startedPlugins?.length ?? 0} started`,
     `App shell: ${appShell.hasStartupLoader === false ? "mounted" : "unknown"}`,
     `Probed ${probeCount} plugins`,
+    `Warnings: ${expectedWarnings.length} expected`,
     `Native open probes: ${result.nativeOpenProbes?.included ? "included" : "skipped"}`,
     `Cleanup: ${cleanupText}`,
     "",
     "All plugin probes passed.",
   );
+  if (expectedWarnings.length > 0) {
+    lines.push("", "Expected warnings:");
+    for (const warning of expectedWarnings) {
+      lines.push(`${warning.plugin || "audit"} ${warning.code || "warning"}: ${warning.message || "expected warning"}`);
+    }
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -748,12 +766,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     ];
     const pluginResults = {};
     const failures = [];
+    const expectedWarnings = [];
     const add = (id, ok, details = {}) => {
       pluginResults[id] = { ok, ...details };
       if (!ok) failures.push({ plugin: id, message: details.message || "probe failed", details });
     };
     const fail = (id, error, details = {}) => add(id, false, { message: error?.message || String(error), ...details });
     const pass = (id, details = {}) => add(id, true, details);
+    const warn = (id, code, message, details = {}) => {
+      expectedWarnings.push({ plugin: id, code, message, details });
+    };
     const pluginIds = () => {
       if (typeof window.CodexPlus?.plugins?.list !== "function") {
         throw new Error("CodexPlus.plugins.list is not available");
@@ -850,6 +872,76 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
         accent: computed?.getPropertyValue("--codex-plus-project-accent").trim() || "",
         boxShadow: computed?.boxShadow || "",
+      };
+    };
+    const composerPermissionPickerStatus = () => {
+      const editor = document.querySelector("[data-codex-composer]");
+      const labels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const rgb = (value) => {
+        const match = String(value || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+      };
+      const luminance = (color) => {
+        if (!color) return null;
+        const channel = (value) => {
+          const normalized = value / 255;
+          return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+      };
+      const contrast = (foreground, background) => {
+        const fg = luminance(rgb(foreground));
+        const bg = luminance(rgb(background));
+        if (fg == null || bg == null) return null;
+        const lighter = Math.max(fg, bg);
+        const darker = Math.min(fg, bg);
+        return (lighter + 0.05) / (darker + 0.05);
+      };
+      const isTransparent = (value) => {
+        const text = String(value || "").trim();
+        return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\([^)]*,\s*0\)$/.test(text);
+      };
+      const trigger = Array.from(document.querySelectorAll("button")).find((button) => {
+        const text = normalize(button.textContent);
+        return labels.some((label) => text === label || text.startsWith(`${label} `));
+      });
+      const triggerStyle = trigger ? getComputedStyle(trigger) : null;
+      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      const surfaceStyle = surface ? getComputedStyle(surface) : null;
+      let labelStyle = null;
+      if (trigger) {
+        const walker = document.createTreeWalker(trigger, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (normalize(node.nodeValue) !== "") {
+            labelStyle = getComputedStyle(node.parentElement);
+            break;
+          }
+        }
+      }
+      const triggerColor = triggerStyle?.color || null;
+      const labelColor = labelStyle?.color || triggerColor;
+      const labelTextFillColor = labelStyle?.webkitTextFillColor || triggerStyle?.webkitTextFillColor || null;
+      const effectiveLabelColor = labelTextFillColor && !isTransparent(labelTextFillColor) ? labelTextFillColor : labelColor;
+      const surfaceBackground = surfaceStyle?.backgroundColor || null;
+      return {
+        editorMounted: Boolean(editor),
+        editorEditable: editor?.getAttribute("contenteditable") === "true",
+        editorText: normalize(editor?.textContent),
+        triggerMounted: Boolean(trigger),
+        triggerText: normalize(trigger?.textContent),
+        triggerDisabled: Boolean(trigger?.disabled),
+        triggerAriaDisabled: trigger?.getAttribute("aria-disabled") || null,
+        triggerState: trigger?.getAttribute("data-state") || null,
+        triggerOpacity: triggerStyle?.opacity || null,
+        triggerColor,
+        labelColor,
+        labelTextFillColor,
+        surfaceBackground,
+        triggerContrast: contrast(effectiveLabelColor, surfaceBackground),
+        labelTextFillTransparent: isTransparent(labelTextFillColor),
+        triggerClassName: String(trigger?.className || ""),
       };
     };
     const jsx = (type, props, key) => ({ type, props: props || {}, key });
@@ -1041,6 +1133,33 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     }
 
     try {
+      const status = composerPermissionPickerStatus();
+      if (status.editorMounted && status.editorEditable && status.triggerMounted) {
+        const lowOpacity = Number(status.triggerOpacity) < 0.5;
+        const lowContrast = status.triggerContrast != null && status.triggerContrast < 4.5;
+        if (lowOpacity || lowContrast || status.labelTextFillTransparent) {
+          throw new Error(`Composer permissions picker text is unreadable: ${JSON.stringify(status)}`);
+        }
+        const ariaDisabled = status.triggerAriaDisabled === "true";
+        const visuallyDisabled = /\bopacity-40\b/.test(status.triggerClassName);
+        if (status.triggerDisabled || ariaDisabled || visuallyDisabled) {
+          warn(
+            "audit",
+            "composer-permission-picker-disabled",
+            "Composer permissions picker is disabled while the composer is editable",
+            status,
+          );
+        }
+      }
+      if (!status.editorMounted || !status.triggerMounted) {
+        throw new Error(`Composer permissions picker was not found: ${JSON.stringify(status)}`);
+      }
+      pass("audit", { composerPermissionPicker: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    try {
       const details = checkCommon("sidebarNameBlur");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusToggleSidebarNameBlur");
       if (!metadata) throw new Error("Sidebar blur command metadata is missing");
@@ -1171,6 +1290,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       ok: failures.length === 0,
       failures,
       pluginResults,
+      expectedWarnings,
       registeredPlugins: typeof window.CodexPlus?.plugins?.list === "function" ? pluginIds() : null,
       startedPlugins: started(),
     };
@@ -1222,15 +1342,17 @@ async function runAudit(args, {
         }),
       );
     }
-    syncResult = await withAuditProgress(
-      progress,
-      "Syncing dev home",
-      "Synced dev home",
-      () => syncHome({
-        sourceHome: args.sourceHome,
-        devHome: args.devHome,
-      }),
-    );
+    if (args.apply || args.launch) {
+      syncResult = await withAuditProgress(
+        progress,
+        "Syncing dev home",
+        "Synced dev home",
+        () => syncHome({
+          sourceHome: args.sourceHome,
+          devHome: args.devHome,
+        }),
+      );
+    }
     if (preflight.launch) {
       launchResult = await withAuditProgress(
         progress,
@@ -1241,6 +1363,7 @@ async function runAudit(args, {
           devHome: args.devHome,
           electronUserDataPath: args.electronUserDataPath,
           remoteDebuggingPort: port,
+          devInstanceId: args.devInstanceId,
         }),
       );
     }
@@ -1300,6 +1423,7 @@ async function runAudit(args, {
     result = {
       ok: live.ok,
       failures: live.failures,
+      expectedWarnings: live.expectedWarnings || [],
       pluginResults: live.pluginResults,
       target: {
         app: path.resolve(args.target),
@@ -1322,6 +1446,8 @@ async function runAudit(args, {
         command: launchResult.command,
         args: launchResult.args,
         pid: launchResult.pid,
+        devBundle: launchResult.devBundle,
+        instanceIdentity: launchResult.instanceIdentity,
       },
       registeredPlugins: live.registeredPlugins,
       startedPlugins: live.startedPlugins,
@@ -1343,6 +1469,7 @@ async function runAudit(args, {
         message: error.message,
         details: error.details,
       }],
+      expectedWarnings: [],
       pluginResults: {},
       target: {
         app: path.resolve(args.target),
@@ -1365,6 +1492,8 @@ async function runAudit(args, {
         command: launchResult.command,
         args: launchResult.args,
         pid: launchResult.pid,
+        devBundle: launchResult.devBundle,
+        instanceIdentity: launchResult.instanceIdentity,
       },
       registeredPlugins: null,
       startedPlugins: null,
