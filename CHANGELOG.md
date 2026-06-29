@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.10.0...v0.10.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* keep selection pills readable in colored composer ([#59](https://github.com/michaelw/codex-plus-patcher/issues/59)) ([8b52b26](https://github.com/michaelw/codex-plus-patcher/commit/8b52b26c8ba242a64f074c1953c9fe6e810a9303))
+
 ## [0.10.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.9.0...v0.10.0) (2026-06-29)
 
 
