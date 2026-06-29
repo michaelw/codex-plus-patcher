@@ -307,13 +307,185 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
       };
     })()`);
     if (status.opened) {
+      const fuzzyDom = await cdp.evaluate(`new Promise((resolve) => {
+        const visible = (element) => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        const menu = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"))
+          .find(visible) || document.body;
+        const input = document.querySelector("input[placeholder='Search projects']");
+        const collectLabels = () => {
+          const labels = [];
+          const seen = new Set();
+          for (const element of Array.from(menu.querySelectorAll("[role='menuitem'], [role='option'], button, a, div, span"))) {
+            if (!visible(element)) continue;
+            for (const line of String(element.innerText || element.textContent || "").split(/\\n/)) {
+              const label = normalize(line);
+              if (
+                label &&
+                label.length <= 120 &&
+                !seen.has(label) &&
+                /[A-Za-z].*[A-Za-z].*[A-Za-z]/.test(label) &&
+                !/^No projects found$/i.test(label) &&
+                !/^Search projects$/i.test(label)
+              ) {
+                seen.add(label);
+                labels.push(label);
+              }
+            }
+          }
+          return labels;
+        };
+        const queryFor = (label) => {
+          const letters = Array.from(label.toLowerCase()).filter((char) => /[a-z]/.test(char));
+          if (letters.length < 3) return "";
+          const indexes = [0, Math.max(1, Math.floor((letters.length - 1) / 2)), letters.length - 1];
+          return indexes.map((index) => letters[index]).join("");
+        };
+        const labels = collectLabels();
+        const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
+        const query = queryFor(selectedLabel);
+        if (!input || !selectedLabel || !query) {
+          resolve({
+            suitableProjectFound: false,
+            queryLength: query.length,
+            visibleResultCount: labels.length,
+            selectedProjectStillVisible: false,
+            noProjectsFoundVisible: Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found")),
+            highlightCount: 0,
+          });
+          return;
+        }
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, query);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
+        setTimeout(() => {
+          const resultLabels = collectLabels();
+          const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
+          const selectedProjectStillVisible = resultLabels.some((label) => label.includes(selectedLabel));
+          const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
+          resolve({
+            suitableProjectFound: true,
+            queryLength: query.length,
+            visibleResultCount: resultLabels.length,
+            selectedProjectStillVisible,
+            noProjectsFoundVisible,
+            highlightCount,
+          });
+        }, 200);
+      })`);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
-      return { ok: true, ...setup, ...status };
+      const ok = Boolean(
+        fuzzyDom?.suitableProjectFound &&
+        fuzzyDom.selectedProjectStillVisible &&
+        fuzzyDom.highlightCount > 0 &&
+        !fuzzyDom.noProjectsFoundVisible,
+      );
+      return {
+        ok,
+        ...setup,
+        ...status,
+        fuzzyDom,
+        message: ok ? undefined : "Project selector fuzzy filtering did not preserve and highlight a visible project",
+      };
     }
     await wait(100);
   }
   return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
+}
+
+async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandidates = 12 } = {}) {
+  const status = await cdp.evaluate(`new Promise((resolve) => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
+    const exactVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p")
+      .some((element) => normalize(element.textContent) === text);
+    const containsVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p, h1, h2, h3")
+      .some((element) => normalize(element.textContent).includes(text));
+    const reviewControl = () => visibleElements("button, [role='tab'], [role='button']")
+      .find((element) => normalize(element.textContent) === "Review" || normalize(element.getAttribute("aria-label")) === "Review");
+    const reviewSelected = () => visibleElements("[role='tab'][aria-selected='true'], button[aria-selected='true'], [data-state='active']")
+      .some((element) => normalize(element.textContent) === "Review");
+    const snapshot = (extra = {}) => ({
+      candidateCount: extra.candidateCount ?? 0,
+      attemptedCandidates: extra.attemptedCandidates ?? 0,
+      reviewControlFound: Boolean(extra.reviewControlFound),
+      clickedReview: Boolean(extra.clickedReview),
+      selectedReview: reviewSelected(),
+      boundaryVisible: containsVisibleText("Tab content couldn't render"),
+      tryAgainVisible: exactVisibleText("Try again"),
+      repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
+      mainVisible: exactVisibleText("Main"),
+      reviewTabCount: visibleElements("button, [role='tab'], [role='button']").filter((element) => normalize(element.textContent) === "Review").length,
+    });
+    const ignoreCandidate = (element) => {
+      const text = normalize(element.textContent || element.getAttribute("aria-label"));
+      return !text ||
+        text === "Review" ||
+        /^(New chat|Search|Settings|Plugins|Home|Projects)$/i.test(text) ||
+        /project selector|project actions|collapse|expand|pin|archive|delete|rename|try again/i.test(text);
+    };
+    const candidates = visibleElements("[data-app-action-sidebar-thread-row], button, [role='button'], a")
+      .filter((element) => !ignoreCandidate(element))
+      .slice(0, ${Number(maxThreadCandidates) || 12});
+    let index = 0;
+    const deadline = Date.now() + ${Number(timeoutMs) || 8000};
+    const step = () => {
+      const control = reviewControl();
+      if (control) {
+        control.click();
+        setTimeout(() => resolve(snapshot({
+          candidateCount: candidates.length,
+          attemptedCandidates: index,
+          reviewControlFound: true,
+          clickedReview: true,
+        })), 450);
+        return;
+      }
+      if (index >= candidates.length || Date.now() >= deadline) {
+        resolve(snapshot({
+          candidateCount: candidates.length,
+          attemptedCandidates: index,
+          reviewControlFound: false,
+          clickedReview: false,
+        }));
+        return;
+      }
+      candidates[index].click();
+      index += 1;
+      setTimeout(step, 450);
+    };
+    step();
+  })`);
+  const ok = Boolean(
+    status?.reviewControlFound &&
+    status.clickedReview &&
+    status.selectedReview &&
+    !status.boundaryVisible &&
+    !status.tryAgainVisible &&
+    status.repoHeaderVisible &&
+    status.mainVisible,
+  );
+  return {
+    ok,
+    ...status,
+    message: ok
+      ? undefined
+      : status?.reviewControlFound
+        ? "Review panel did not render nested repository content"
+        : "No review-capable thread was found",
+  };
 }
 
 function listRunningAuditApps({
@@ -518,7 +690,8 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
         bodyTextLength: bodyText.length,
         elementCount: document.querySelectorAll("*").length,
         interactiveCount,
-        sampleText: bodyText.slice(0, 120),
+        hasNewChatText: bodyText.includes("New chat"),
+        bodyTextSampleLength: Math.min(bodyText.length, 120),
       };
     })()`);
     if (lastStatus.hasErrorBoundary) {
@@ -992,7 +1165,6 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       return {
         editorMounted: Boolean(editor),
         editorEditable: editor?.getAttribute("contenteditable") === "true",
-        editorText: normalize(editor?.textContent),
         triggerMounted: Boolean(trigger),
         triggerText: normalize(trigger?.textContent),
         triggerDisabled: Boolean(trigger?.disabled),
@@ -1108,10 +1280,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     try {
       const details = checkCommon("projectColors");
       const sampleProject = {
-        projectId: "hassio-dev",
-        label: "hassio-dev",
-        path: "/tmp/hassio-dev",
-        repositoryData: { rootFolder: "hassio-dev" },
+        projectId: "alpha-workspace",
+        label: "alpha-workspace",
+        path: "/tmp/alpha-workspace",
+        repositoryData: { rootFolder: "alpha-workspace" },
       };
       const projectProps = window.CodexPlus.ui.sidebar.projectRowProps({ project: sampleProject });
       const threadProps = window.CodexPlus.ui.sidebar.threadRowProps({ project: sampleProject });
@@ -1150,11 +1322,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
             unstyledRows.length === 0
             ? null
             : {
-                projectId,
-                projectLabel: projectRow.getAttribute("data-app-action-sidebar-project-label") || projectRow.innerText.trim(),
-                projectAccent,
-                listAccent,
-                listBackground,
+                hasProjectRow: Boolean(projectRow),
+                accentMatched: listAccent === projectAccent,
+                listBackgroundTransparent: isTransparentColor(listBackground),
                 threadRows: threadRows.length,
                 unstyledRows: unstyledRows.length,
                 listMarked: list.hasAttribute("data-codex-plus-project-sidebar-color"),
@@ -1281,26 +1451,32 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
 
     try {
       const details = checkCommon("projectSelectorShortcut");
+      const queryFor = (label) => {
+        const letters = Array.from(label.toLowerCase()).filter((char) => /[a-z]/.test(char));
+        return [0, 4, 8].map((index) => letters[index]).filter(Boolean).join("");
+      };
       const projects = [
-        { projectId: "codex-plus", label: "codex-plus", repositoryData: { rootFolder: "codex-plus" } },
-        { projectId: "hassio-dev", label: "hassio-dev", repositoryData: { rootFolder: "hassio-dev" } },
-        { projectId: "dotfiles", label: "dotfiles", repositoryData: { rootFolder: "dotfiles" } },
+        { projectId: "alpha-workspace", label: "alpha-workspace", repositoryData: { rootFolder: "alpha-workspace" } },
+        { projectId: "beta-service", label: "beta-service", repositoryData: { rootFolder: "beta-service" } },
+        { projectId: "gamma-tools", label: "gamma-tools", repositoryData: { rootFolder: "gamma-tools" } },
       ];
-      const ranked = window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "hdev").map((project) => project.projectId);
-      const highlight = window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "hassio-dev", query: "hdev", jsx });
+      const targetProject = projects[1];
+      const query = queryFor(targetProject.label);
+      const ranked = window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, query).map((project) => project.projectId);
+      const highlight = window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: targetProject.label, query, jsx });
       const highlightCount = Array.isArray(highlight) ? highlight.filter((part) => part?.type === "strong").length : 0;
-      const rankedProjects = window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "hdev");
+      const rankedProjects = window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, query);
       const selected = [];
       const events = [];
       window.CodexPlusHost.adapters.projectSelector.acceptFirst(
         { key: "Enter", preventDefault() { events.push("preventDefault"); }, stopPropagation() { events.push("stopPropagation"); } },
         rankedProjects,
         (projectId) => selected.push(projectId),
-        "hdev",
+        query,
       );
-      if (ranked[0] !== "hassio-dev") throw new Error(`Fuzzy ranking returned ${ranked.join(", ")}`);
+      if (ranked[0] !== targetProject.projectId) throw new Error(`Fuzzy ranking returned ${ranked.join(", ")}`);
       if (highlightCount === 0) throw new Error("Fuzzy match highlight did not render");
-      if (selected[0] !== "hassio-dev" || events.length !== 2) throw new Error("Enter-to-first-result adapter did not select first ranked result");
+      if (selected[0] !== targetProject.projectId || events.length !== 2) throw new Error("Enter-to-first-result adapter did not select first ranked result");
       document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
       const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
         const rect = button.getBoundingClientRect();
@@ -1402,6 +1578,7 @@ async function runAudit(args, {
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
   const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
   const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
+  const verifyReviewPanel = operations.verifyReviewPanelRender || verifyReviewPanelRender;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
   const checkStability = operations.checkKeepOpenAppStability || checkKeepOpenAppStability;
   const preflightAudit = operations.auditPreflight || auditPreflight;
@@ -1489,8 +1666,8 @@ async function runAudit(args, {
     if (live.pluginResults?.projectSelectorShortcut?.ok) {
       const shortcut = await withAuditProgress(
         progress,
-        "Verifying project selector shortcut",
-        "Project selector shortcut opened",
+        "Verifying project selector shortcut and fuzzy match",
+        "Project selector shortcut fuzzy match passed",
         () => verifyProjectSelectorShortcut(cdp),
       );
       live.pluginResults.projectSelectorShortcut.shortcut = shortcut;
@@ -1500,6 +1677,23 @@ async function runAudit(args, {
         live.failures.push({
           plugin: "projectSelectorShortcut",
           message: shortcut.message || "Cmd+. did not open the project selector",
+        });
+      }
+    }
+    if (live.pluginResults?.nestedRepositories?.ok) {
+      const reviewPanel = await withAuditProgress(
+        progress,
+        "Verifying Review panel render",
+        "Review panel rendered",
+        () => verifyReviewPanel(cdp),
+      );
+      live.pluginResults.nestedRepositories.reviewPanel = reviewPanel;
+      if (!reviewPanel.ok) {
+        live.ok = false;
+        live.pluginResults.nestedRepositories.ok = false;
+        live.failures.push({
+          plugin: "nestedRepositories",
+          message: reviewPanel.message || "Review panel did not render nested repository content",
         });
       }
     }
@@ -1711,5 +1905,6 @@ module.exports = {
   waitForLiveRuntime,
   verifyMermaidViewerRender,
   verifyProjectSelectorShortcutKey,
+  verifyReviewPanelRender,
   waitForRendererTarget,
 };
