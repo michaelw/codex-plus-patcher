@@ -2,6 +2,12 @@ const { replaceOnce } = require("./replace");
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
+  if (
+    text.includes("function yr(e){let t=(0,Sr.c)(22),{composerMode:n,conversationId:r,disabled:i,setComposerMode:a,side:o}=e") &&
+    !text.includes("activeProjectIdOverride")
+  ) {
+    return text;
+  }
   if (text.includes("function sa(e){let t=(0,ha.c)(64),")) {
     let patched = replaceOnce(
       text,
@@ -127,6 +133,69 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text) {
+  if (
+    text.includes("function hte(){let e=(0,zA.c)(3),t,n;") &&
+    !text.includes("activeProjectIdOverride") &&
+    !text.includes("function qH({activeProjectIdOverride:e,")
+  ) {
+    return text;
+  }
+  if (text.includes("function iV({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function iV({activeProjectIdOverride:e,",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("oV")}function iV({activeProjectIdOverride:e,`,
+      "home project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "b=CPXP.fuzzyFilter(r,_);",
+      "home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "w=(0,YB.jsx)(Ql,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "w=(0,YB.jsx)(Ql,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,b,o,_),placeholder:c,className:`mb-1`})",
+      "home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,YB.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,YB.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,YB.jsx)})",
+      "home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,sV.jsxs)(Fc,{size:`composerSm`,color:`ghost`,className:`min-w-0`,children:",
+      "children:(0,sV.jsxs)(Fc,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,size:`composerSm`,color:`ghost`,className:`min-w-0`,children:",
+      "home project selector default button marker anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,sV.jsx)(yA,{categoryLabel:(0,sV.jsx)(X,{id:`composer.localCwdDropdown.footerCategory`",
+      "children:(0,sV.jsx)(yA,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,categoryLabel:(0,sV.jsx)(X,{id:`composer.localCwdDropdown.footerCategory`",
+      "home project selector footer button marker anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "Ce=()=>(0,sV.jsxs)(`button`,{className:pu(`heading-xl text-token-text-tertiary",
+      "Ce=()=>(0,sV.jsxs)(`button`,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:pu(`heading-xl text-token-text-tertiary",
+      "home project selector hero button marker anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "triggerButton:u??Se(),contentWidth:`menu`",
+      "triggerButton:CPXPST(u??Se(),s),contentWidth:`menu`",
+      "home project selector empty trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:u??(s===`hero`?Ce():s===`home`?Se():ye()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(u??(s===`hero`?Ce():s===`home`?Se():ye()),s),contentWidth:`workspace`",
+      "home project selector shortcut final dropdown trigger anchor",
+    );
+  }
   if (text.includes("function qH({activeProjectIdOverride:e,")) {
     let patched = replaceOnce(
       text,
@@ -239,6 +308,9 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
       "home project selector workspace trigger anchor",
     );
   }
+  if (!text.includes("function St({activeProjectIdOverride:e,")) {
+    return text;
+  }
   let patched = replaceOnce(
     text,
     "function St({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:a=!1,hideLabel:o=!1,onWorkspaceRootSelected:s,variant:c=`default`,isOpen:l,onOpenChange:m,triggerButton:_}){",
@@ -328,6 +400,9 @@ function patchRunCommandProjectSelectorShortcut(text) {
       `],[\`openFolder\`,GTt],${runtimeCommandEntries},[\`toggleSidebar\`,`,
       "codex plus runtime command dispatch anchor",
     );
+  }
+  if (!text.includes("],[`openFolder`,()=>{r()}],[`toggleSidebar`,")) {
+    return text;
   }
   return replaceOnce(
     text,
