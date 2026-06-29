@@ -1191,6 +1191,22 @@ test("local active workspace root dropdown exposes only the final selector trigg
   }
 });
 
+test("42026 local remote dropdown wraps the visible selector trigger", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.42026-4514");
+  const transform = findTransform(patchSet, "local-active-workspace-root-dropdown");
+  const fakeDropdownBundle = [
+    "function sa(e){let t=(0,ha.c)(64),",
+    "let H;t[30]!==a||t[31]!==c||t[32]!==o||t[33]!==l.cwd||t[34]!==l.hostId||t[35]!==u||t[36]!==oe||t[37]!==j||t[38]!==ie||t[39]!==ee||t[40]!==te||t[41]!==x||t[42]!==b||t[43]!==T||t[44]!==r||t[45]!==n||t[46]!==y||t[47]!==k||t[48]!==M||t[49]!==P||t[50]!==I||t[51]!==f||t[52]!==ce||t[53]!==s||t[54]!==i||t[55]!==p||t[56]!==h||t[57]!==g||t[58]!==B||t[59]!==_?(H=ce?(0,Q.jsx)(Bt,{open:n,onOpenChange:r,side:i,triggerButton:_===`summary-panel`?B:(0,Q.jsx)(Oe,{tooltipContent:h,tooltipMaxWidth:g,children:B}),children:(0,Q.jsxs)(`div`,{className:ht(`flex flex-col`),children:[]})}):(0,Q.jsx)(Oe,{tooltipContent:h,tooltipMaxWidth:g,children:(0,Q.jsx)(`span`,{className:`inline-flex`,children:(0,Q.jsx)(`div`,{className:`pointer-events-none`,children:B})})}),t[30]=a,t[31]=c,t[32]=o,t[33]=l.cwd,t[34]=l.hostId,t[35]=u,t[36]=oe,t[37]=j,t[38]=ie,t[39]=ee,t[40]=te,t[41]=x,t[42]=b,t[43]=T,t[44]=r,t[45]=n,t[46]=y,t[47]=k,t[48]=M,t[49]=P,t[50]=I,t[51]=f,t[52]=ce,t[53]=s,t[54]=i,t[55]=p,t[56]=h,t[57]=g,t[58]=B,t[59]=_,t[60]=H):H=t[60];",
+  ].join("");
+
+  const transformed = transform(fakeDropdownBundle);
+
+  assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,ga\)\}/);
+  assert.match(transformed, /triggerButton:CPXPST\(_===`summary-panel`\?B:\(0,Q\.jsx\)\(Oe,\{tooltipContent:h,tooltipMaxWidth:g,children:B\}\),_\)/);
+  assert.equal(transformed.match(/data-codex-plus-project-selector-trigger/g), null);
+});
+
 test("current home project dropdown marks the visible selector trigger", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
   const transform = findTransform(patchSet, "home-project-dropdown");
@@ -2674,6 +2690,19 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /opacity:1!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-light-fg\)!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):is\(\[class\*="rounded-full"\],\[class\*="rounded-"\]\):is\(\[class\*="bg-token-foreground"\],\[class\*="bg-token-input"\],\[class\*="bg-token-dropdown"\]\)/);
+  assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
+  assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
+  assert.match(bubblePlugin, /:is\(:hover,:focus-visible,:active,\[data-state="open"\],\[aria-expanded="true"\]\)\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important;background-image:none!important/);
+  assert.match(bubblePlugin, /:is\(:hover,:focus-visible,:active,\[data-state="open"\],\[aria-expanded="true"\]\).*background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important;background-image:none!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\]\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\]:is\(:hover,:focus-visible,:active,\[data-state="open"\],\[aria-expanded="true"\]\)\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important;background-image:none!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\] :is\(\[role="button"\],\[role="button"\] span,\[class\*="bg-token-menu-background"\]\)\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 22%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\] \[role="button"\]::before\{background:linear-gradient\(to right,transparent,color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\) 55%,color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)\)!important\}/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\].*background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-attachment-pill\] \[role="button"\]::before.*background:linear-gradient\(to right,transparent,color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\) 55%,color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)\)!important/);
+  assert.match(bubblePlugin, /:not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\)/);
+  assert.match(bubblePlugin, /stroke:currentColor!important/);
   assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /background-image:none!important/);
 });
