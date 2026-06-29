@@ -111,13 +111,36 @@ patch injection code.
 
 ## Porting A New Codex Version
 
-1. Install the new `Codex.app`.
-2. Read the app identity:
+1. Intake the new mirror release:
 
    ```sh
-   /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Codex.app/Contents/Info.plist
-   /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /Applications/Codex.app/Contents/Info.plist
-   shasum -a 256 /Applications/Codex.app/Contents/Resources/app.asar
+   npm run release:intake
+   ```
+
+   To intake an older version or a non-default architecture, pass the release
+   tag or asset name:
+
+   ```sh
+   npm run release:intake -- --tag codex-app-26.623.61825
+   npm run release:intake -- --asset Codex-darwin-x64-26.623.61825.zip
+   npm run release:intake -- --newest 3
+   ```
+
+   The script downloads the selected zip from `Wangnov/codex-app-mirror`,
+   verifies it against `SHA256SUMS-macos.txt` or `SHA256SUMS.txt`, and stores
+   the original app under the main checkout's ignored
+   `work/sources/<version>/Codex.app`, even when run from a git worktree.
+   It also writes `work/sources/<version>/source.json` with the verified zip
+   hash, bundle version, and source `app.asar` hash.
+2. Use the intaken source app for patch dry-runs and workspace-local applies:
+
+   ```sh
+   codex-plus-patcher apply \
+     --mode dev \
+     --patch-dir ./src/patches \
+     --source "work/sources/<version>/Codex.app" \
+     --dry-run \
+     --json
    ```
 
 3. Inspect ASAR chunk names with `readAsar` and `walkFiles` from
@@ -137,6 +160,37 @@ patch injection code.
 
 Prefer copying a patch set and tightening it to the new build over making an
 older patch less strict.
+
+## Regression From Cached Sources
+
+After intaking mirror releases, audit every supported cached source app:
+
+```sh
+npm run regression:sources
+```
+
+The runner scans the main checkout's ignored `work/sources/*/Codex.app`,
+matches each source against the registered patch sets, applies supported
+versions to isolated targets under `work/regression/sources/<version>/`, and
+runs the live plugin audit sequentially. Narrow the run with a case-insensitive
+filter or limit the run to the newest cached sources:
+
+```sh
+npm run regression:sources -- --filter 61825
+npm run regression:sources -- --newest 2
+```
+
+Use `--auto-clean` to remove each generated regression directory after its
+audit finishes, or run cleanup only:
+
+```sh
+npm run regression:sources -- --auto-clean
+npm run regression:sources -- --clean
+npm run regression:sources -- --clean --filter 61825
+```
+
+Cleanup only removes generated output under `work/regression/sources/`; it must
+not remove the original app cache under `work/sources/`.
 
 ## Release And Package Checks
 

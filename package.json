@@ -23,7 +23,9 @@
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check-syntax.js",
     "check:pr": "node scripts/safe-automerge-pr.js --check",
-    "pr:automerge": "node scripts/safe-automerge-pr.js"
+    "pr:automerge": "node scripts/safe-automerge-pr.js",
+    "regression:sources": "node scripts/regression-sources.js",
+    "release:intake": "node scripts/release-intake.js"
   },
   "engines": {
     "node": ">=20"
