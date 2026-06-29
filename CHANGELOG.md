@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.10.1...v0.11.0) (2026-06-29)
+
+
+### Features
+
+* support Codex 26.623.70822 ([#61](https://github.com/michaelw/codex-plus-patcher/issues/61)) ([3d37a13](https://github.com/michaelw/codex-plus-patcher/commit/3d37a1332bee41ac371d5252cb0a104007e2d172))
+
 ## [0.10.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.10.0...v0.10.1) (2026-06-29)
 
 
