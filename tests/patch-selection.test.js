@@ -482,7 +482,7 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
 
   const result = await applyPatchSet({
     sourceApp: "/Applications/Codex.app",
-    targetApp: "/Users/example/Applications/Codex Plus.app",
+    targetApp: "/tmp/codex-plus-audit/Applications/Codex Plus.app",
     patchSet,
     progress: (event) => progress.push(event),
     progressOffset: 2,
@@ -534,7 +534,7 @@ test("applyPatchSet dry-run reports runtime asset files", async () => {
 
   const result = await applyPatchSet({
     sourceApp: "/Applications/Codex.app",
-    targetApp: "/Users/example/Applications/Codex Plus.app",
+    targetApp: "/tmp/codex-plus-audit/Applications/Codex Plus.app",
     patchSet,
     dryRun: true,
   });
@@ -1014,78 +1014,79 @@ test("project selector shortcut command focuses and opens the mounted selector t
   assert.deepEqual(plain(command.palette), { enabled: true, keywords: ["project", "selector", "new chat"] });
   assert.deepEqual(plain(command.shortcut.defaultKeybindings), [{ key: "CmdOrCtrl+." }]);
   const projects = [
-    { projectId: "a", label: "codex-plus-patcher", path: "/tmp/codex-plus-patcher" },
-    { projectId: "b", label: "hassio-dev", path: "/tmp/hassio-dev" },
-    { projectId: "c", label: "homeassistant-config-aus00", path: "/tmp/homeassistant-config-aus00" },
-    { projectId: "d", label: "event-replay-capture", path: "/tmp/hdev/event-replay-capture" },
+    { projectId: "a", label: "alpha-workspace", path: "/tmp/alpha-workspace" },
+    { projectId: "b", label: "beta-service", path: "/tmp/beta-service" },
+    { projectId: "c", label: "gamma-tools", path: "/tmp/gamma-tools" },
+    { projectId: "d", label: "delta-service", path: "/tmp/delta-service/archive" },
   ];
   assert.deepEqual(
-    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "codex   plus").map((project) => project.projectId),
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "alpha   work").map((project) => project.projectId),
     ["a"],
   );
   assert.deepEqual(
-    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "hdev").map((project) => project.projectId),
-    ["b", "d"],
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "beta service").map((project) => project.projectId),
+    ["b"],
   );
   const jsx = (type, props, key) => ({ type, props, key });
   const normalize = (value) => JSON.parse(JSON.stringify(value));
   delete window.fzf;
   assert.deepEqual(
-    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "codex plus").map((project) => project.projectId),
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "alpha work").map((project) => project.projectId),
     ["a"],
   );
   assert.deepEqual(
-    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "hdev").map((project) => project.projectId),
-    ["b", "d"],
+    window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "beta service").map((project) => project.projectId),
+    ["b"],
   );
   assert.deepEqual(
-    normalize(window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "hassio-dev", query: "hdev", jsx })),
+    normalize(window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "beta-service", query: "bs", jsx })),
     [
       {
         type: "strong",
         props: {
           className: "font-semibold",
           style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
-          children: "h",
+          children: "b",
         },
         key: 0,
       },
-      "assio-",
+      "eta-",
       {
         type: "strong",
         props: {
           className: "font-semibold",
           style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
-          children: "dev",
+          children: "s",
         },
         key: 1,
       },
+      "ervice",
     ],
   );
   window.fzf = { Fzf: FakeFzf };
   assert.deepEqual(
-    normalize(window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "codex-plus", query: "cp", jsx })),
+    normalize(window.CodexPlus.ui.projectSelector.fuzzyHighlight({ text: "alpha-workspace", query: "aw", jsx })),
     [
       {
         type: "strong",
         props: {
           className: "font-semibold",
           style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
-          children: "c",
+          children: "a",
         },
         key: 0,
       },
-      "odex-",
+      "lpha-",
       {
         type: "strong",
         props: {
           className: "font-semibold",
           style: { color: "var(--color-token-text-link-foreground, #2563eb)" },
-          children: "p",
+          children: "w",
         },
         key: 1,
       },
-      "lus",
+      "orkspace",
     ],
   );
   assert.equal(keydownListeners.length, 1);
@@ -1264,6 +1265,28 @@ test("current home project dropdown delegates search and highlight to Codex Plus
   assert.match(transformed, /b=CPXP\.fuzzyFilter\(r,_\)/);
   assert.match(transformed, /onKeyDown:e=>CPXP\.acceptFirst\(e,b,o,_\)/);
   assert.match(transformed, /children:CPXP\.fuzzyHighlight\(e\.label,_,X\.jsx\)/);
+  assert.doesNotMatch(transformed, /toLowerCase\(\)\.includes\(e\)/);
+});
+
+test("61825 home project dropdown delegates search and highlight to Codex Plus", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.61825-4548");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const fakeDropdownBundle = [
+    "function FH(e){let t=(0,IH.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,onSelectProjectId:o,keepOpenOnSelect:s,projectlessActionLabel:c,onSelectProjectless:l,footerItems:u,onAddLocalProject:d,onAddRemoteProject:f,emptyMessage:p}=e,m=s===void 0?!1:s,h=Wh(),g=l!=null&&c!=null,[_,v]=(0,LH.useState)(``),y,b,x,S,C,w;if(t[0]!==g||t[1]!==u||t[2]!==r||t[3]!==h||t[4]!==m||t[5]!==d||t[6]!==f||t[7]!==o||t[8]!==i||t[9]!==_||t[10]!==a){let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let n=new Map;r.forEach(e=>{if(e.path==null)return;let t=n.get(e.label);if(t==null){n.set(e.label,[e.path]);return}t.push(e.path)}),x=g||u!=null||d!=null||f!=null;let s;t[17]===Symbol.for(`react.memo_cache_sentinel`)?(s=e=>{v(e.target.value)},t[17]=s):s=t[17];let c;t[18]===h?c=t[19]:(c=h.formatMessage({id:`composer.localCwdDropdown.searchPlaceholder`,defaultMessage:`Search projects`,description:`Placeholder for searching the workspace root dropdown`}),t[18]=h,t[19]=c),t[20]!==_||t[21]!==c?(w=(0,RH.jsx)(oc,{value:_,onChange:s,placeholder:c,className:`mb-1`}),t[20]=_,t[21]=c,t[22]=w):w=t[22],y=pc.Section,S=`flex max-h-[calc((1lh+var(--padding-row-y)*2)*5)] flex-col overflow-y-auto text-sm [--edge-fade-distance:1.5rem]`,C=b.map(e=>{let t=i[e.projectId]??null,r=(0,RH.jsx)(jH,{className:`icon-xs`,isRemoteProject:e.projectKind===`remote`}),s=e.repositoryData?.rootFolder,c=s!=null&&s!==e.label,l=n.get(e.label)??[],u=l.length>1&&e.path!=null?ae(e.path,l):null;return(0,RH.jsx)(`div`,{className:`flex flex-col`,children:(0,RH.jsxs)(Do,{RightIcon:a.includes(e.projectId)?sc:void 0,tooltipText:u??void 0,tooltipAlign:`center`,onSelect:t=>{m&&t.preventDefault(),o(e.projectId)},children:[(0,RH.jsx)(pc.ItemIcon,{size:`xs`,children:t==null?r:(0,RH.jsx)(Ko,{appearance:t,className:`size-4`,fallbackIcon:r})}),(0,RH.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,RH.jsx)(`span`,{className:`truncate`,children:e.label}),e.hostDisplayName==null?null:(0,RH.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:e.hostDisplayName}),c?(0,RH.jsx)(`span`,{className:`truncate text-sm text-token-description-foreground`,children:s}):null]})]})},e.projectId)}),t[0]=g,t[1]=u,t[2]=r,t[3]=h,t[4]=m,t[5]=d,t[6]=f,t[7]=o,t[8]=i,t[9]=_,t[10]=a,t[11]=y,t[12]=b,t[13]=x,t[14]=S,t[15]=C,t[16]=w}else y=t[11],b=t[12],x=t[13],S=t[14],C=t[15],w=t[16];return null}",
+    "function qH({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:i=!1,hideLabel:a=!1,onWorkspaceRootSelected:o,variant:s=`default`,isOpen:c,onOpenChange:l,triggerButton:u}){",
+    "children:(0,XH.jsxs)(Ji,{size:`composerSm`,color:`ghost`,className:`min-w-0`,children:[me]})",
+    "children:(0,XH.jsx)(gv,{categoryLabel:(0,XH.jsx)(Y,{id:`composer.localCwdDropdown.footerCategory`,defaultMessage:`Project`}),className:Qo(b.homeProjectButton,`min-w-0 gap-2`)})",
+    "Ce=()=>(0,XH.jsxs)(`button`,{className:Qo(`heading-xl text-token-text-tertiary ml-2`,i?`cursor-default opacity-60`:`cursor-interaction`),type:`button`,disabled:i,children:[de]});",
+    "if(de)return(0,XH.jsxs)(bo,{open:le,onOpenChange:ue,onCloseAutoFocus:ne,side:`top`,triggerButton:u??Se(),contentWidth:`menu`,children:[w?null:null,ve]});",
+    "let Pe=(0,XH.jsx)(bo,{open:le,onOpenChange:ue,onCloseAutoFocus:ne,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?Ce():s===`home`?Se():ye()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:(0,XH.jsx)(FH,{groups:S})});",
+  ].join("");
+
+  const transformed = transform(fakeDropdownBundle);
+
+  assert.match(transformed, /let CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /b=CPXP\.fuzzyFilter\(r,_\)/);
+  assert.match(transformed, /onKeyDown:e=>CPXP\.acceptFirst\(e,b,o,_\)/);
+  assert.match(transformed, /children:CPXP\.fuzzyHighlight\(e\.label,_,RH\.jsx\)/);
   assert.doesNotMatch(transformed, /toLowerCase\(\)\.includes\(e\)/);
 });
 
@@ -1455,7 +1478,7 @@ test("project path header plugin formats, hides, and copies paths", () => {
         },
       },
     };
-    const longPath = "/Users/example/src/similarly-named-project/worktrees/generated-thread";
+    const longPath = "/tmp/codex-plus-audit/src/similarly-named-project/worktrees/generated-thread";
     const jsx = (type, props, key) => ({ type, props, key });
     const jsxs = jsx;
     const Tooltip = function Tooltip(props) { return props.children; };
@@ -1629,9 +1652,38 @@ test("header patch renders project path accessories from thread context", () => 
       assert.doesNotMatch(transformedLocalConversation, /t\[32\]=k/);
       continue;
     }
+    if (patchSet.id === "codex-26.623.61825-4548") {
+      const transform = findTransform(patchSet, "header");
+      const transformed = transform([
+        "function Jn(e){let t=(0,$n.c)(66),{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o}=e,s=Fe(),c=a??Xn,l=s.pathname===`/`,u=Yn,",
+        "let x;t[35]!==c||t[36]!==g||t[37]!==i?(x=(0,$.jsx)(`div`,{className:`mr-3 line-clamp-1 flex min-w-0 flex-1 items-center gap-1 truncate`,style:{viewTransitionName:`header-title`},children:i?(0,$.jsxs)(`div`,{className:`flex min-w-0 flex-1 items-center gap-1`,children:[(0,$.jsx)(Qn,{onClick:c}),(0,$.jsx)(O,{color:`ghostActive`,type:`button`,onClick:u,className:`min-w-0 flex-1 truncate !px-0 !py-0 text-left text-sm text-token-foreground hover:!bg-transparent hover:opacity-80 electron:font-medium`,children:(0,$.jsx)(`span`,{className:`truncate`,children:i})})]}):(0,$.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,$.jsx)(Zn,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[35]=c,t[36]=g,t[37]=i,t[38]=x):x=t[38];",
+      ].join(""));
 
-    const transform = collectFileTransforms(patchSet).find(([filePath]) => filePath.includes("header-DgzE38hF"))?.[1];
-    assert.equal(typeof transform, "function", `${patchSet.id} has header transform`);
+      assert.match(transformed, /function CPXThreadHeaderAccessories\(e\)/);
+      assert.match(transformed, /CPX_headerContext=\{cwd:null,hostId:null,header:\{surface:`header`,titleText:typeof i==`string`\?i:null\}\}/);
+      assert.match(transformed, /deps:\{jsx:\$\.jsx,jsxs:\$\.jsxs,Tooltip:ie\}/);
+      assert.match(transformed, /children:\[\(0,\$\.jsx\)\(Qn,\{onClick:c\}\),\(0,\$\.jsx\)\(O,\{color:`ghostActive`/);
+      assert.match(transformed, /\}\),CPX_headerAccessories\]\}\):\(0,\$\.jsx\)\(`span`/);
+
+      const localConversationTransform = findTransform(patchSet, "local-conversation-page");
+      const transformedLocalConversation = localConversationTransform([
+        "function mi(e){let t=(0,U.c)(32),",
+        "let t=(0,U.c)(32),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:i,projectIcon:a,projectHoverCardContent:o,projectName:s,title:c,titleSuffix:l,cwd:u,canPin:p,hideForkActions:h}=e,g=p===void 0?!0:p,_=R(),v=f(),y;",
+        "let k;t[26]===Symbol.for(`react.memo_cache_sentinel`)?(k=null,t[26]=k):k=t[26];",
+        "let A;return t[27]!==T||t[28]!==E||t[29]!==D||t[30]!==k?(A=(0,W.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,W.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[T,E,D,k]})}),t[27]=T,t[28]=E,t[29]=D,t[30]=k,t[31]=A):A=t[31],A}",
+      ].join(""));
+
+      assert.match(transformedLocalConversation, /function CPXThreadHeaderAccessories\(e\)/);
+      assert.match(transformedLocalConversation, /CPX_headerContext=\{cwd:u,hostId:null/);
+      assert.match(transformedLocalConversation, /surface:`local-conversation`/);
+      assert.match(transformedLocalConversation, /projectName:s\?\?null/);
+      assert.match(transformedLocalConversation, /deps:\{jsx:W\.jsx,jsxs:W\.jsxs,Tooltip:ge\}/);
+      assert.match(transformedLocalConversation, /children:\[T,E,D,k\]/);
+      assert.match(transformedLocalConversation, /let CPX_headerContext=.*k=CPXThreadHeaderAccessories/);
+      continue;
+    }
+
+    const transform = findTransform(patchSet, "header");
 
     const transformed = transform(fakeHeaderBundle);
     assert.match(transformed, /from"\.\/thread-context-B0hBrRyZ\.js"/);
@@ -2022,13 +2074,28 @@ test("review patch mounts repository mux before main branch selection", () => {
       assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
       continue;
     }
+    if (patchSet.id === "codex-26.623.61825-4548") {
+      const transform = findTransform(patchSet, "review");
+      const transformed = transform([
+        "function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+        "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,aI.jsx)(HE,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      ].join(""));
+
+      assert.match(transformed, /CodexPlusHost\.adapters\.review/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[aI,fE,We,K,za,ul,cl,ac,dl,re,je,dE,kn/);
+      assert.match(
+        transformed,
+        /s=\(0,aI\.jsx\)\(CPXRM,\{mainReviewContent:\(0,aI\.jsx\)\(HE,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
+      );
+      assert.doesNotMatch(transformed, /plugins\?\.get\(`nestedRepositories`\)\?\.exports/);
+      assert.doesNotMatch(transformed, /function CPXBranchPicker/);
+      assert.doesNotMatch(transformed, /function CPXRepoPatchGroup/);
+      assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
+      continue;
+    }
 
     const names = versionedNames(patchSet);
-    const transform = collectFileTransforms(patchSet).find(
-      ([filePath]) => filePath.includes("thread-side-panel-tabs"),
-    )?.[1];
-
-    assert.equal(typeof transform, "function", `${patchSet.id} has review transform`);
+    const transform = findTransform(patchSet, "review");
 
     const transformed = transform(fakeBundle);
 
@@ -2245,6 +2312,23 @@ test("current project child lists receive their project color attributes", () =>
   assert.doesNotMatch(transformed, /CPXPR\(n\),children:Y/);
 });
 
+test("61825 project child lists receive their project color attributes", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.61825-4548");
+  const appMainFile = findTransformPath(patchSet, "app-main");
+  const fakeCurrentAppMainBundle = [
+    "function jy(e){let t=(0,Fy.c)(57),",
+    "O=Ta.sidebarProjectRow({collapsed:a,label:p,projectId:_})",
+    "function _b(e){let t=(0,zb.c)(44),{threadKeys:n,allowThreadDnd:r,threadOrderIsPrecomputed:i,group:a,startNewConversation:o,",
+    "let te;return t[41]!==Y||t[42]!==V?(te=(0,$.jsx)(`div`,{...V,children:Y}),t[41]=Y,t[42]=V,t[43]=te):te=t[43],te}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, appMainFile, fakeCurrentAppMainBundle);
+
+  assert.match(transformed, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
+  assert.match(transformed, /O=\{\.\.\.Ta\.sidebarProjectRow\(\{collapsed:a,label:p,projectId:_\}\),\.\.\.CPXPR\(\{projectId:_,label:p\}\)\}/);
+  assert.match(transformed, /te=\(0,\$\.jsx\)\(`div`,\{\.\.\.V,\.\.\.CPXPR\(a\),children:Y\}\)/);
+});
+
 test("31921 project child lists receive their project color attributes", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.31921-4452");
   const appMainFile = findTransformPath(patchSet, "app-main");
@@ -2317,9 +2401,9 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   );
 
   const project = {
-    projectId: "thand-agent",
-    label: "thand-agent",
-    path: "/Users/example/.codex/worktrees/c7ee/thand-agent",
+    projectId: "alpha-workspace",
+    label: "alpha-workspace",
+    path: "/tmp/codex-plus-audit/worktrees/c7ee/alpha-workspace",
     hostId: "local",
   };
   const sidebarProps = context.window.CodexPlus.ui.sidebar.projectRowProps({ project });
@@ -2327,7 +2411,7 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     project: { cwd: project.path, hostId: "local" },
   });
   const worktreeProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({
-    project: { cwd: "/Users/example/.codex/worktrees/c7ee/thand-agent", hostId: "local" },
+    project: { cwd: "/tmp/codex-plus-audit/worktrees/c7ee/alpha-workspace", hostId: "local" },
   });
 
   assert.equal(
@@ -2339,17 +2423,8 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     sidebarProps.style["--codex-plus-project-accent"],
   );
 
-  const activeStyle = {
-    "--codex-plus-project-accent": "#bab0ac",
-    "--codex-plus-project-bg-light": "#e7e5e4",
-    "--codex-plus-project-fg-light": "#57534e",
-    "--codex-plus-project-soft-light": "#fbfaf9",
-    "--codex-plus-project-bg-dark": "color-mix(in srgb, #bab0ac 24%, transparent)",
-    "--codex-plus-project-fg-dark": "#f8fafc",
-    "--codex-plus-project-border-dark": "color-mix(in srgb, #bab0ac 62%, transparent)",
-    "--codex-plus-project-separator-light": "rgba(17,24,39,.24)",
-    "--codex-plus-project-separator-dark": "rgba(255,255,255,.34)",
-  };
+  const alternateWorktreeCwd = "/tmp/codex-plus-audit/worktrees/6499/alpha-workspace";
+  const activeStyle = sidebarProps.style;
   context.document.querySelector = () => ({
     computedStyle: {
       getPropertyValue(name) {
@@ -2358,17 +2433,21 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     },
   });
   const worktreeComposerProps = context.window.CodexPlus.ui.composer.surfaceProps({
-    project: { cwd: "/Users/example/.codex/worktrees/6499/codex-plus-patcher", hostId: "local" },
+    project: { cwd: alternateWorktreeCwd, hostId: "local" },
   });
   assert.equal(
     worktreeComposerProps.style["--codex-plus-project-accent"],
-    context.window.CodexPlus.plugins.get("projectColors").exports.style({
-      cwd: "/Users/example/.codex/worktrees/6499/codex-plus-patcher",
-      hostId: "local",
-    })["--codex-plus-project-accent"],
+    activeStyle["--codex-plus-project-accent"],
   );
   assert.notEqual(worktreeComposerProps.style["--codex-plus-project-accent"], "#bab0ac");
 
+  context.document.querySelector = () => ({
+    computedStyle: {
+      getPropertyValue(name) {
+        return name === "--codex-plus-project-accent" ? "#bab0ac" : "";
+      },
+    },
+  });
   const missingProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({});
   assert.equal(missingProjectProps.style["--codex-plus-project-accent"], "#bab0ac");
 });
@@ -2527,6 +2606,12 @@ test("user message patch applies variant-specific bubble colors with default fal
           "return(0,HK.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
           "fe=V?(0,KK.jsx)(`div`,{className:`w-full p-px`,children:(0,KK.jsx)(xst,{cwd:x??null,hostId:S,initialMessage:z.trim(),onCancel:()=>{ne(null)},onDraftChange:e=>{ne(e)},onSubmit:ie})}):q?(0,KK.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,tabIndex:0,className:Y(e,`text-left focus-visible:ring-2 focus-visible:outline-none`,I&&`cursor-interaction`),",
         ].join("")
+      : patchSet.id === "codex-26.623.61825-4548"
+        ? [
+          "function Kc({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+          "return(0,Jc.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+          "ve=B?(0,Y.jsx)(`div`,{className:`w-full p-px`,children:(0,Y.jsx)(Kc,{cwd:x??null,hostId:S,initialMessage:ee.trim(),onCancel:()=>{W(null)},onDraftChange:e=>{W(e)},onSubmit:de})}):re?(0,Y.jsx)(`div`,{\"data-user-message-bubble\":!0,role:L?`button`:void 0,",
+        ].join("")
       : fakeUserMessageBundle.replace("__SRC_FILE__", names.srcFile);
     const transforms = collectFileTransforms(patchSet).filter(
       ([filePath]) => filePath === userMessageAttachmentsFile,
@@ -2557,6 +2642,13 @@ test("user message patch applies variant-specific bubble colors with default fal
     }
     if (patchSet.id === "codex-26.623.42026-4514") {
       assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXBubbleProps\(\{project:\{cwd:x,hostId:S\}\}\),role:I\?`button`:void 0/);
+      assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
+      assert.doesNotMatch(transformed, /CPX_localThreadKey/);
+      assert.doesNotMatch(transformed, /CPX_threadProjectId/);
+      continue;
+    }
+    if (patchSet.id === "codex-26.623.61825-4548") {
+      assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXBubbleProps\(\{project:\{cwd:x,hostId:S\}\}\),role:L\?`button`:void 0/);
       assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
       assert.doesNotMatch(transformed, /CPX_localThreadKey/);
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
@@ -2616,6 +2708,11 @@ test("composer patch applies the user entry marker and shared color variables", 
           "function Ss(e){if(H?.type!==`local`",
           "(0,iW.jsx)(eW,{className:A,externalFooterVariant:k,hasDropTargetPortal:fc,",
         ].join("")
+      : patchSet.id === "codex-26.623.61825-4548"
+        ? [
+          "function MN(e){let t=(0,KN.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,f=i===void 0?`default`:i,p=o===void 0?!1:o,m=s===void 0?`multiline`:s,h=f===`home`&&`z-10`,g=m===`single-line`?`overflow-visible rounded-full`:AN.multilineSurface,_=p&&`bg-token-dropdown-background/50`,v;t[0]!==r||t[1]!==h||t[2]!==g||t[3]!==_?(v=bi(`composer-surface-chrome relative flex flex-col bg-token-input-background/90 backdrop-blur-lg electron:dark:bg-token-dropdown-background`,h,g,_,r),t[0]=r,t[1]=h,t[2]=g,t[3]=_,t[4]=v):v=t[4];let y;return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,qN.jsx)(Xo.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
+          "(0,dW.jsx)(sW,{className:T,externalFooterVariant:w,hasDropTargetPortal:Fc,",
+        ].join("")
       : fakeComposerBundle.replace("__THREAD_CONTEXT_INPUTS_FILE__", names.threadContextInputsFile);
     if (patchSet.id === "codex-26.616.81150-4306" || patchSet.id === "codex-26.616.71553-4265") {
       fakeBundle = fakeBundle
@@ -2672,6 +2769,16 @@ test("composer patch applies the user entry marker and shared color variables", 
       assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);
       assert.match(transformed, /\.\.\.CPXSurfaceProps\(\{project:\{cwd:fn,hostId:sr\}\}\),className:A/);
       assert.doesNotMatch(transformed, /CPXComposerProps/);
+      assert.doesNotMatch(transformed, /CPX_localThreadKey/);
+      assert.doesNotMatch(transformed, /CPX_threadProjectId/);
+      continue;
+    }
+    if (patchSet.id === "codex-26.623.61825-4548") {
+      assert.match(transformed, /function MN\(e\)\{let t=\(0,KN\.c\)\(13\)/);
+      assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+      assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);
+      assert.match(transformed, /codexPlusProps:CPXSurfaceProps\(\{project:\{cwd:Cn,hostId:Ar\}\}\)/);
+      assert.match(transformed, /key:CPXSurfaceProps\(\{project:\{cwd:Cn,hostId:Ar\}\}\)\?\.\[`data-codex-plus-project-color`\]\?\?``/);
       assert.doesNotMatch(transformed, /CPX_localThreadKey/);
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;

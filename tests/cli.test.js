@@ -39,6 +39,7 @@ const {
   pluginAuditExpression,
   runAudit,
   verifyProjectSelectorShortcutKey,
+  verifyReviewPanelRender,
   waitForAppShellMounted,
 } = require("../src/core/plugin-audit");
 
@@ -183,7 +184,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
 test("formatResult prints a concise open command for created apps", () => {
   const output = formatResult({
     sourceApp: "/Applications/Codex.app",
-    targetApp: "/Users/example/Applications/Codex Plus.app",
+    targetApp: "/tmp/codex-plus-audit/Applications/Codex Plus.app",
     patchSet: "codex-example",
     patches: ["bundle-identity"],
     addedFiles: ["webview/assets/codex-plus/runtime.js"],
@@ -192,7 +193,7 @@ test("formatResult prints a concise open command for created apps", () => {
   });
 
   assert.match(output, /Codex Plus app created\./);
-  assert.match(output, /Open: open "\/Users\/example\/Applications\/Codex Plus\.app"/);
+  assert.match(output, /Open: open "\/tmp\/codex-plus-audit\/Applications\/Codex Plus\.app"/);
   assert.doesNotMatch(output, /Added files:/);
 });
 
@@ -231,7 +232,8 @@ function sampleAuditResult(overrides = {}) {
       bodyTextLength: 42,
       elementCount: 100,
       interactiveCount: 5,
-      sampleText: "New chat",
+      hasNewChatText: true,
+      bodyTextSampleLength: 42,
     },
     cleanupResult: {
       attempted: true,
@@ -417,6 +419,14 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   const evaluations = [
     { triggerCount: 1, clickedNewChat: true },
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    {
+      suitableProjectFound: true,
+      queryLength: 3,
+      visibleResultCount: 2,
+      selectedProjectStillVisible: true,
+      noProjectsFoundVisible: false,
+      highlightCount: 2,
+    },
   ];
   const cdp = {
     send(method, params) {
@@ -432,6 +442,16 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
 
   assert.equal(result.ok, true);
   assert.equal(result.opened, true);
+  assert.deepEqual(result.fuzzyDom, {
+    suitableProjectFound: true,
+    queryLength: 3,
+    visibleResultCount: 2,
+    selectedProjectStillVisible: true,
+    noProjectsFoundVisible: false,
+    highlightCount: 2,
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(result.fuzzyDom, "label"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.fuzzyDom, "path"), false);
   assert.deepEqual(sent.map((call) => call.method), [
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
@@ -454,6 +474,125 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     nativeVirtualKeyCode: 47,
     modifiers: 4,
   });
+});
+
+test("project selector shortcut verifier fails when no suitable project label exists", async () => {
+  const sent = [];
+  const evaluations = [
+    { triggerCount: 1, clickedNewChat: true },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    {
+      suitableProjectFound: false,
+      queryLength: 0,
+      visibleResultCount: 0,
+      selectedProjectStillVisible: false,
+      noProjectsFoundVisible: false,
+      highlightCount: 0,
+    },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.fuzzyDom.suitableProjectFound, false);
+  assert.match(result.message, /fuzzy filtering/);
+  assert.equal(JSON.stringify(result).includes("/"), false);
+  assert.deepEqual(sent.map((call) => call.params.key), [".", ".", "Escape", "Escape"]);
+});
+
+test("review panel verifier returns sanitized success details", async () => {
+  const result = await verifyReviewPanelRender({
+    evaluate() {
+      return Promise.resolve({
+        candidateCount: 3,
+        attemptedCandidates: 1,
+        reviewControlFound: true,
+        clickedReview: true,
+        selectedReview: true,
+        boundaryVisible: false,
+        tryAgainVisible: false,
+        repoHeaderVisible: true,
+        mainVisible: true,
+        reviewTabCount: 1,
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.candidateCount, 3);
+  assert.equal(result.reviewControlFound, true);
+  assert.equal(result.message, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, "title"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, "path"), false);
+});
+
+test("review panel verifier fails when no review-capable thread exists", async () => {
+  const result = await verifyReviewPanelRender({
+    evaluate() {
+      return Promise.resolve({
+        candidateCount: 2,
+        attemptedCandidates: 2,
+        reviewControlFound: false,
+        clickedReview: false,
+        selectedReview: false,
+        boundaryVisible: false,
+        tryAgainVisible: false,
+        repoHeaderVisible: false,
+        mainVisible: false,
+        reviewTabCount: 0,
+      });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "No review-capable thread was found");
+  assert.deepEqual(Object.keys(result).sort(), [
+    "attemptedCandidates",
+    "boundaryVisible",
+    "candidateCount",
+    "clickedReview",
+    "mainVisible",
+    "message",
+    "ok",
+    "repoHeaderVisible",
+    "reviewControlFound",
+    "reviewTabCount",
+    "selectedReview",
+    "tryAgainVisible",
+  ].sort());
+});
+
+test("review panel verifier fails when the tab boundary is visible", async () => {
+  const result = await verifyReviewPanelRender({
+    evaluate() {
+      return Promise.resolve({
+        candidateCount: 1,
+        attemptedCandidates: 0,
+        reviewControlFound: true,
+        clickedReview: true,
+        selectedReview: true,
+        boundaryVisible: true,
+        tryAgainVisible: true,
+        repoHeaderVisible: false,
+        mainVisible: false,
+        reviewTabCount: 1,
+      });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Review panel did not render nested repository content");
+  assert.equal(result.boundaryVisible, true);
+  assert.equal(result.tryAgainVisible, true);
 });
 
 test("keep-open stability check reports live and exited audit apps", async () => {
@@ -547,7 +686,8 @@ test("app shell wait fails while the startup loader remains", async () => {
             bodyTextLength: 0,
             elementCount: 141,
             interactiveCount: 0,
-            sampleText: "",
+            hasNewChatText: false,
+            bodyTextSampleLength: 0,
           });
         },
       },
@@ -567,7 +707,8 @@ test("app shell wait returns once real UI has mounted", async () => {
       bodyTextLength: 0,
       elementCount: 141,
       interactiveCount: 0,
-      sampleText: "",
+      hasNewChatText: false,
+      bodyTextSampleLength: 0,
     },
     {
       readyState: "complete",
@@ -576,7 +717,8 @@ test("app shell wait returns once real UI has mounted", async () => {
       bodyTextLength: 8,
       elementCount: 400,
       interactiveCount: 3,
-      sampleText: "New chat",
+      hasNewChatText: true,
+      bodyTextSampleLength: 8,
     },
   ];
   const status = await waitForAppShellMounted(
@@ -588,7 +730,8 @@ test("app shell wait returns once real UI has mounted", async () => {
     1000,
   );
   assert.equal(status.hasStartupLoader, false);
-  assert.equal(status.sampleText, "New chat");
+  assert.equal(status.hasNewChatText, true);
+  assert.equal(status.bodyTextSampleLength, 8);
 });
 
 test("app shell wait rejects the React error boundary", async () => {
@@ -604,7 +747,8 @@ test("app shell wait rejects the React error boundary", async () => {
             bodyTextLength: 50,
             elementCount: 171,
             interactiveCount: 2,
-            sampleText: "Oops, an error has occurred\nUpdate Codex\nTry again",
+            hasNewChatText: false,
+            bodyTextSampleLength: 50,
           });
         },
       },
@@ -662,7 +806,7 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
         waitForAppShellMounted() {
           shellChecks += 1;
           if (shellChecks === 2) throw new Error("Codex app shell rendered error boundary");
-          return Promise.resolve({ hasErrorBoundary: false, sampleText: "New chat" });
+          return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true });
         },
         cleanupLaunchedAuditApp() {
           return Promise.resolve({ attempted: true, keptOpen: false, ok: true, pid: 123 });
@@ -728,7 +872,7 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
         },
         CdpSession: FakeCdpSession,
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
-        waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, sampleText: "New chat" }); },
+        waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
         verifyMermaidViewerRender() {
           return Promise.resolve({
             ok: false,
@@ -752,6 +896,87 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
     plugin: "mermaidFullscreen",
     message: "Mermaid viewer render failed: Mermaid render failed: Cannot read properties of undefined (reading 'adapters')",
   }]);
+});
+
+test("runAudit fails when the Review panel live probe cannot find a review thread", async () => {
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    evaluate() {
+      return Promise.resolve({
+        ok: true,
+        failures: [],
+        pluginResults: {
+          nestedRepositories: {
+            ok: true,
+            registered: true,
+            started: true,
+            hostModuleRegistered: true,
+            reviewWrapped: true,
+          },
+        },
+        registeredPlugins: ["nestedRepositories"],
+        startedPlugins: ["nestedRepositories"],
+      });
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: false,
+      launch: false,
+      keepOpen: false,
+      includeNativeOpenProbes: false,
+    },
+    {
+      progress: { start() {}, succeed() {}, fail() {} },
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({ port: 9234, launch: false, reuseExisting: true });
+        },
+        syncDevHome() { return Promise.resolve({ copied: [] }); },
+        waitForRendererTarget() {
+          return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
+        waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
+        verifyReviewPanelRender() {
+          return Promise.resolve({
+            ok: false,
+            message: "No review-capable thread was found",
+            candidateCount: 0,
+            attemptedCandidates: 0,
+            reviewControlFound: false,
+            boundaryVisible: false,
+            tryAgainVisible: false,
+          });
+        },
+        cleanupLaunchedAuditApp() {
+          return Promise.resolve({ attempted: false, keptOpen: false, ok: true });
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.pluginResults.nestedRepositories.ok, false);
+  assert.equal(result.pluginResults.nestedRepositories.reviewPanel.ok, false);
+  assert.deepEqual(result.failures, [{
+    plugin: "nestedRepositories",
+    message: "No review-capable thread was found",
+  }]);
+  assert.equal(JSON.stringify(result.pluginResults.nestedRepositories.reviewPanel).includes("/"), false);
 });
 
 test("runAudit fails keep-open audits when the launched app exits after probes", async () => {
@@ -839,7 +1064,8 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
             bodyTextLength: 42,
             elementCount: 100,
             interactiveCount: 5,
-            sampleText: "New chat",
+            hasNewChatText: true,
+            bodyTextSampleLength: 42,
           });
         },
         verifyMermaidViewerRender() {
@@ -1062,7 +1288,8 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
             bodyTextLength: 42,
             elementCount: 100,
             interactiveCount: 5,
-            sampleText: "New chat",
+            hasNewChatText: true,
+            bodyTextSampleLength: 42,
           });
         },
         cleanupLaunchedAuditApp(launchResult) {
