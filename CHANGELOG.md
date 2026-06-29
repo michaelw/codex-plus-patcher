@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.9.0...v0.10.0) (2026-06-29)
+
+
+### Features
+
+* add Codex 26.623.61825 support ([ab03dee](https://github.com/michaelw/codex-plus-patcher/commit/ab03dee186c588730f238c545cf96d168410ca0f))
+* add data-safe live audit probes ([ab03dee](https://github.com/michaelw/codex-plus-patcher/commit/ab03dee186c588730f238c545cf96d168410ca0f))
+
 ## [0.9.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.8.0...v0.9.0) (2026-06-28)
 
 
