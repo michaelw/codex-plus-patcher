@@ -9,6 +9,14 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
       `${projectSelectorSearchHook()}${projectSelectorTriggerHook("ga")}function sa(e){let t=(0,ha.c)(64),`,
       "project selector shortcut helper insertion anchor",
     );
+    if (patched.includes("triggerButton:_===`summary-panel`?B:(0,Q.jsx)(Oe,{tooltipContent:h,tooltipMaxWidth:g,children:B}),children:")) {
+      return replaceOnce(
+        patched,
+        "triggerButton:_===`summary-panel`?B:(0,Q.jsx)(Oe,{tooltipContent:h,tooltipMaxWidth:g,children:B}),children:",
+        "triggerButton:CPXPST(_===`summary-panel`?B:(0,Q.jsx)(Oe,{tooltipContent:h,tooltipMaxWidth:g,children:B}),_),children:",
+        "project selector shortcut final dropdown trigger anchor",
+      );
+    }
     return replaceOnce(
       patched,
       "triggerButton:g===`summary-panel`?B:(0,Q.jsx)(Fe,{tooltipContent:m,tooltipMaxWidth:h,children:B}),children:",
