@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.0...v0.12.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* restore sidebar colors and path header ([1aef8b5](https://github.com/michaelw/codex-plus-patcher/commit/1aef8b5360e1e1988433d4b39cf6e57765fd48b0))
+
 ## [0.12.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.11.0...v0.12.0) (2026-06-30)
 
 
