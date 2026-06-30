@@ -388,7 +388,7 @@ function patchThreadSidePanelTabs(text) {
     let patched = replaceOnce(
       text,
       "function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[tR,eR,B,X,Z,jw,Mw,Ow,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null]")}function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[tR,eR,B,X,Z,jw,Mw,Nw,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null]")}function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
       "review host hook insertion anchor",
     );
     return replaceOnce(
@@ -402,7 +402,7 @@ function patchThreadSidePanelTabs(text) {
     let patched = replaceOnce(
       text,
       "function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[_S,hS,I,Z,Gc,gi,mne,Gre,Ur,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null]")}function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[_S,hS,I,Z,Gc,Aa,Da,Ci,null,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null]")}function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
       "review host hook insertion anchor",
     );
     return replaceOnce(
