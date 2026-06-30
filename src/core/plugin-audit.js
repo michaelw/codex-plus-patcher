@@ -1393,10 +1393,31 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const details = checkCommon("projectPathHeader");
       const plugin = window.CodexPlus.plugins.get("projectPathHeader");
       const accessory = plugin?.exports?.ProjectPathAccessory?.({ context: { cwd: "/tmp/example" }, jsx, jsxs });
+      const headerAccessory = plugin?.exports?.ProjectPathAccessory?.({
+        context: {
+          header: {
+            projectName: {
+              props: {
+                group: {
+                  projectKind: "local",
+                  projectId: "/tmp/header-project-id",
+                  path: "/tmp/header-project",
+                },
+              },
+            },
+          },
+        },
+        jsx,
+        jsxs,
+      });
       const missing = plugin?.exports?.ProjectPathAccessory?.({ context: {}, jsx, jsxs });
       if (accessory == null) throw new Error("Project path accessory was not rendered for cwd");
+      if (headerAccessory == null) throw new Error("Project path accessory was not rendered for header project path");
+      if (headerAccessory?.props?.title !== "/tmp/header-project") {
+        throw new Error(`Project path accessory used wrong header path: ${JSON.stringify(headerAccessory?.props?.title)}`);
+      }
       if (missing != null) throw new Error("Project path accessory rendered without cwd");
-      pass("projectPathHeader", { ...details, renderedForCwd: true, skippedMissingCwd: true });
+      pass("projectPathHeader", { ...details, renderedForCwd: true, renderedForHeaderProjectPath: true, skippedMissingCwd: true });
     } catch (error) {
       fail("projectPathHeader", error);
     }
