@@ -1260,6 +1260,14 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (!details.registered || !details.started) throw new Error(`${id} is not registered and started`);
       return details;
     };
+    const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
     const rendererAssetUrls = async () => {
       const roots = Array.from(new Set([
         ...Array.from(document.scripts).map((script) => script.src),
@@ -1320,6 +1328,20 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       return collapsedRows.length;
     };
     const isTransparentColor = (value) => value === "rgba(0, 0, 0, 0)" || value === "transparent";
+    const findProjectlessChatRow = () => visibleElements("[data-app-action-sidebar-thread-row]")
+      .find((row) => normalize(row.textContent).includes("Fixture: no project chat"));
+    const waitForProjectlessChatRow = async (timeoutMs = 10000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const row = findProjectlessChatRow();
+        if (row) return row;
+        for (const scroller of Array.from(document.querySelectorAll("aside, nav, [role='navigation'], [data-radix-scroll-area-viewport], .overflow-y-auto, .overflow-auto"))) {
+          if (scroller && scroller.scrollHeight > scroller.clientHeight) scroller.scrollTop = scroller.scrollHeight;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return null;
+    };
     const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 20000) => {
       const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
       const startedAt = Date.now();
@@ -1580,6 +1602,14 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const liveRows = Array.from(document.querySelectorAll("[data-codex-plus-project-color]"));
       const liveAccents = liveRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
       const liveProjectAccents = liveProjectRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
+      const projectlessChatRow = await waitForProjectlessChatRow();
+      const projectlessChatComputed = projectlessChatRow ? getComputedStyle(projectlessChatRow) : null;
+      const projectlessChat = projectlessChatRow ? {
+        marked: projectlessChatRow.hasAttribute("data-codex-plus-project-sidebar-color"),
+        accent: projectlessChatComputed.getPropertyValue("--codex-plus-project-accent").trim(),
+        background: projectlessChatComputed.backgroundColor,
+        text: normalize(projectlessChatRow.textContent),
+      } : null;
       const projectThreadRowCount = await waitForProjectThreadRows();
       let selectedProjectAccent = "";
       let mountedComposer = null;
@@ -1623,6 +1653,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (!matchingProps) throw new Error("Project, thread, bubble, and composer props do not share an accent");
       if (liveProjectRows.length < 10) throw new Error(`Expected at least 10 styled project rows, found ${liveProjectRows.length}`);
       if (new Set(liveProjectAccents).size < 6) throw new Error(`Expected at least 6 distinct project accents, found ${new Set(liveProjectAccents).size}`);
+      if (!projectlessChat?.marked || !projectlessChat?.accent || isTransparentColor(projectlessChat?.background)) {
+        const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map((row) => normalize(row.textContent)).slice(0, 12);
+        throw new Error(`Projectless chat row is not styled: ${JSON.stringify({ projectlessChat, rowTitles })}`);
+      }
       if (unstyledProjectThreadLists.length > 0) {
         throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
       }
@@ -1638,6 +1672,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         liveRows: liveRows.length,
         liveAccents: Array.from(new Set(liveAccents)).slice(0, 8),
         expandedProjects,
+        projectlessChat,
         styledProjectThreadLists: projectThreadRowCount,
         projectChildRowsAvailable: projectThreadRowCount > 0,
         mountedComposer,
