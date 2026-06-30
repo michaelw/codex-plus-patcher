@@ -1,6 +1,14 @@
 (function (globalObject) {
   function pathFromContext(context) {
-    const value = context?.cwd ?? context?.project?.cwd ?? context?.project?.path ?? null;
+    const headerProject = context?.header?.projectName?.props?.group;
+    const value =
+      context?.cwd ??
+      context?.project?.cwd ??
+      context?.project?.path ??
+      headerProject?.cwd ??
+      headerProject?.path ??
+      (headerProject?.projectKind === "local" ? headerProject?.projectId : null) ??
+      null;
     if (typeof value !== "string") return "";
     return value.trim();
   }

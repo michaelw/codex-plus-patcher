@@ -23,6 +23,14 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
         "project selector shortcut final dropdown trigger anchor",
       );
     }
+    if (patched.includes("triggerButton:g===`summary-panel`?z:(0,Q.jsx)(it,{tooltipContent:m,tooltipMaxWidth:h,children:z}),children:")) {
+      return replaceOnce(
+        patched,
+        "triggerButton:g===`summary-panel`?z:(0,Q.jsx)(it,{tooltipContent:m,tooltipMaxWidth:h,children:z}),children:",
+        "triggerButton:CPXPST(g===`summary-panel`?z:(0,Q.jsx)(it,{tooltipContent:m,tooltipMaxWidth:h,children:z}),g),children:",
+        "project selector shortcut final dropdown trigger anchor",
+      );
+    }
     return replaceOnce(
       patched,
       "triggerButton:g===`summary-panel`?B:(0,Q.jsx)(Fe,{tooltipContent:m,tooltipMaxWidth:h,children:B}),children:",

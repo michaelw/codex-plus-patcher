@@ -32,7 +32,8 @@ const COPY_ENTRIES = [
   "chrome-native-hosts-v2.json",
   "computer-use/config.json",
 ];
-const SQLITE_SNAPSHOT_ENTRIES = ["state_5.sqlite", "sqlite/state_5.sqlite"];
+const ROOT_SQLITE_SNAPSHOT_ENTRIES = ["state_5.sqlite"];
+const SQLITE_SNAPSHOT_ENTRIES = ROOT_SQLITE_SNAPSHOT_ENTRIES;
 const EXCLUDED_DEV_STATE_ENTRIES = [
   "sqlite",
   "cache",
@@ -97,8 +98,8 @@ function sqliteLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-function snapshotSqlite({ sourceHome, devHome, relativePath, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
-  const source = path.join(sourceHome, relativePath);
+function snapshotSqlite({ sourceHome, devHome, relativePath, sourceRelativePath = relativePath, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
+  const source = path.join(sourceHome, sourceRelativePath);
   const target = path.join(devHome, relativePath);
   if (!fsImpl.existsSync(source)) return null;
   fsImpl.mkdirSync(path.dirname(target), { recursive: true });
@@ -107,6 +108,32 @@ function snapshotSqlite({ sourceHome, devHome, relativePath, fsImpl = fs, execFi
   fsImpl.rmSync(`${target}-shm`, { force: true });
   execFileSync("sqlite3", [source, `VACUUM INTO ${sqliteLiteral(target)}`], { stdio: "pipe" });
   return relativePath;
+}
+
+function isSnapshotDatabaseName(name) {
+  return (name.endsWith(".sqlite") || name.endsWith(".db")) &&
+    !name.endsWith("-wal") &&
+    !name.endsWith("-shm");
+}
+
+function canSnapshotSqlite(filePath, execFileSync = childProcess.execFileSync) {
+  try {
+    execFileSync("sqlite3", [filePath, "pragma schema_version;"], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function discoverNestedSqliteSnapshots({ sourceHome, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
+  const sqliteDir = path.join(sourceHome, "sqlite");
+  if (!fsImpl.existsSync(sqliteDir)) return [];
+  return fsImpl.readdirSync(sqliteDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && isSnapshotDatabaseName(entry.name))
+    .filter((entry) => entry.name !== "codex-dev.db")
+    .map((entry) => path.join("sqlite", entry.name))
+    .filter((relativePath) => canSnapshotSqlite(path.join(sourceHome, relativePath), execFileSync))
+    .sort();
 }
 
 function linkSharedDirectory({ sourceHome, devHome, relativePath, fsImpl = fs }) {
@@ -144,11 +171,21 @@ function syncDevHome({
   const scrubbedGlobalState = scrubDevGlobalState(resolvedDevHome, fsImpl);
 
   const sqliteSnapshots = [];
-  for (const relativePath of SQLITE_SNAPSHOT_ENTRIES) {
+  const sqliteSnapshotEntries = [
+    ...ROOT_SQLITE_SNAPSHOT_ENTRIES,
+    ...discoverNestedSqliteSnapshots({
+      sourceHome: resolvedSourceHome,
+      fsImpl,
+      execFileSync,
+    }),
+  ];
+  for (const entry of sqliteSnapshotEntries) {
+    const relativePath = typeof entry === "string" ? entry : entry.relativePath;
     const snapshotPath = snapshotSqlite({
       sourceHome: resolvedSourceHome,
       devHome: resolvedDevHome,
       relativePath,
+      sourceRelativePath: typeof entry === "string" ? relativePath : entry.sourceRelativePath,
       fsImpl,
       execFileSync,
     });
@@ -326,6 +363,7 @@ module.exports = {
   DEFAULT_ELECTRON_USER_DATA,
   DEV_MODE_WARNING,
   SQLITE_SNAPSHOT_ENTRIES,
+  ROOT_SQLITE_SNAPSHOT_ENTRIES,
   buildLaunchDev,
   devBundleIdentity,
   formatLaunchDevResult,

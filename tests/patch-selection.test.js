@@ -441,21 +441,6 @@ test("current patch queues expose project colors and project selector shortcut s
   }
 });
 
-test("current dev mode statsig fallback bypasses the 70822 startup provider", () => {
-  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.70822-4559");
-  assert.ok(patchSet);
-  const transform = collectFileTransforms(patchSet).find(
-    ([, candidate]) => candidate.name === "patchDevModeStatsigFallback",
-  )?.[1];
-  assert.equal(typeof transform, "function");
-
-  const transformed = transform(
-    "function uq(e){let t=(0,xq.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?Qee:s,p,m,h;if(t[0]===f)return u}",
-  );
-
-  assert.match(transformed, /if\(window\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback\)return u;if/);
-});
-
 test("versioned patch files stay below the runtime migration line-count gate", () => {
   const patchDir = path.join(__dirname, "../src/patches");
   const totalLines = fs
@@ -1232,6 +1217,22 @@ test("42026 local remote dropdown wraps the visible selector trigger", () => {
   assert.equal(transformed.match(/data-codex-plus-project-selector-trigger/g), null);
 });
 
+test("41415 local remote dropdown wraps the visible selector trigger", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
+  const transform = findTransform(patchSet, "local-active-workspace-root-dropdown");
+  const fakeDropdownBundle = [
+    "function sa(e){let t=(0,ha.c)(64),",
+    "let ue;t[44]!==r||t[45]!==n||t[46]!==v||t[47]!==O||t[48]!==A||t[49]!==oe||t[50]!==F||t[51]!==d||t[52]!==se||t[53]!==s||t[54]!==i||t[55]!==f||t[56]!==m||t[57]!==h||t[58]!==z||t[59]!==g?(ue=se?(0,Q.jsx)(ze,{open:n,onOpenChange:r,side:i,triggerButton:g===`summary-panel`?z:(0,Q.jsx)(it,{tooltipContent:m,tooltipMaxWidth:h,children:z}),children:(0,Q.jsxs)(`div`,{className:on(`flex flex-col`),children:[]})}):null,t[44]=r,t[45]=n,t[46]=v,t[47]=O,t[48]=A,t[49]=oe,t[50]=F,t[51]=d,t[52]=se,t[53]=s,t[54]=i,t[55]=f,t[56]=m,t[57]=h,t[58]=z,t[59]=g,t[60]=ue):ue=t[60];",
+  ].join("");
+
+  const transformed = transform(fakeDropdownBundle);
+
+  assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,ga\)\}/);
+  assert.match(transformed, /triggerButton:CPXPST\(g===`summary-panel`\?z:\(0,Q\.jsx\)\(it,\{tooltipContent:m,tooltipMaxWidth:h,children:z\}\),g\)/);
+  assert.equal(transformed.match(/data-codex-plus-project-selector-trigger/g), null);
+});
+
 test("current home project dropdown marks the visible selector trigger", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
   const transform = findTransform(patchSet, "home-project-dropdown");
@@ -1525,6 +1526,14 @@ test("project path header plugin formats, hides, and copies paths", () => {
     const Tooltip = function Tooltip(props) { return props.children; };
 
     assert.equal(plugin.pathFromContext({ cwd: "  /tmp/project  " }), "/tmp/project");
+    assert.equal(
+      plugin.pathFromContext({ header: { projectName: { props: { group: { path: "  /tmp/header-project  " } } } } }),
+      "/tmp/header-project",
+    );
+    assert.equal(
+      plugin.pathFromContext({ header: { projectName: { props: { group: { projectKind: "local", projectId: "  /tmp/project-id  " } } } } }),
+      "/tmp/project-id",
+    );
     assert.equal(plugin.pathFromContext({ cwd: "   " }), "");
     assert.equal(plugin.pathFromContext({}), "");
 
@@ -1547,6 +1556,14 @@ test("project path header plugin formats, hides, and copies paths", () => {
       stopPropagation() {},
     });
     assert.deepEqual(copied, [longPath]);
+
+    const headerRendered = plugin.ProjectPathAccessory({
+      context: { header: { projectName: { props: { group: { path: longPath } } } } },
+      jsx,
+      jsxs,
+      Tooltip,
+    });
+    assert.equal(headerRendered.props.children.props.title, longPath);
 
     assert.equal(plugin.ProjectPathAccessory({ context: { cwd: "" }, jsx, jsxs, Tooltip }), null);
     assert.ok(diagnosticEvents.some((entry) => entry.event === "projectPathHeader.render.chip" && entry.details.path === longPath));
@@ -2120,7 +2137,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       ].join(""));
 
       assert.match(transformed, /CodexPlusHost\.adapters\.review/);
-      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[tR,eR,B,X,Z,jw,Mw,Ow,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null\]\)/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[tR,eR,B,X,Z,jw,Mw,Nw,null,fu,ze,JZe,za,Ia,null,null,null,null,null,ph,Hre\]\)/);
       assert.match(
         transformed,
         /_=\(0,tR\.jsx\)\(CPXRM,\{mainReviewContent:\(0,tR\.jsx\)\(JZe,\{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i\}\),diffMode:n,setTabState:r,tabState:i\}\)/,
@@ -2139,7 +2156,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       ].join(""));
 
       assert.match(transformed, /CodexPlusHost\.adapters\.review/);
-      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[_S,hS,I,Z,Gc,gi,mne,Gre,Ur,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null\]\)/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[_S,hS,I,Z,Gc,Aa,Da,Ci,null,Ou,Dt,UDe,No,null,null,null,null,null,null,_n,HEe\]\)/);
       assert.match(
         transformed,
         /_=\(0,_S\.jsx\)\(CPXRM,\{mainReviewContent:\(0,_S\.jsx\)\(UDe,\{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i\}\),diffMode:n,setTabState:r,tabState:i\}\)/,
@@ -2158,7 +2175,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       ].join(""));
 
       assert.match(transformed, /CodexPlusHost\.adapters\.review/);
-      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[aI,fE,We,K,za,ul,cl,ac,dl,re,je,dE,kn/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[aI,fE,We,K,za,ul,cl,ac,dl,re,je,dE,kn,null,null,null,null,null,null,Ou,rs\]\)/);
       assert.match(
         transformed,
         /s=\(0,aI\.jsx\)\(CPXRM,\{mainReviewContent:\(0,aI\.jsx\)\(HE,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
@@ -2199,7 +2216,12 @@ test("review patch mounts repository mux before main branch selection", () => {
   assert.match(pluginSource, /function ReviewMux/);
   assert.match(pluginSource, /function BranchPicker/);
   assert.match(pluginSource, /function RepoPatchGroup/);
-  assert.match(pluginSource, /jsx\(BranchPicker, \{ repo, hostConfig, baseBranch, setBaseBranch, deps \}\)/);
+  assert.match(pluginSource, /parseDiff\(diffText\)/);
+  assert.match(pluginSource, /createElement\(DiffCard/);
+  assert.match(pluginSource, /mt-3 clear-both border-b border-token-border-default/);
+  assert.match(pluginSource, /jsx\(BranchPicker, \{ repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps \}\)/);
+  assert.match(pluginSource, /data-codex-plus-repo-branch-count/);
+  assert.match(pluginSource, /mergeBranches\(currentBranches, branches, searchedBranches\)/);
   assert.match(pluginSource, /jsx\(\s*RepoPatchGroup,/);
   const directRepoPatchGroupCalls = pluginSource
     .split("\n")

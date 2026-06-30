@@ -26,6 +26,7 @@ function parseArgs(argv) {
     newest: null,
     noProgress: false,
     sourcesDir: null,
+    useLiveSourceHome: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     }
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--sources-dir") args.sourcesDir = path.resolve(expandPath(next()));
+    else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -68,6 +70,7 @@ Options:
   --auto-clean                 Remove each generated regression directory after its audit
   --clean                      Cleanup-only mode for generated regression directories
   --keep-open                  Leave audit-launched apps open
+  --use-live-source-home       Use ~/.codex live state instead of generated fixture state
   --include-native-open-probes Include native window-opening audit probes
   --no-progress                Suppress audit progress output
   --json                       Print the machine-readable result
@@ -265,6 +268,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     source: source.sourceApp,
     sourceHome: path.join(os.homedir(), ".codex"),
     target: paths.targetApp,
+    useLiveSourceHome: Boolean(args.useLiveSourceHome),
   };
   sourceProgress?.start?.(`Running regression audit with ${source.patchSet}`);
   const auditResult = await runAuditImpl(auditArgs, {
@@ -287,6 +291,10 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     targetApp: paths.targetApp,
     cleaned,
     failures: auditResult.failures || [],
+    audit: {
+      expectedWarnings: auditResult.expectedWarnings || [],
+      pluginResults: auditResult.pluginResults || {},
+    },
   };
 }
 
@@ -314,6 +322,7 @@ async function runRegressionSources(args, operations = {}) {
       filter: args.filter,
       newest: args.newest,
       autoClean: args.autoClean,
+      useLiveSourceHome: args.useLiveSourceHome,
       results: cleaned.map((entry) => ({
         version: entry.version,
         targetApp: entry.target,
@@ -343,6 +352,7 @@ async function runRegressionSources(args, operations = {}) {
     filter: args.filter,
     newest: args.newest,
     autoClean: args.autoClean,
+    useLiveSourceHome: args.useLiveSourceHome,
     results,
   };
 }

@@ -47,58 +47,15 @@ function buildCodexPlusPatchSet(config) {
   const electronMenuShortcutsFile = files.electronMenuShortcuts;
   const keyboardShortcutsSearchInputFile = files.keyboardShortcutsSearchInput;
   const keyboardShortcutsTitleFallbackFile = files.keyboardShortcutsTitleFallback || keyboardShortcutsSearchInputFile;
-  const statsigStartupFile = files.statsigStartup;
   const srcFile = files.src;
   const sidebarThreadKeysFile = files.sidebarThreadKeys;
   const sidebarThreadRowSignalsFile = files.sidebarThreadRowSignals;
   const branchPickerDropdownContentFile = files.branchPickerDropdownContent;
+  const statsigStartupFile = files.statsigStartup;
+  const localThreadCatalogStateFile = files.localThreadCatalogState || files.mermaidDiagramShell;
 
 function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
-}
-
-function patchDevModeStatsigFallback(text) {
-  if (text.includes("function sY(e){let t=(0,fY.c)(31),")) {
-    return replaceOnce(
-      text,
-      "function sY(e){let t=(0,fY.c)(31),{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d}=e,f;",
-      "function sY(e){let t=(0,fY.c)(31),{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d}=e;if(window.__CodexPlusRuntimeConfig?.devModeStatsigFallback)return d;let f;",
-      "dev mode statsig fallback anchor",
-    );
-  }
-  if (text.includes("function q1(e){let t=(0,i0.c)(27),")) {
-    return replaceOnce(
-      text,
-      "function q1(e){let t=(0,i0.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?qre:s,p,m,h;if",
-      "function q1(e){let t=(0,i0.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?qre:s,p,m,h;if(window.__CodexPlusRuntimeConfig?.devModeStatsigFallback)return u;if",
-      "dev mode statsig fallback anchor",
-    );
-  }
-  if (text.includes("function XY(e){let t=(0,sX.c)(27),")) {
-    return replaceOnce(
-      text,
-      "function XY(e){let t=(0,sX.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?OY:s,p,m,h;if",
-      "function XY(e){let t=(0,sX.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?OY:s,p,m,h;if(window.__CodexPlusRuntimeConfig?.devModeStatsigFallback)return u;if",
-      "dev mode statsig fallback anchor",
-    );
-  }
-  if (text.includes("function uq(e){let t=(0,xq.c)(27),")) {
-    return replaceOnce(
-      text,
-      "function uq(e){let t=(0,xq.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?Qee:s,p,m,h;if",
-      "function uq(e){let t=(0,xq.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?Qee:s,p,m,h;if(window.__CodexPlusRuntimeConfig?.devModeStatsigFallback)return u;if",
-      "dev mode statsig fallback anchor",
-    );
-  }
-  if (text.includes("function Ske(e){let t=(0,J1.c)(27),")) {
-    return replaceOnce(
-      text,
-      "function Ske(e){let t=(0,J1.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?F1:s,p,m,h;if",
-      "function Ske(e){let t=(0,J1.c)(27),{auth:n,appVersion:r,currentAccount:i,hostBuildFlavor:a,plan:o,statsigClientKey:s,systemName:c,systemVersion:l,children:u}=e,d=o===void 0?null:o,f=s===void 0?F1:s,p,m,h;if(window.__CodexPlusRuntimeConfig?.devModeStatsigFallback)return u;if",
-      "dev mode statsig fallback anchor",
-    );
-  }
-  return text;
 }
 
 function patchAboutDialog(text, context = {}) {
@@ -374,7 +331,7 @@ function patchThreadSidePanelTabs(text) {
     let patched = replaceOnce(
       text,
       "function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[aI,fE,We,K,za,ul,cl,ac,dl,re,je,dE,kn,null,null,null,null,null,null,null,null]")}function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[aI,fE,We,K,za,ul,cl,ac,dl,re,je,dE,kn,null,null,null,null,null,null,Ou,rs]")}function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
       "review host hook insertion anchor",
     );
     return replaceOnce(
@@ -388,7 +345,7 @@ function patchThreadSidePanelTabs(text) {
     let patched = replaceOnce(
       text,
       "function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[tR,eR,B,X,Z,jw,Mw,Ow,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null]")}function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[tR,eR,B,X,Z,jw,Mw,Nw,null,fu,ze,JZe,za,Ia,null,null,null,null,null,ph,Hre]")}function mQe(e){let t=(0,hQe.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
       "review host hook insertion anchor",
     );
     return replaceOnce(
@@ -402,15 +359,16 @@ function patchThreadSidePanelTabs(text) {
     let patched = replaceOnce(
       text,
       "function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[_S,hS,I,Z,Gc,gi,mne,Gre,Ur,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null]")}function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[_S,hS,I,Z,Gc,Aa,Da,Ci,null,Ou,Dt,UDe,No,null,null,null,null,null,null,_n,HEe]")}function aOe(e){let t=(0,gS.c)(20),{diffMode:n,setTabState:r,tabState:i}=e`,
       "review host hook insertion anchor",
     );
-    return replaceOnce(
+    patched = replaceOnce(
       patched,
       "_=(0,_S.jsx)(UDe,{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i}),t[9]=n,t[10]=u,t[11]=s,t[12]=p,t[13]=h,t[14]=r,t[15]=i,t[16]=_):_=t[16];",
       "_=(0,_S.jsx)(CPXRM,{mainReviewContent:(0,_S.jsx)(UDe,{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i}),diffMode:n,setTabState:r,tabState:i}),t[9]=n,t[10]=u,t[11]=s,t[12]=p,t[13]=h,t[14]=r,t[15]=i,t[16]=_):_=t[16];",
       "review body mux anchor",
     );
+    return patched;
   }
   if (text.includes("function oDn(e){let t=(0,sDn.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
     let patched = replaceOnce(
@@ -1844,6 +1802,42 @@ function patchMainMenuDiagnostics(text) {
   );
 }
 
+function patchStatsigDevFallback(text) {
+  if (!text.includes("Timed out while fetching post-login Statsig bootstrap")) return text;
+  const providerPattern =
+    /function ([A-Za-z0-9_$]+)\(e\)\{let t=\(0,([A-Za-z0-9_$]+)\.c\)\((\d+)\),\{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d\}=e,/;
+  const match = text.match(providerPattern);
+  if (!match) throw new Error("Could not find post-login Statsig provider anchor");
+  const [anchor, functionName, cacheName, cacheSize] = match;
+  const providerStart = match.index ?? text.indexOf(anchor);
+  const providerBody = text.slice(providerStart, providerStart + 2500);
+  const jsxMatch = providerBody.match(/\(0,([A-Za-z0-9_$]+)\.jsx\)\([A-Za-z0-9_$]+,\{appSessionId:n,appVersion:r,auth:i,browserLocale:a,/);
+  if (!jsxMatch) throw new Error("Could not find post-login Statsig provider JSX helper");
+  const jsxName = jsxMatch[1];
+  const readyProviderMatch = providerBody.match(new RegExp(
+    "\\(0," +
+      jsxName +
+      "\\.jsx\\)\\(([A-Za-z0-9_$]+),\\{appVersion:r,authMethod:i\\.authMethod,client:p,deviceId:s,hostBuildFlavor:o,children:d\\}",
+  ));
+  if (!readyProviderMatch) throw new Error("Could not find post-login Statsig ready provider");
+  const readyProvider = readyProviderMatch[1];
+  const statsigClientMatch = providerBody.match(
+    /new ([A-Za-z0-9_$]+)\.StatsigClient\(c,t\.user,([A-Za-z0-9_$]+)\)/,
+  );
+  if (!statsigClientMatch) throw new Error("Could not find post-login Statsig client constructor");
+  const statsigNamespace = statsigClientMatch[1];
+  const statsigOptions = statsigClientMatch[2];
+  const replacement =
+    `function ${functionName}(e){let t=(0,${cacheName}.c)(${Math.max(Number(cacheSize), 18)}),{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d}=e,CPXStatsigFallback=globalThis.__CodexPlusRuntimeConfig?.devModeStatsigFallback===true;if(CPXStatsigFallback){let e,f,p,m;if(t[0]!==n||t[1]!==r||t[2]!==i.accountId||t[3]!==i.authMethod||t[4]!==i.email||t[5]!==i.userId||t[6]!==a||t[7]!==o||t[8]!==s||t[9]!==c||t[10]!==l||t[11]!==u){e={userID:i.userId??i.accountUserId??s,email:i.email??void 0,locale:a,customIDs:{...s==null?{}:{stableID:s},...i.accountId==null?{}:{account_id:i.accountId}},appVersion:r,custom:{auth_status:i.authMethod===\`chatgpt\`?\`logged_in\`:\`logged_out\`,auth_method:i.authMethod??void 0,account_id:i.accountId??void 0,plan_type:i.planAtLogin??void 0,compute_residency:i.computeResidency??void 0,brand_name:ES,systemName:l,systemVersion:u,codex_window_type:\`electron\`,codex_build_flavor:o,codex_app_session_id:n??void 0}},f=new ${statsigNamespace}.StatsigClient(c,e,${statsigOptions}),f.initializeSync(),t[0]=n,t[1]=r,t[2]=i.accountId,t[3]=i.authMethod,t[4]=i.email,t[5]=i.userId,t[6]=a,t[7]=o,t[8]=s,t[9]=c,t[10]=l,t[11]=u,t[12]=f}else f=t[12];return t[13]!==r||t[14]!==i.authMethod||t[15]!==f||t[16]!==d||t[17]!==o?(p=(0,${jsxName}.jsx)(${readyProvider},{appVersion:r,authMethod:i.authMethod,client:f,deviceId:s,hostBuildFlavor:o,children:d}),t[13]=r,t[14]=i.authMethod,t[15]=f,t[16]=d,t[17]=o,t[18]=p):p=t[18],p}`;
+  return replaceOnce(text, anchor, replacement, "post-login Statsig dev fallback provider anchor");
+}
+
+function patchLocalThreadCatalogEnabled(text) {
+  const anchor = "MY=te(T,!1),NY=te(T,jY)";
+  if (!text.includes(anchor)) return text;
+  return replaceOnce(text, anchor, "MY=te(T,!0),NY=te(T,jY)", "local thread catalog enabled anchor");
+}
+
 return makePatchSet({
     id: config.id,
     codexVersion: config.codexVersion,
@@ -1921,10 +1915,6 @@ return makePatchSet({
         [runCommandFile, patchRunCommandProjectSelectorShortcut],
       ],
     },
-    ...(statsigStartupFile ? [{
-      id: "dev-mode-statsig-fallback",
-      fileTransforms: [[statsigStartupFile, patchDevModeStatsigFallback]],
-    }] : []),
     ...(mainFile ? [{
       id: "codex-plus-native-bridge",
       fileTransforms: [
@@ -1936,6 +1926,14 @@ return makePatchSet({
     ...(mermaidDiagramShellFile ? [{
       id: "mermaid-fullscreen-viewer",
       fileTransforms: [[mermaidDiagramShellFile, patchMermaidDiagramShell]],
+    }] : []),
+    ...(statsigStartupFile && config.runtimeConfig?.devModeStatsigFallback !== false ? [{
+      id: "statsig-dev-fallback",
+      fileTransforms: [[statsigStartupFile, patchStatsigDevFallback]],
+    }] : []),
+    ...(localThreadCatalogStateFile ? [{
+      id: "local-thread-catalog-state",
+      fileTransforms: [[localThreadCatalogStateFile, patchLocalThreadCatalogEnabled]],
     }] : []),
     ],
   });

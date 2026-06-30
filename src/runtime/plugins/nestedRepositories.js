@@ -159,7 +159,25 @@
     });
   }
 
-  function BranchPicker({ repo, hostConfig, baseBranch, setBaseBranch, deps }) {
+  function branchName(branch) {
+    return typeof branch === "string" ? branch : branch?.name;
+  }
+
+  function mergeBranches(...branchLists) {
+    const seen = new Set();
+    const merged = [];
+    for (const branches of branchLists) {
+      for (const branch of branches ?? []) {
+        const name = branchName(branch);
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        merged.push(typeof branch === "string" ? { name } : branch);
+      }
+    }
+    return merged;
+  }
+
+  function BranchPicker({ repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps }) {
     const { jsx, jsxs, React, Button, Tooltip, Icon, Dropdown, DropdownMenu, BranchPickerDropdownContent, gitRequest } = deps;
     const [open, setOpen] = React.useState(false);
     const [branches, setBranches] = React.useState([]);
@@ -231,13 +249,19 @@
     }, [open, query, repo.root, hostConfig.id]);
 
     const title = selected || "Unstaged";
+    const currentBranches = currentBranch ? [{ name: currentBranch }] : [];
+    const displayBranches = mergeBranches(currentBranches, branches, searchedBranches);
     if (!Button || !Tooltip || !Icon || !Dropdown || !DropdownMenu || !BranchPickerDropdownContent) {
-      const options = branches.length > 0 ? branches : searchedBranches;
       return jsxs("label", {
         className: "flex min-w-32 max-w-52 shrink-0 items-center gap-1 text-xs text-token-description-foreground",
         children: [
           jsx("span", { className: "sr-only", children: "Base branch" }),
           jsx("select", {
+            "data-codex-plus-repo-branch-picker": "",
+            "data-codex-plus-repo-kind": repo.kind,
+            "data-codex-plus-repo-path": repo.path ?? "",
+            "data-codex-plus-repo-branch-count": String(displayBranches.length),
+            "data-codex-plus-repo-current-branch": currentBranch ?? "",
             className:
               "min-w-0 flex-1 rounded-md border border-token-border bg-token-main-surface-primary px-1.5 py-1 text-xs text-token-foreground",
             value: selected,
@@ -246,7 +270,7 @@
             onChange: (event) => setBaseBranch(event.target.value),
             children: [
               jsx("option", { value: "", children: loading ? "Loading..." : "Unstaged" }, "unstaged"),
-              ...options.map((branch) => jsx("option", { value: branch.name ?? branch, children: branch.name ?? branch }, branch.name ?? branch)),
+              ...displayBranches.map((branch) => jsx("option", { value: branch.name, children: branch.name }, branch.name)),
             ],
           }),
         ],
@@ -254,6 +278,11 @@
     }
     const button = jsxs(Button, {
       type: "button",
+      "data-codex-plus-repo-branch-picker": "",
+      "data-codex-plus-repo-kind": repo.kind,
+      "data-codex-plus-repo-path": repo.path ?? "",
+      "data-codex-plus-repo-branch-count": String(displayBranches.length),
+      "data-codex-plus-repo-current-branch": currentBranch ?? "",
       color: selected ? "ghostActive" : "ghost",
       size: "toolbar",
       className: "max-w-44 min-w-0 shrink-0 border-token-border px-1.5",
@@ -261,7 +290,7 @@
     });
     const triggerButton = jsx(Tooltip, { tooltipContent: selected ? `Base branch: ${title}` : "Working tree changes", children: button });
     const dropdownContent = jsx(BranchPickerDropdownContent, {
-      branches,
+      branches: displayBranches,
       selectedBranch: selected,
       disabled: false,
       isError: error != null,
@@ -357,10 +386,10 @@
 
     const statusText = error ?? (loading ? "Loading diff..." : diffText == null ? "No changes" : diffText);
     return jsxs("section", {
-      className: "border-b border-token-border-default",
+      className: "relative z-0 mt-3 clear-both border-b border-token-border-default",
       children: [
         jsxs("div", {
-          className: "flex min-w-0 items-center gap-2 px-3 py-2",
+          className: "relative z-10 flex min-w-0 items-center gap-2 bg-token-main-surface-primary px-3 py-2",
           children: [
             jsxs("button", {
               type: "button",
@@ -375,7 +404,7 @@
                 }),
               ],
             }),
-            jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, deps }),
+            jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps }),
             ReviewToolbar
               ? jsx(ReviewToolbar, {
                   conversationId,

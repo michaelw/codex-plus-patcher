@@ -52,10 +52,12 @@ test("regression sources parses options and rejects unsafe combinations", () => 
     newest: null,
     noProgress: false,
     sourcesDir: null,
+    useLiveSourceHome: false,
   });
 
   assert.equal(parseArgs(["--clean"]).clean, true);
   assert.equal(parseArgs(["--newest", "2"]).newest, 2);
+  assert.equal(parseArgs(["--use-live-source-home"]).useLiveSourceHome, true);
   assert.throws(() => parseArgs(["--newest", "0"]), /--newest must be a positive integer/);
   assert.throws(() => parseArgs(["--auto-clean", "--keep-open"]), /cannot be combined/);
 });
@@ -207,6 +209,7 @@ test("regression sources runs supported sources and continues after failures", a
     assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "codex-home"));
     assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "electron-user-data"));
     assert.equal(calls[0].includeNativeOpenProbes, true);
+    assert.equal(calls[0].useLiveSourceHome, false);
   });
 });
 
@@ -380,7 +383,16 @@ test("regression sources formats json-shaped result data", async () => {
       {
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
-        runAudit: async () => ({ ok: true, failures: [] }),
+        runAudit: async () => ({
+          ok: true,
+          failures: [],
+          pluginResults: {
+            nestedRepositories: {
+              ok: true,
+              reviewPanel: { ok: true, nestedBranchPickerPopulated: true },
+            },
+          },
+        }),
       },
     );
 
@@ -391,6 +403,7 @@ test("regression sources formats json-shaped result data", async () => {
     assert.equal(result.autoClean, false);
     assert.equal(result.results[0].sourceApp, sourceApp);
     assert.equal(result.results[0].targetApp, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "Codex Plus.app"));
+    assert.equal(result.results[0].audit.pluginResults.nestedRepositories.reviewPanel.nestedBranchPickerPopulated, true);
     assert.match(formatHumanResult(result), /Summary: 1\/1 supported passed, 0 failed, 0 skipped\./);
   });
 });
