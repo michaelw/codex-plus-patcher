@@ -35,9 +35,13 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     assert.equal(fs.existsSync(path.join(devHome, "sqlite", "codex-dev.db")), true);
     assert.equal(fs.existsSync(path.join(devHome, ".codex-global-state.json")), true);
     assert.equal(fs.existsSync(path.join(devHome, "session_index.jsonl")), true);
-    assert.equal(sqliteValue(path.join(devHome, "state_5.sqlite"), "select count(*) from threads;"), "6");
+    assert.equal(sqliteValue(path.join(devHome, "state_5.sqlite"), "select count(*) from threads;"), "10");
     assert.equal(
       sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select count(*) from local_thread_catalog;"),
+      "10",
+    );
+    assert.equal(
+      sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select count(*) from local_thread_catalog where cwd = '';"),
       "5",
     );
 
@@ -61,11 +65,14 @@ test("audit fixture writes project assignments, pinned data, and projectless thr
     const nestedThread = fixture.threads.find((thread) => thread.title.includes("nested repos"));
     const pinnedThread = fixture.threads.find((thread) => thread.title.includes("pinned thread"));
     const projectlessThread = fixture.threads.find((thread) => thread.projectless);
+    const projectlessThreads = fixture.threads.filter((thread) => thread.projectless);
     const nestedAssignment = atomState["thread-project-assignments"][nestedThread.id];
 
     assert.ok(state["pinned-project-ids"].includes(fixture.workspaces.alpha));
     assert.ok(state["pinned-thread-ids"].includes(pinnedThread.id));
+    assert.equal(projectlessThreads.length, 5);
     assert.ok(state["projectless-thread-ids"].includes(projectlessThread.id));
+    assert.equal(state["projectless-thread-ids"].filter((threadId) => !threadId.startsWith("local:")).length, 5);
     assert.equal(state["project-order"].length >= 10, true);
     assert.equal(fs.existsSync(projectlessThread.sessionCwd), true);
     assert.deepEqual(state["thread-writable-roots"][nestedThread.id], [fixture.workspaces.nestedWorktree]);
@@ -226,8 +233,8 @@ test("audit fixture can seed an app-created empty-home baseline", () => {
 
     assert.equal(fixture.baseline.created, true);
     assert.equal(fixture.files.includes("sqlite/codex-dev.db"), true);
-    assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from threads;"), "6");
-    assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from local_thread_catalog;"), "5");
+    assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from threads;"), "10");
+    assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from local_thread_catalog;"), "10");
     const appServerCall = calls.find((call) => call.command === "/fixture/Codex.app/Contents/Resources/codex");
     assert.equal(appServerCall.env.CODEX_HOME, fixture.devHome);
   });

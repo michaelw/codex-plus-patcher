@@ -139,7 +139,21 @@ function createFixtureWorkspaces(rootDir, { fsImpl = fs, execFileSync = childPro
 }
 
 function fixtureThreads(layout) {
+  const projectlessThreads = Array.from({ length: 5 }, (_, index) => {
+    const id = `019f0000-0000-7000-8000-00000000001${index}`;
+    return {
+      id,
+      title: `Fixture: no project chat ${index + 1}`,
+      cwd: "",
+      sessionCwd: path.join(layout.workRoot, "outputs", id),
+      projectId: null,
+      preview: `Projectless fixture chat ${index + 1}`,
+      pinned: true,
+      projectless: true,
+    };
+  });
   return [
+    ...projectlessThreads,
     {
       id: "019f0000-0000-7000-8000-000000000006",
       title: "Fixture: main repo path header",
@@ -170,15 +184,6 @@ function fixtureThreads(layout) {
       projectId: layout.nestedProject,
       preview: "Nested repository fixture chat",
       pinned: true,
-    },
-    {
-      id: "019f0000-0000-7000-8000-000000000002",
-      title: "Fixture: no project chat",
-      cwd: "",
-      sessionCwd: path.join(layout.workRoot, "outputs", "019f0000-0000-7000-8000-000000000002"),
-      projectId: null,
-      preview: "Projectless fixture chat",
-      projectless: true,
     },
     {
       id: "019f0000-0000-7000-8000-000000000001",
@@ -310,7 +315,7 @@ function createCatalogDatabase(dbPath, threads, { fsImpl = fs, execFileSync = ch
   fsImpl.rmSync(dbPath, { force: true });
   fsImpl.rmSync(`${dbPath}-wal`, { force: true });
   fsImpl.rmSync(`${dbPath}-shm`, { force: true });
-  const rows = threads.filter((thread) => thread.cwd).map((thread, index) => {
+  const rows = threads.map((thread, index) => {
     const created = FIXTURE_NOW_SECONDS - ((index + 1) * 600);
     const updated = FIXTURE_NOW_SECONDS - (index * 120);
     return [
@@ -480,7 +485,7 @@ function seedStateDatabase(dbPath, threads, { execFileSync = childProcess.execFi
       updated * 1000,
     ].join(", ");
   }).join("),\n(");
-  const catalogRows = threads.filter((thread) => thread.cwd).map((thread, index) => {
+  const catalogRows = threads.map((thread, index) => {
     const created = FIXTURE_NOW_SECONDS - ((index + 1) * 600);
     const updated = FIXTURE_NOW_SECONDS - (index * 120);
     return [

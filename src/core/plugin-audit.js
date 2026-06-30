@@ -1261,6 +1261,25 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       return details;
     };
     const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const rowTitle = (row) => {
+      const attributeTitle = [
+        row?.getAttribute("data-app-action-sidebar-thread-title"),
+        row?.getAttribute("data-codex-plus-thread-title"),
+        row?.getAttribute("aria-label"),
+        row?.getAttribute("title"),
+      ].map(normalize).find(Boolean);
+      if (attributeTitle) return attributeTitle;
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = normalize(node.nodeValue);
+        if (text === "" || /^(?:now|\d+[smhdw])$/.test(text)) continue;
+        const parentStyle = node.parentElement ? getComputedStyle(node.parentElement) : null;
+        if (parentStyle && (parentStyle.display === "none" || parentStyle.visibility === "hidden")) continue;
+        return text;
+      }
+      return normalize(row?.textContent).replace(/(?:now|\d+[smhdw])$/, "");
+    };
     const visible = (element) => {
       if (!element) return false;
       const rect = element.getBoundingClientRect();
@@ -1329,7 +1348,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     };
     const isTransparentColor = (value) => value === "rgba(0, 0, 0, 0)" || value === "transparent";
     const findProjectlessChatRow = () => visibleElements("[data-app-action-sidebar-thread-row]")
-      .find((row) => normalize(row.textContent).includes("Fixture: no project chat"));
+      .find((row) => rowTitle(row).includes("Fixture: no project chat"));
     const waitForProjectlessChatRow = async (timeoutMs = 10000) => {
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
@@ -1608,7 +1627,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         marked: projectlessChatRow.hasAttribute("data-codex-plus-project-sidebar-color"),
         accent: projectlessChatComputed.getPropertyValue("--codex-plus-project-accent").trim(),
         background: projectlessChatComputed.backgroundColor,
-        text: normalize(projectlessChatRow.textContent),
+        title: rowTitle(projectlessChatRow),
       } : null;
       const projectThreadRowCount = await waitForProjectThreadRows();
       let selectedProjectAccent = "";
@@ -1654,7 +1673,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (liveProjectRows.length < 10) throw new Error(`Expected at least 10 styled project rows, found ${liveProjectRows.length}`);
       if (new Set(liveProjectAccents).size < 6) throw new Error(`Expected at least 6 distinct project accents, found ${new Set(liveProjectAccents).size}`);
       if (!projectlessChat?.marked || !projectlessChat?.accent || isTransparentColor(projectlessChat?.background)) {
-        const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map((row) => normalize(row.textContent)).slice(0, 12);
+        const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map(rowTitle).slice(0, 12);
         throw new Error(`Projectless chat row is not styled: ${JSON.stringify({ projectlessChat, rowTitles })}`);
       }
       if (unstyledProjectThreadLists.length > 0) {
