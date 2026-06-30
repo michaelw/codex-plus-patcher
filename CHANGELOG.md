@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.11.0...v0.12.0) (2026-06-30)
+
+
+### Features
+
+* add cached source regression runner ([#63](https://github.com/michaelw/codex-plus-patcher/issues/63)) ([f35fcd3](https://github.com/michaelw/codex-plus-patcher/commit/f35fcd3e17ffc791ee86e0134f65076462e9e8cb))
+
+
+### Bug Fixes
+
+* restore Codex Plus plugin regressions ([#68](https://github.com/michaelw/codex-plus-patcher/issues/68)) ([00a5446](https://github.com/michaelw/codex-plus-patcher/commit/00a54463825feb12917370aebd29d2fd580ea030))
+
 ## [0.11.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.10.1...v0.11.0) (2026-06-29)
 
 
