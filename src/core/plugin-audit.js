@@ -1229,6 +1229,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     try {
       const details = checkCommon("nestedRepositories");
       let nestedStateCalls = 0;
+      const repositoryTargetRequests = [];
       const nestedReviewDeps = {
         ...reviewDeps,
         React: {
@@ -1244,13 +1245,47 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
             }
             return [typeof initial === "function" ? initial() : initial, () => {}];
           },
+          useEffect(fn) {
+            const cleanup = fn();
+            if (typeof cleanup === "function") cleanup();
+          },
+        },
+        gitRequest() {
+          return {
+            request(request) {
+              repositoryTargetRequests.push(request);
+              return Promise.resolve({ main: null, repositories: [] });
+            },
+          };
         },
       };
       const wrapped = window.CodexPlus.ui.review.renderBody({ defaultBody: "body", props: {}, deps: nestedReviewDeps });
       const hostModuleRegistered = window.__CodexPlusRuntime.core.hostModules.has("codex-plus:native:repository-targets");
       if (wrapped === "body") throw new Error("Review body was not wrapped");
       if (!hostModuleRegistered) throw new Error("Repository-target host module is not registered");
-      pass("nestedRepositories", { ...details, hostModuleRegistered, reviewWrapped: true });
+      const repositoryTargetRequest = repositoryTargetRequests.find((request) => request?.method === "repository-targets");
+      if (!repositoryTargetRequest) throw new Error("Review body did not request repository targets");
+      const repositoryTargetParams = repositoryTargetRequest.params || {};
+      if (repositoryTargetParams.cwd !== "/tmp/codex-plus-audit") {
+        throw new Error(`Repository target request used wrong cwd: ${JSON.stringify(repositoryTargetParams.cwd)}`);
+      }
+      if (repositoryTargetParams.hostId !== "local" || repositoryTargetParams.hostConfig?.id !== "local") {
+        throw new Error(`Repository target request used wrong host context: ${JSON.stringify(repositoryTargetParams)}`);
+      }
+      if (repositoryTargetParams.operationSource !== "codex_plus_review") {
+        throw new Error(`Repository target request used wrong operation source: ${JSON.stringify(repositoryTargetParams.operationSource)}`);
+      }
+      pass("nestedRepositories", {
+        ...details,
+        hostModuleRegistered,
+        reviewWrapped: true,
+        repositoryTargetRequest: {
+          cwd: repositoryTargetParams.cwd,
+          hostId: repositoryTargetParams.hostId,
+          hostConfigId: repositoryTargetParams.hostConfig?.id,
+          operationSource: repositoryTargetParams.operationSource,
+        },
+      });
     } catch (error) {
       fail("nestedRepositories", error);
     }

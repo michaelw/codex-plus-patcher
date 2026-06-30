@@ -2136,7 +2136,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       ].join(""));
 
       assert.match(transformed, /CodexPlusHost\.adapters\.review/);
-      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[tR,eR,B,X,Z,jw,Mw,Ow,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null\]\)/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[tR,eR,B,X,Z,jw,Mw,Nw,null,fu,ze,JZe,za,Ia,null,null,null,null,null,null,null\]\)/);
       assert.match(
         transformed,
         /_=\(0,tR\.jsx\)\(CPXRM,\{mainReviewContent:\(0,tR\.jsx\)\(JZe,\{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i\}\),diffMode:n,setTabState:r,tabState:i\}\)/,
@@ -2155,7 +2155,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       ].join(""));
 
       assert.match(transformed, /CodexPlusHost\.adapters\.review/);
-      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[_S,hS,I,Z,Gc,gi,mne,Gre,Ur,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null\]\)/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[_S,hS,I,Z,Gc,Aa,Da,Ci,null,Ou,Dt,UDe,No,null,null,null,null,null,null,null,null\]\)/);
       assert.match(
         transformed,
         /_=\(0,_S\.jsx\)\(CPXRM,\{mainReviewContent:\(0,_S\.jsx\)\(UDe,\{diffMode:n,diffRefs:u,isFileTreeOpen:s,isReviewExpanded:p,setTabState:r,setScrollContainerRef:h,tabState:i\}\),diffMode:n,setTabState:r,tabState:i\}\)/,
