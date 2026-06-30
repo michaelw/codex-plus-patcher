@@ -165,19 +165,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify npm publish token
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN is not configured for this repository." >&2
-            exit 1
-          fi
-
       - name: Publish package
         working-directory: package
         env:
           DIST_TAG: ${{ inputs.dist_tag }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag "$DIST_TAG"
