@@ -16,8 +16,15 @@ This repo ships patch source only. Never commit `Codex.app`, generated
 - Use `docs/plugin-debugging.md` for the side-by-side dev launch and live proof
   workflow. Transform tests and ASAR readback are not enough for UI/plugin
   changes that depend on runtime mount points.
+- Use `npm run release:intake` before manually downloading mirror assets for a
+  new Codex port. Store original apps only under the main checkout's ignored
+  `work/sources/` tree.
+- Use `npm run regression:sources` to audit cached original apps under
+  `work/sources/` against the current patch code.
 - Validate real patch application against a workspace-local target under
   `work/`, not the user's real app target.
+- Do not commit downloaded zips, extracted original apps, or generated
+  `work/sources/*/source.json` metadata unless explicitly requested.
 - Before creating, updating, or pushing a PR, run `npm run check:pr`. If the PR
   does not exist yet, pass the intended title with
   `npm run check:pr -- --title "feat: ..."`. Before marking ready or enabling
