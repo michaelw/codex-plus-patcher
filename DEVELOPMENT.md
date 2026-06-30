@@ -30,6 +30,7 @@ Run the source checks used before commits:
 ```sh
 npm test
 npm run check
+npm run check:package
 npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
 ```
 

@@ -16,4 +16,5 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
+      - run: npm run check:package
       - run: npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
