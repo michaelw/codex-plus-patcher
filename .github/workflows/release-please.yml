@@ -62,5 +62,5 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
-      - run: npm pack --dry-run --json
+      - run: npm run check:package
       - run: npm publish

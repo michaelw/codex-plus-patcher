@@ -26,10 +26,10 @@ function sha256(buffer) {
 
 function createRelease({ tag = "codex-app-26.623.70822", extraAssets = [] } = {}) {
   const version = tag.replace("codex-app-", "");
-  const asset = {
-    name: `Codex-darwin-arm64-${version}.zip`,
+  const assets = ["arm64", "x64"].map((arch) => ({
+    name: `Codex-darwin-${arch}-${version}.zip`,
     browser_download_url: `https://example.test/${version}/Codex.zip`,
-  };
+  }));
   const checksumAsset = {
     name: "SHA256SUMS-macos.txt",
     browser_download_url: `https://example.test/${version}/SHA256SUMS-macos.txt`,
@@ -37,8 +37,16 @@ function createRelease({ tag = "codex-app-26.623.70822", extraAssets = [] } = {}
   return {
     tag_name: tag,
     html_url: `https://github.test/releases/${tag}`,
-    assets: [asset, checksumAsset, ...extraAssets],
+    assets: [...assets, checksumAsset, ...extraAssets],
   };
+}
+
+function hostTestAssetName(version) {
+  return hostMacAssetName(version, process.arch);
+}
+
+function checksumLine(buffer, version) {
+  return `${sha256(buffer)}  ${hostTestAssetName(version)}\n`;
 }
 
 function response(body, methods = {}) {
@@ -105,6 +113,7 @@ test("release intake selects host macOS zip assets", () => {
   assert.equal(hostMacAssetName("26.623.70822", "arm64"), "Codex-darwin-arm64-26.623.70822.zip");
   assert.equal(hostMacAssetName("26.623.70822", "x64"), "Codex-darwin-x64-26.623.70822.zip");
   assert.equal(selectAsset(release, { arch: "arm64" }).asset.name, "Codex-darwin-arm64-26.623.70822.zip");
+  assert.equal(selectAsset(release, { arch: "x64" }).asset.name, "Codex-darwin-x64-26.623.70822.zip");
 });
 
 test("release intake parses macOS checksum files", () => {
@@ -218,7 +227,7 @@ test("release intake rejects a bad checksum", async () => {
         {
           fetchImpl: createFetch({
             "https://api.github.com/repos/Wangnov/codex-app-mirror/releases/latest": response(JSON.stringify(release)),
-            "https://example.test/26.623.70822/SHA256SUMS-macos.txt": response(`${wrongSha}  Codex-darwin-arm64-26.623.70822.zip\n`),
+            "https://example.test/26.623.70822/SHA256SUMS-macos.txt": response(`${wrongSha}  ${hostTestAssetName("26.623.70822")}\n`),
             "https://example.test/26.623.70822/Codex.zip": response(zipContent),
           }),
         },
@@ -250,7 +259,7 @@ test("release intake writes metadata and allows unsupported new versions", async
         },
         fetchImpl: createFetch({
           "https://api.github.com/repos/Wangnov/codex-app-mirror/releases/latest": response(JSON.stringify(release)),
-          "https://example.test/26.623.70822/SHA256SUMS-macos.txt": response(`${zipSha}  Codex-darwin-arm64-26.623.70822.zip\n`),
+          "https://example.test/26.623.70822/SHA256SUMS-macos.txt": response(`${zipSha}  ${hostTestAssetName("26.623.70822")}\n`),
           "https://example.test/26.623.70822/Codex.zip": response(zipContent),
         }),
         getAppIdentity: () => ({
@@ -269,7 +278,7 @@ test("release intake writes metadata and allows unsupported new versions", async
 
     const metadata = JSON.parse(fs.readFileSync(result.metadataPath, "utf8"));
     assert.equal(metadata.releaseTag, "codex-app-26.623.70822");
-    assert.equal(metadata.assetName, "Codex-darwin-arm64-26.623.70822.zip");
+    assert.equal(metadata.assetName, hostTestAssetName("26.623.70822"));
     assert.equal(metadata.verifiedZipSha256, zipSha);
     assert.equal(metadata.CFBundleShortVersionString, "26.623.70822");
     assert.equal(metadata.CFBundleVersion, "4559");
@@ -308,11 +317,11 @@ test("release intake can intake the newest N releases", async () => {
             JSON.stringify([firstRelease, secondRelease]),
           ),
           "https://example.test/26.623.70822/SHA256SUMS-macos.txt": response(
-            `${sha256(firstZip)}  Codex-darwin-arm64-26.623.70822.zip\n`,
+            checksumLine(firstZip, "26.623.70822"),
           ),
           "https://example.test/26.623.70822/Codex.zip": response(firstZip),
           "https://example.test/26.623.61825/SHA256SUMS-macos.txt": response(
-            `${sha256(secondZip)}  Codex-darwin-arm64-26.623.61825.zip\n`,
+            checksumLine(secondZip, "26.623.61825"),
           ),
           "https://example.test/26.623.61825/Codex.zip": response(secondZip),
         }),
@@ -358,7 +367,7 @@ test("release intake newest mode skips existing source apps", async () => {
             JSON.stringify([firstRelease, secondRelease]),
           ),
           "https://example.test/26.623.61825/SHA256SUMS-macos.txt": response(
-            `${sha256(secondZip)}  Codex-darwin-arm64-26.623.61825.zip\n`,
+            checksumLine(secondZip, "26.623.61825"),
           ),
           "https://example.test/26.623.61825/Codex.zip": response(secondZip),
         }),
