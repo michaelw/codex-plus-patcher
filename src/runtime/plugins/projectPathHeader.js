@@ -57,7 +57,7 @@
       "data-codex-plus-project-path-header": "",
       className:
         "no-drag ml-1 flex min-w-0 items-center gap-1 overflow-hidden rounded border border-token-border px-1.5 py-0.5 text-xs text-token-description-foreground",
-      style: { flexShrink: 999, maxWidth: "min(24rem, 28vw)" },
+      style: { flexShrink: 0, maxWidth: "min(24rem, 28vw)" },
       title: path,
       children: [
         jsx("span", { className: "min-w-0 truncate", children: label }),

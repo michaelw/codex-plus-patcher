@@ -1546,7 +1546,7 @@ test("project path header plugin formats, hides, and copies paths", () => {
     assert.equal(rendered.props.tooltipContent, longPath);
     const chip = rendered.props.children;
     assert.equal(chip.props.title, longPath);
-    assert.equal(chip.props.style.flexShrink, 999);
+    assert.equal(chip.props.style.flexShrink, 0);
     assert.equal(chip.props.style.maxWidth, "min(24rem, 28vw)");
     assert.equal(chip.props.children[0].props.children, plugin.formatPathLabel(longPath));
     assert.ok(!chip.props.children[0].props.className.includes("font-vscode-editor"));
@@ -1724,6 +1724,21 @@ test("header patch renders project path accessories from thread context", () => 
       assert.match(transformed, /\}\),CPX_headerAccessories\]\}\):\(0,\$\.jsx\)\(`span`/);
       assert.doesNotMatch(transformed, /t\[\d+\]!==CPX_headerAccessories/);
       assert.doesNotMatch(transformed, /t\[\d+\]=CPX_headerAccessories/);
+
+      const localConversationTransform = findTransform(patchSet, "local-conversation-page");
+      const transformedLocalConversation = localConversationTransform([
+        "function pi(e){let t=(0,W.c)(32),",
+        "let t=(0,W.c)(32),{conversationId:n,getConversationMarkdown:r,markdownParentConversationId:i,projectIcon:a,projectHoverCardContent:s,projectName:c,title:l,titleSuffix:u,cwd:d,canPin:f,hideForkActions:m}=e,g=f===void 0?!0:f,_=L(),v=h(),y;",
+        "let k;t[26]===Symbol.for(`react.memo_cache_sentinel`)?(k=null,t[26]=k):k=t[26];",
+        "let A;return t[27]!==w||t[28]!==E||t[29]!==D||t[30]!==O?(A=(0,G.jsx)(`div`,{className:`draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 electron:h-toolbar extension:py-row-y`,children:(0,G.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2 truncate text-base electron:font-medium`,children:[w,E,D,O,k]})}),t[27]=w,t[28]=E,t[29]=D,t[30]=O,t[31]=A):A=t[31],A}",
+      ].join(""));
+
+      assert.match(transformedLocalConversation, /function CPXThreadHeaderAccessories\(e\)/);
+      assert.match(transformedLocalConversation, /CPX_headerContext=\{cwd:d,hostId:null/);
+      assert.match(transformedLocalConversation, /titleText:typeof l==`string`\?l:null/);
+      assert.match(transformedLocalConversation, /projectName:c\?\?null/);
+      assert.match(transformedLocalConversation, /deps:\{jsx:G\.jsx,jsxs:G\.jsxs,Tooltip:ht\}/);
+      assert.doesNotMatch(transformedLocalConversation, /CPX_headerContext=\{cwd:p/);
       continue;
     }
     if (patchSet.id === "codex-26.623.61825-4548") {
@@ -2548,6 +2563,38 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   });
   const missingProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({});
   assert.equal(missingProjectProps.style["--codex-plus-project-accent"], "#bab0ac");
+
+  const chatThreadProps = context.window.CodexPlus.ui.sidebar.threadRowProps({
+    id: "chat-thread-1",
+    title: "Projectless chat",
+    hostId: "local",
+  });
+  assert.equal(chatThreadProps["data-codex-plus-project-sidebar-color"], "");
+  assert.equal(chatThreadProps["data-codex-plus-project-color"], "");
+  assert.ok(chatThreadProps.style["--codex-plus-project-accent"]);
+  assert.equal(
+    context.window.CodexPlus.plugins.get("projectColors").exports.colorKey({ projectKind: "chat", hostId: "local", id: "chat-thread-1" }),
+    "chat:local:chat-thread-1",
+  );
+});
+
+test("current local task row patch forwards projectless chat row identity", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.70822-4559");
+  const fakeLocalTaskRowBundle = [
+    "function hd(e){let t=(0,gd.c)(55),",
+    "onClick:y,onDoubleClick:b,onArchive:x,onContextMenu:S,dataAttributes:C}=e,",
+    "dataAttributes:Zr.sidebarThreadRow({active:s,hostId:f,id:c,kind:`local`,pinned:r,title:x})",
+    "sg={floatStatusIconsRight:!0,hideTimestamp:!0,locationId:`flat-chats`,showPinActionOnHover:!0}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, findTransformPath(patchSet, "local-task-row"), fakeLocalTaskRowBundle);
+
+  assert.match(transformed, /threadId:n\.threadId\?\?n\.id/);
+  assert.match(transformed, /title:n\.title\?\?n\.label/);
+  assert.match(transformed, /projectKind:n\.projectId\|\|n\.worktreeGitRoot\|\|n\.worktreeWorkspaceRoot\?void 0:`chat`/);
+  assert.match(transformed, /projectless:!\(n\.projectId\|\|n\.worktreeGitRoot\|\|n\.worktreeWorkspaceRoot\)/);
+  assert.match(transformed, /dataAttributes:\{\.\.\.Zr\.sidebarThreadRow\(\{active:s,hostId:f,id:c,kind:`local`,pinned:r,title:x\}\),\.\.\.CPXPR\(\{projectId:be,label:ye,path:k,cwd:k,hostId:f,threadId:c,title:x,projectKind:be\|\|k\?void 0:`chat`,projectless:!\(be\|\|k\)\}\)\}/);
+  assert.match(transformed, /locationId:`flat-chats`,showPinActionOnHover:!0,dataAttributes:CPXPR\(\{projectKind:`chat`,projectless:!0,hostId:`local`,id:`flat-chats`,title:`Chats`\}\)/);
 });
 
 test("local task row patch colors standalone rows from row project context", () => {

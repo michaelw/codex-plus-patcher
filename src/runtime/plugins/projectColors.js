@@ -46,6 +46,11 @@
   function colorKey(project) {
     if (project == null) return "";
     if (typeof project === "string") return project.trim();
+    if (project.projectless === true || project.kind === "chat" || project.projectKind === "chat") {
+      const host = project.hostId ?? project.host ?? "local";
+      const id = project.threadId ?? project.conversationId ?? project.id ?? project.title ?? project.label ?? "chat";
+      return `chat:${host}:${id}`;
+    }
     const id = project.projectId ?? project.id;
     if (id != null && String(id).trim() !== "") return String(id).trim();
     const host = project.hostId ?? project.host ?? project.remoteHostId ?? "local";
@@ -172,6 +177,20 @@
     };
   }
 
+  function sidebarThreadDataAttributes(props) {
+    const project = props?.project;
+    if (colorKey(project).trim() !== "") return dataAttributes(project, true);
+    const id = props?.threadId ?? props?.conversationId ?? props?.id ?? props?.title;
+    if (id == null || String(id).trim() === "") return dataAttributes(project, true);
+    return dataAttributes({
+      projectKind: "chat",
+      hostId: props?.hostId,
+      id,
+      title: props?.title,
+      projectless: true,
+    }, true);
+  }
+
   function renderToggleRow({ React, jsx, SettingRow, Switch, label, ariaLabel }) {
     const [enabled, setEnabled] = React.useState(readEnabled);
     React.useEffect(() => {
@@ -220,6 +239,7 @@
         palette,
         readEnabled,
         renderToggleRow,
+        sidebarThreadDataAttributes,
         style,
         writeEnabled,
       },
@@ -235,7 +255,7 @@
           }),
         });
         api.ui.sidebar.decorateProjectRow((props) => dataAttributes(props?.project, true));
-        api.ui.sidebar.decorateThreadRow((props) => dataAttributes(props?.project, true));
+        api.ui.sidebar.decorateThreadRow(sidebarThreadDataAttributes);
         api.ui.message.decorateUserBubble((props) => dataAttributes(props?.project, false));
         api.ui.composer.decorateSurface((props) => dataAttributes(props?.project, false));
       },

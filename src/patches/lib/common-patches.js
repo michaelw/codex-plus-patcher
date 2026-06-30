@@ -915,6 +915,20 @@ function patchThreadPageHeader(text) {
 
 function patchLocalConversationPageHeader(text) {
   if (text.includes("function pi(e){let t=(0,W.c)(32),")) {
+    if (text.includes("projectIcon:a,projectHoverCardContent:s,projectName:c,title:l,titleSuffix:u,cwd:d,canPin:f,hideForkActions:m")) {
+      let patched = replaceOnce(
+        text,
+        "function pi(e){let t=(0,W.c)(32),",
+        `${threadHeaderHook()}function pi(e){let t=(0,W.c)(32),`,
+        "local conversation header helper insertion anchor",
+      );
+      return replaceOnce(
+        patched,
+        "let k;t[26]===Symbol.for(`react.memo_cache_sentinel`)?(k=null,t[26]=k):k=t[26];",
+        "let CPX_headerContext={cwd:d,hostId:null,header:{surface:`local-conversation`,titleText:typeof l==`string`?l:null,projectName:c??null}},k=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:G.jsx,jsxs:G.jsxs,Tooltip:ht}});",
+        "local conversation header accessory render anchor",
+      );
+    }
     let patched = replaceOnce(
       text,
       "function pi(e){let t=(0,W.c)(32),",
@@ -1563,18 +1577,30 @@ function patchLocalTaskRow(text) {
       `${projectColorHook()}function hd(e){let t=(0,gd.c)(55),`,
       "local task row project color helper insertion anchor",
     );
-    return replaceOnce(
+    patched = replaceOnce(
       patched,
       "onClick:y,onDoubleClick:b,onArchive:x,onContextMenu:S,dataAttributes:C}=e,",
-      "onClick:y,onDoubleClick:b,onArchive:x,onContextMenu:S,dataAttributes:C=CPXPR({projectId:n.projectId??n.id,label:n.label,path:n.worktreeGitRoot??n.worktreeWorkspaceRoot,cwd:n.worktreeGitRoot??n.worktreeWorkspaceRoot,hostId:n.hostId})}=e,",
+      "onClick:y,onDoubleClick:b,onArchive:x,onContextMenu:S,dataAttributes:C=CPXPR({projectId:n.projectId,label:n.label,path:n.worktreeGitRoot??n.worktreeWorkspaceRoot,cwd:n.worktreeGitRoot??n.worktreeWorkspaceRoot,hostId:n.hostId,threadId:n.threadId??n.id,title:n.title??n.label,projectKind:n.projectId||n.worktreeGitRoot||n.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(n.projectId||n.worktreeGitRoot||n.worktreeWorkspaceRoot)})}=e,",
       "local task row project assignment anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:Zr.sidebarThreadRow({active:s,hostId:f,id:c,kind:`local`,pinned:r,title:x})",
+      "dataAttributes:{...Zr.sidebarThreadRow({active:s,hostId:f,id:c,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:be,label:ye,path:k,cwd:k,hostId:f,threadId:c,title:x,projectKind:be||k?void 0:`chat`,projectless:!(be||k)})}",
+      "local conversation row project color attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "sg={floatStatusIconsRight:!0,hideTimestamp:!0,locationId:`flat-chats`,showPinActionOnHover:!0}",
+      "sg={floatStatusIconsRight:!0,hideTimestamp:!0,locationId:`flat-chats`,showPinActionOnHover:!0,dataAttributes:CPXPR({projectKind:`chat`,projectless:!0,hostId:`local`,id:`flat-chats`,title:`Chats`})}",
+      "flat chat row projectless color attributes anchor",
     );
   }
   if (text.includes("function jy(e){let t=(0,Fy.c)(57),")) {
     return replaceOnce(
       text,
       "dataAttributes:Ta.sidebarThreadRow({active:c,hostId:f,id:s,kind:`local`,pinned:r,title:x})",
-      "dataAttributes:{...Ta.sidebarThreadRow({active:c,hostId:f,id:s,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:X,label:ge,path:O,cwd:O,hostId:f})}",
+      "dataAttributes:{...Ta.sidebarThreadRow({active:c,hostId:f,id:s,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:X,label:ge,path:O,cwd:O,hostId:f,threadId:s,title:x,projectKind:X||O?void 0:`chat`,projectless:!(X||O)})}",
       "local task row project assignment anchor",
     );
   }
