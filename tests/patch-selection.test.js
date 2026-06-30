@@ -1541,6 +1541,14 @@ test("project path header plugin formats, hides, and copies paths", () => {
     const Tooltip = function Tooltip(props) { return props.children; };
 
     assert.equal(plugin.pathFromContext({ cwd: "  /tmp/project  " }), "/tmp/project");
+    assert.equal(
+      plugin.pathFromContext({ header: { projectName: { props: { group: { path: "  /tmp/header-project  " } } } } }),
+      "/tmp/header-project",
+    );
+    assert.equal(
+      plugin.pathFromContext({ header: { projectName: { props: { group: { projectKind: "local", projectId: "  /tmp/project-id  " } } } } }),
+      "/tmp/project-id",
+    );
     assert.equal(plugin.pathFromContext({ cwd: "   " }), "");
     assert.equal(plugin.pathFromContext({}), "");
 
@@ -1563,6 +1571,14 @@ test("project path header plugin formats, hides, and copies paths", () => {
       stopPropagation() {},
     });
     assert.deepEqual(copied, [longPath]);
+
+    const headerRendered = plugin.ProjectPathAccessory({
+      context: { header: { projectName: { props: { group: { path: longPath } } } } },
+      jsx,
+      jsxs,
+      Tooltip,
+    });
+    assert.equal(headerRendered.props.children.props.title, longPath);
 
     assert.equal(plugin.ProjectPathAccessory({ context: { cwd: "" }, jsx, jsxs, Tooltip }), null);
     assert.ok(diagnosticEvents.some((entry) => entry.event === "projectPathHeader.render.chip" && entry.details.path === longPath));
