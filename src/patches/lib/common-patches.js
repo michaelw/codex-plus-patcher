@@ -1719,6 +1719,20 @@ function patchMermaidDiagramShell(text) {
       "mermaid diagram shell host props anchor",
     );
   }
+  if (text.includes("function or({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:c}){")) {
+    let patched = replaceOnce(
+      text,
+      "function or({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:c}){",
+      `${mermaidDiagramHook()}function or({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:c}){`,
+      "mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,X.jsx)(`div`,{ref:u,className:ee(vr,!i&&`invisible`,p?`max-h-[var(--markdown-wide-block-max-height)] overflow-auto`:`overflow-x-auto`),\"aria-hidden\":!i||void 0,",
+      "(0,X.jsx)(`div`,{ref:u,...CPXMermaidDiagramProps({code:t}),className:ee(vr,!i&&`invisible`,p?`max-h-[var(--markdown-wide-block-max-height)] overflow-auto`:`overflow-x-auto`),\"aria-hidden\":!i||void 0,",
+      "mermaid diagram shell host props anchor",
+    );
+  }
   let patched = replaceOnce(
     text,
     "function d(e){let t=(0,s.c)(18),{Renderer:n,className:r,code:i,fallback:d,isCodeFenceOpen:f,wideBlockKind:p}=e,",
