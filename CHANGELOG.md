@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.3](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.2...v0.12.3) (2026-06-30)
+
+
+### Bug Fixes
+
+* cover projectless chat rows in audit fixture ([#75](https://github.com/michaelw/codex-plus-patcher/issues/75)) ([262a772](https://github.com/michaelw/codex-plus-patcher/commit/262a772db17166baa27445b52092887c5a1889de))
+* match sidebar thread accent widths ([#73](https://github.com/michaelw/codex-plus-patcher/issues/73)) ([d094d18](https://github.com/michaelw/codex-plus-patcher/commit/d094d183c2ae7bee43ccc85ffe8d65bfecff4c6b))
+
 ## [0.12.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.1...v0.12.2) (2026-06-30)
 
 
