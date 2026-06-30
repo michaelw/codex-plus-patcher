@@ -1920,6 +1920,20 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
     );
   }
 
+  const currentBundle = [
+    "function or({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:c}){",
+    "return(0,X.jsxs)(`div`,{className:`relative`,`data-markdown-copy`:`code-block`,`data-markdown-copy-text`:S,children:[",
+    "(0,X.jsx)(`div`,{ref:u,className:ee(vr,!i&&`invisible`,p?`max-h-[var(--markdown-wide-block-max-height)] overflow-auto`:`overflow-x-auto`),\"aria-hidden\":!i||void 0,",
+  ].join("");
+  const currentPatchSet = patchSets.find((patchSet) => patchSet.id === "codex-26.623.70822-4559");
+  const currentTransform = collectFileTransforms(currentPatchSet).find(
+    ([filePath]) => filePath === "webview/assets/mermaid-diagram-CVBcf6fK.js",
+  )?.[1];
+  assert.equal(typeof currentTransform, "function", "current patch has verified mermaid renderer transform");
+  const currentTransformed = currentTransform(currentBundle);
+  assert.match(currentTransformed, /function CPXMermaidDiagramProps\(e\)\{return window\.CodexPlus\?\.ui\?\.mermaid\?\.diagramProps\?\.\(e\)\}/);
+  assert.match(currentTransformed, /\.\.\.CPXMermaidDiagramProps\(\{code:t\}\),className:ee\(vr,!i&&`invisible`/);
+
   const pluginSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/mermaidFullscreen.js"), "utf8");
   const nativeMainSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/nativeMain.js"), "utf8");
   const commonPatches = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
