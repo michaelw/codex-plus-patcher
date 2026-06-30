@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.1...v0.12.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* restore Mermaid popout hook ([#71](https://github.com/michaelw/codex-plus-patcher/issues/71)) ([f5899fa](https://github.com/michaelw/codex-plus-patcher/commit/f5899fad8c20efc4a42074ac6493fae606b22d21))
+
 ## [0.12.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.0...v0.12.1) (2026-06-30)
 
 
