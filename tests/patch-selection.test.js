@@ -2394,8 +2394,9 @@ test("app main patch applies project colors to project headers and grouped row o
   const blurPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/sidebarNameBlur.js"), "utf8");
   assert.match(projectPlugin, /data-codex-plus-project-sidebar-color/);
   assert.match(projectPlugin, /data-app-action-sidebar-thread-active=\\"true\\"/);
-  assert.match(projectPlugin, /box-shadow:inset 5px 0 0 var\(--codex-plus-project-accent\)/);
+  assert.doesNotMatch(projectPlugin, /box-shadow:inset 5px 0 0 var\(--codex-plus-project-accent\)/);
   assert.match(projectPlugin, /box-shadow:inset 6px 0 0 var\(--codex-plus-project-accent\)/);
+  assert.match(projectPlugin, /\[data-app-action-sidebar-project-list-id\]\[data-codex-plus-project-sidebar-color\] \[data-app-action-sidebar-thread-row\]:not\(\[data-app-action-sidebar-thread-active=\\"true\\"\]\)\{border-left-color:transparent!important\}/);
   assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]/);
   assert.match(blurPlugin, /data-codex-plus-sidebar-names-blurred/);
   assert.match(blurPlugin, /data-app-action-sidebar-project-row/);
