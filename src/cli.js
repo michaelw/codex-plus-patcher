@@ -51,6 +51,7 @@ function parseArgs(argv) {
     noProgress: false,
     quiet: false,
     devInstanceId: DEFAULT_DEV_INSTANCE_ID,
+    useLiveSourceHome: false,
   };
   const rest = [...argv];
   if (rest[0] && !rest[0].startsWith("--")) args.command = rest.shift();
@@ -68,7 +69,10 @@ function parseArgs(argv) {
     };
     if (arg === "--source") args.source = path.resolve(expandPath(next()));
     else if (arg === "--target") args.target = path.resolve(expandPath(next()));
-    else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
+    else if (arg === "--source-home") {
+      args.sourceHome = path.resolve(expandPath(next()));
+      if (args.command === "audit-plugins") args.useLiveSourceHome = true;
+    }
     else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
     else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
     else if (arg === "--dev-instance-id") args.devInstanceId = next();
@@ -88,6 +92,7 @@ function parseArgs(argv) {
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--quiet") args.quiet = true;
@@ -108,7 +113,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
-  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open] [--include-native-open-probes]
+  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open] [--include-native-open-probes] [--use-live-source-home]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -118,7 +123,7 @@ function helpText() {
 Options:
   --source <path>          Source Codex.app. Default: /Applications/Codex.app
   --target <path>          Target Codex Plus.app. Default: ~/Applications/Codex Plus.app
-  --source-home <path>     Original Codex home for dev-sync. Default: ~/.codex
+  --source-home <path>     Original Codex home for dev-sync, or live-state audit debugging. Default: ~/.codex
   --dev-home <path>        Isolated CODEX_HOME for dev mode. Default: ./work/codex-plus-dev-home
   --electron-user-data <path>
                            Isolated Electron userData for launch-dev. Default: ./work/codex-plus-electron-user-data
@@ -137,6 +142,7 @@ Options:
   --no-apply               Reuse an existing audit target without applying patches
   --no-launch              Attach to an existing audit app instead of launching
   --keep-open              Leave the audit-launched app open after probes finish
+  --use-live-source-home   Use --source-home for audit-plugins instead of generated fixture state
   --include-native-open-probes
                            Also open DevTools and Mermaid viewer windows during audit probes
   --no-progress            Suppress audit progress and print only the final summary

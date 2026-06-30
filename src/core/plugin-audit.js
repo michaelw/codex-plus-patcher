@@ -11,6 +11,10 @@ const {
   launchDevApp,
   syncDevHome,
 } = require("./dev-mode");
+const {
+  buildAuditFixture,
+  seedAuditFixtureBrowserState,
+} = require("./audit-fixture");
 const { patchCodexApp } = require("./patch-engine");
 const { patchSets } = require("../patches");
 const packageJson = require("../../package.json");
@@ -41,6 +45,7 @@ function parseArgs(argv) {
     noProgress: false,
     quiet: false,
     devInstanceId: "audit",
+    useLiveSourceHome: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -51,7 +56,10 @@ function parseArgs(argv) {
     };
     if (arg === "--source") args.source = path.resolve(expandPath(next()));
     else if (arg === "--target") args.target = path.resolve(expandPath(next()));
-    else if (arg === "--source-home") args.sourceHome = path.resolve(expandPath(next()));
+    else if (arg === "--source-home") {
+      args.sourceHome = path.resolve(expandPath(next()));
+      args.useLiveSourceHome = true;
+    }
     else if (arg === "--dev-home") args.devHome = path.resolve(expandPath(next()));
     else if (arg === "--electron-user-data") args.electronUserDataPath = path.resolve(expandPath(next()));
     else if (arg === "--dev-instance-id") args.devInstanceId = next();
@@ -62,6 +70,7 @@ function parseArgs(argv) {
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -363,11 +372,18 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
         setter?.call(input, query);
         input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
-        setTimeout(() => {
+        const startedAt = Date.now();
+        const finishWhenReady = () => {
           const resultLabels = collectLabels();
           const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
           const selectedProjectStillVisible = resultLabels.some((label) => label.includes(selectedLabel));
           const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
+          if (!selectedProjectStillVisible || highlightCount === 0) {
+            if (Date.now() - startedAt < 3000) {
+              setTimeout(finishWhenReady, 100);
+              return;
+            }
+          }
           resolve({
             suitableProjectFound: true,
             queryLength: query.length,
@@ -376,7 +392,8 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
             noProjectsFoundVisible,
             highlightCount,
           });
-        }, 200);
+        };
+        setTimeout(finishWhenReady, 100);
       })`);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
@@ -414,43 +431,142 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     const containsVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p, h1, h2, h3")
       .some((element) => normalize(element.textContent).includes(text));
     const reviewControl = () => visibleElements("button, [role='tab'], [role='button']")
-      .find((element) => normalize(element.textContent) === "Review" || normalize(element.getAttribute("aria-label")) === "Review");
+      .find((element) => {
+        const text = normalize(element.textContent);
+        const label = normalize(element.getAttribute("aria-label"));
+        return text === "Review" || label === "Review" || text === "Changes" || label === "Changes";
+      });
     const reviewSelected = () => visibleElements("[role='tab'][aria-selected='true'], button[aria-selected='true'], [data-state='active']")
       .some((element) => normalize(element.textContent) === "Review");
+    const nativeReviewSourceVisible = () => {
+      const text = normalize(document.body.textContent).replace(/→/g, "->");
+      return /HEAD\\s*(->)?\\s*main/.test(text) || text.includes("Unstaged") || (text.includes("Local") && text.includes("main"));
+    };
+    const clickNestedFixtureThread = () => {
+      const row = visibleElements("[data-app-action-sidebar-thread-row]")
+        .find((element) => normalize(element.textContent).includes("Fixture: nested repos before branch selection"));
+      if (!row) return false;
+      row.click();
+      return true;
+    };
+    const nestedBranchPickers = () => visibleElements("[data-codex-plus-repo-branch-picker]")
+      .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
+    const selectUnstagedReviewSource = () => {
+      const item = visibleElements("[role='menuitem'], [cmdk-item], [data-radix-collection-item]")
+        .find((element) => ["Unstaged", "Show unstaged changes"].includes(normalize(element.textContent)));
+      if (item) {
+        item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        item.click();
+        return true;
+      }
+      const reviewPanel = visibleElements("[role='tabpanel'][aria-label='Review']")[0];
+      const controls = (reviewPanel ? Array.from(reviewPanel.querySelectorAll("button, [role='button']")).filter(visible) : visibleElements("button, [role='button']"));
+      const sourceTrigger = controls
+        .find((element) => normalize(element.textContent) === "Branch" || normalize(element.getAttribute("title")) === "Switch branch");
+      if (sourceTrigger) {
+        sourceTrigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        sourceTrigger.click();
+      }
+      return false;
+    };
+    const loadNestedBranchPicker = () => {
+      const picker = nestedBranchPickers()[0];
+      if (!picker) return false;
+      picker.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      picker.focus?.();
+      picker.click?.();
+      return true;
+    };
+    const nestedBranchPickerPopulated = () => nestedBranchPickers().some((picker) => {
+      const branchCount = Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0");
+      if (Number.isFinite(branchCount) && branchCount > 0) return true;
+      if (picker.tagName === "SELECT") {
+        return Array.from(picker.options || []).some((option) => normalize(option.textContent) && normalize(option.textContent) !== "Unstaged" && normalize(option.textContent) !== "Loading...");
+      }
+      return normalize(document.body.textContent).includes("main");
+    });
+    const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+    const rawNestedDiffFallbackCount = () => visibleElements("pre")
+      .filter((element) => /diff --git/.test(element.textContent || ""))
+      .length;
+    const reviewDiffCardCount = () => visibleElements(".codex-review-diff-card").length;
     const snapshot = (extra = {}) => ({
       candidateCount: extra.candidateCount ?? 0,
       attemptedCandidates: extra.attemptedCandidates ?? 0,
       reviewControlFound: Boolean(extra.reviewControlFound),
       clickedReview: Boolean(extra.clickedReview),
+      clickedNestedFixtureThread: Boolean(extra.clickedNestedFixtureThread),
+      clickedNestedBranchPicker: Boolean(extra.clickedNestedBranchPicker),
+      requiredUnstagedFallback: Boolean(extra.requiredUnstagedFallback),
+      selectedUnstagedFallback: Boolean(extra.selectedUnstagedFallback),
       selectedReview: reviewSelected(),
       boundaryVisible: containsVisibleText("Tab content couldn't render"),
       tryAgainVisible: exactVisibleText("Try again"),
       repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
-      mainVisible: exactVisibleText("Main"),
+      mainVisible: containsVisibleText("Main"),
+      nativeReviewSourceVisible: nativeReviewSourceVisible(),
+      nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
+      nestedBranchPickerCount: nestedBranchPickers().length,
+      nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
+      nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+      rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
+      reviewDiffCardCount: reviewDiffCardCount(),
       reviewTabCount: visibleElements("button, [role='tab'], [role='button']").filter((element) => normalize(element.textContent) === "Review").length,
     });
-    const ignoreCandidate = (element) => {
-      const text = normalize(element.textContent || element.getAttribute("aria-label"));
-      return !text ||
-        text === "Review" ||
-        /^(New chat|Search|Settings|Plugins|Home|Projects)$/i.test(text) ||
-        /project selector|project actions|collapse|expand|pin|archive|delete|rename|try again/i.test(text);
-    };
-    const candidates = visibleElements("[data-app-action-sidebar-thread-row], button, [role='button'], a")
-      .filter((element) => !ignoreCandidate(element))
+    const candidates = visibleElements("[data-app-action-sidebar-thread-row]")
+      .filter((element) => normalize(element.textContent || element.getAttribute("aria-label")))
       .slice(0, ${Number(maxThreadCandidates) || 12});
     let index = 0;
     const deadline = Date.now() + ${Number(timeoutMs) || 8000};
     const step = () => {
+      const clickedNestedFixtureThread = clickNestedFixtureThread();
       const control = reviewControl();
       if (control) {
-        control.click();
-        setTimeout(() => resolve(snapshot({
-          candidateCount: candidates.length,
-          attemptedCandidates: index,
-          reviewControlFound: true,
-          clickedReview: true,
-        })), 450);
+	        control.click();
+	        let clickedInnerReview = normalize(control.textContent) === "Review";
+	        let clickedNestedBranchPicker = false;
+	        let requiredUnstagedFallback = false;
+	        let selectedUnstagedFallback = false;
+	        const reviewDeadline = Date.now() + 15000;
+	        const waitForReviewContent = () => {
+          const inner = visibleElements("button, [role='tab'], [role='button']")
+            .find((element) => normalize(element.textContent) === "Review" || normalize(element.getAttribute("aria-label")) === "Review");
+          if (inner && !clickedInnerReview) {
+            clickedInnerReview = true;
+            inner.click();
+          }
+	          if (!clickedNestedBranchPicker && containsVisibleText("Codex Plus repositories") && (containsVisibleText("alpha-module") || containsVisibleText("beta-module"))) {
+	            clickedNestedBranchPicker = loadNestedBranchPicker();
+	          }
+	          if (nativeReviewSourceVisible() && !containsVisibleText("Codex Plus repositories") && containsVisibleText("No sources yet") && !selectedUnstagedFallback) {
+	            requiredUnstagedFallback = true;
+	            selectedUnstagedFallback = selectUnstagedReviewSource() || selectedUnstagedFallback;
+	          }
+	          const current = snapshot({
+	            candidateCount: candidates.length,
+	            attemptedCandidates: index,
+	            reviewControlFound: true,
+	            clickedReview: true,
+	            clickedNestedFixtureThread,
+	            clickedNestedBranchPicker,
+	            requiredUnstagedFallback,
+	            selectedUnstagedFallback,
+	          });
+          if ((
+            current.repoHeaderVisible &&
+            current.mainVisible &&
+            current.nativeReviewSourceVisible &&
+            current.nestedRepoVisible &&
+            current.nestedBranchPickerPopulated &&
+            current.rawNestedDiffFallbackCount === 0 &&
+            current.reviewDiffCardCount > 0
+          ) || Date.now() >= reviewDeadline) {
+            resolve(current);
+            return;
+          }
+          setTimeout(waitForReviewContent, 350);
+        };
+        setTimeout(waitForReviewContent, 350);
         return;
       }
       if (index >= candidates.length || Date.now() >= deadline) {
@@ -468,18 +584,129 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     };
     step();
   })`);
+  let finalStatus = status;
+  if (status?.requiredUnstagedFallback && !status.selectedUnstagedFallback && typeof cdp.send === "function") {
+    const clickCenter = async (rect) => {
+      if (!rect) return false;
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x, y: rect.y, button: "none" });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: rect.x, y: rect.y, button: "left", clickCount: 1 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: rect.x, y: rect.y, button: "left", clickCount: 1 });
+      return true;
+    };
+    const branchRect = await cdp.evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+      const reviewPanel = Array.from(document.querySelectorAll("[role='tabpanel'][aria-label='Review']")).find(visible);
+      const branch = Array.from((reviewPanel || document).querySelectorAll("button, [role='button']"))
+        .filter(visible)
+        .find((element) => normalize(element.textContent) === "Branch");
+      if (!branch) return null;
+      const rect = branch.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    })()`);
+    const clickedBranch = await clickCenter(branchRect);
+    if (clickedBranch) await new Promise((resolve) => setTimeout(resolve, 500));
+    const unstagedRect = await cdp.evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+      const item = Array.from(document.querySelectorAll("[role='menuitem'], [data-radix-collection-item]"))
+        .filter(visible)
+        .find((element) => normalize(element.textContent) === "Unstaged");
+      if (!item) return null;
+      const rect = item.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    })()`);
+    const selectedUnstaged = await clickCenter(unstagedRect);
+    if (selectedUnstaged) await new Promise((resolve) => setTimeout(resolve, 3000));
+    await cdp.evaluate(`(() => {
+      const pickers = Array.from(document.querySelectorAll("[data-codex-plus-repo-branch-picker]"));
+      for (const picker of pickers) {
+        picker.scrollIntoView?.({ block: "center" });
+        picker.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        picker.focus?.();
+        picker.dispatchEvent(new FocusEvent("focus", { bubbles: false, cancelable: false }));
+        picker.dispatchEvent(new Event("focusin", { bubbles: true, cancelable: false }));
+      }
+      return pickers.length;
+    })()`);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    finalStatus = await cdp.evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+      const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
+      const containsVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p, h1, h2, h3")
+        .some((element) => normalize(element.textContent).includes(text));
+      const exactVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p")
+        .some((element) => normalize(element.textContent) === text);
+      const nestedBranchPickers = () => visibleElements("[data-codex-plus-repo-branch-picker]")
+        .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
+      const nestedBranchPickerPopulated = () => nestedBranchPickers().some((picker) => {
+        const branchCount = Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0");
+        if (Number.isFinite(branchCount) && branchCount > 0) return true;
+        if (picker.tagName === "SELECT") {
+          return Array.from(picker.options || []).some((option) => normalize(option.textContent) && normalize(option.textContent) !== "Unstaged" && normalize(option.textContent) !== "Loading...");
+        }
+        return normalize(document.body.textContent).includes("main");
+      });
+      const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+      const rawNestedDiffFallbackCount = () => visibleElements("pre")
+        .filter((element) => /diff --git/.test(element.textContent || ""))
+        .length;
+      const reviewDiffCardCount = () => visibleElements(".codex-review-diff-card").length;
+      return {
+        ...${JSON.stringify(status)},
+        cdpUnstagedFallback: true,
+        clickedCdpBranchFallback: ${clickedBranch ? "true" : "false"},
+        selectedUnstagedFallback: ${selectedUnstaged ? "true" : "false"},
+        selectedReview: visibleElements("[role='tab'][aria-selected='true'], button[aria-selected='true'], [data-state='active']")
+          .some((element) => normalize(element.textContent) === "Review"),
+        boundaryVisible: containsVisibleText("Tab content couldn't render"),
+        tryAgainVisible: exactVisibleText("Try again"),
+        repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
+        mainVisible: containsVisibleText("Main"),
+        nativeReviewSourceVisible: normalize(document.body.textContent).includes("Unstaged") || (normalize(document.body.textContent).includes("Local") && normalize(document.body.textContent).includes("main")),
+        nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
+        nestedBranchPickerCount: nestedBranchPickers().length,
+        nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
+        nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+        rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
+        reviewDiffCardCount: reviewDiffCardCount(),
+      };
+    })()`);
+  }
   const ok = Boolean(
-    status?.reviewControlFound &&
-    status.clickedReview &&
-    status.selectedReview &&
-    !status.boundaryVisible &&
-    !status.tryAgainVisible &&
-    status.repoHeaderVisible &&
-    status.mainVisible,
+    finalStatus?.reviewControlFound &&
+    finalStatus.clickedReview &&
+    finalStatus.selectedReview &&
+    !finalStatus.boundaryVisible &&
+    !finalStatus.tryAgainVisible &&
+    finalStatus.repoHeaderVisible &&
+    finalStatus.mainVisible &&
+    finalStatus.nativeReviewSourceVisible &&
+    finalStatus.nestedRepoVisible &&
+    finalStatus.nestedBranchPickerPopulated &&
+    finalStatus.nestedBranchPickerOptionCounts?.every((count) => count > 0) &&
+    finalStatus.rawNestedDiffFallbackCount === 0 &&
+    finalStatus.reviewDiffCardCount > 0,
   );
   return {
     ok,
-    ...status,
+    ...finalStatus,
     message: ok
       ? undefined
       : status?.reviewControlFound
@@ -708,7 +935,10 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
     }
     await delay(250);
   }
-  throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}`);
+  const startupHint = lastStatus?.hasStartupLoader
+    ? " The app is still on the startup logo; check for a blocking macOS Keychain access dialog for the audit/regression app."
+    : "";
+  throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}${startupHint}`);
 }
 
 function failedPlugins(result) {
@@ -793,6 +1023,7 @@ function formatAuditResult(result, { quiet = false } = {}) {
     `Source: ${result.applyResult?.sourceApp || result.source || DEFAULT_SOURCE}`,
     `Target: ${result.target?.app || DEFAULT_TARGET}`,
   ];
+  lines.push(`Home: ${result.fixtureResult ? "generated fixture" : result.syncResult ? "live source sync" : "existing app"}`);
   if (result.applyResult?.patchSet) lines.push(`Patch set: ${result.applyResult.patchSet}`);
   lines.push(
     "",
@@ -1076,8 +1307,21 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       }
       return 0;
     };
+    const expandProjectRows = async () => {
+      const collapsedRows = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][aria-expanded='false']"));
+      for (const row of collapsedRows) {
+        const container = row.closest("[role='listitem']") || row.parentElement;
+        const expandButton = container?.querySelector("button[aria-label='Expand project']") ||
+          container?.querySelector("button[aria-expanded='false']") ||
+          row.querySelector("button[aria-expanded='false']");
+        (expandButton || row).click();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      return collapsedRows.length;
+    };
     const isTransparentColor = (value) => value === "rgba(0, 0, 0, 0)" || value === "transparent";
-    const waitForMountedProjectComposer = async (expectedAccent, timeoutMs = 20000) => {
+    const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 20000) => {
+      const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
         const editor = document.querySelector("[data-codex-composer]");
@@ -1088,7 +1332,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           if (
             surface.hasAttribute("data-codex-plus-user-entry") &&
             surface.hasAttribute("data-codex-plus-project-color") &&
-            surfaceAccent === expectedAccent &&
+            (expected.length === 0 || expected.includes(surfaceAccent)) &&
             computed.boxShadow !== "none"
           ) {
             return {
@@ -1252,11 +1496,15 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         },
         gitRequest() {
           return {
-            request(request) {
-              repositoryTargetRequests.push(request);
-              return Promise.resolve({ main: null, repositories: [] });
-            },
-          };
+        request(request) {
+          repositoryTargetRequests.push(request);
+          return Promise.resolve({
+            main: { id: "main:/tmp/codex-plus-audit", kind: "main", path: ".", label: "Main", cwd: "/tmp/codex-plus-audit" },
+            repositories: [{ id: "repo:pkg", kind: "nested", path: "pkg", label: "pkg", cwd: "/tmp/codex-plus-audit/pkg" }],
+            warnings: [],
+          });
+        },
+      };
         },
       };
       const wrapped = window.CodexPlus.ui.review.renderBody({ defaultBody: "body", props: {}, deps: nestedReviewDeps });
@@ -1327,8 +1575,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const accent = projectProps?.style?.["--codex-plus-project-accent"];
       const matchingProps = [threadProps, bubbleProps, composerProps].every((props) =>
         props?.style?.["--codex-plus-project-accent"] === accent);
+      const expandedProjects = await expandProjectRows();
+      const liveProjectRows = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-codex-plus-project-color]"));
       const liveRows = Array.from(document.querySelectorAll("[data-codex-plus-project-color]"));
       const liveAccents = liveRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
+      const liveProjectAccents = liveProjectRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
       const projectThreadRowCount = await waitForProjectThreadRows();
       let selectedProjectAccent = "";
       let mountedComposer = null;
@@ -1366,23 +1617,29 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
               };
         })
         .filter(Boolean);
-      if (selectedProjectAccent) mountedComposer = await waitForMountedProjectComposer(selectedProjectAccent);
+      const expectedComposerAccents = Array.from(new Set([selectedProjectAccent, ...liveAccents])).filter(Boolean);
+      if (expectedComposerAccents.length > 0) mountedComposer = await waitForMountedProjectComposer(expectedComposerAccents);
       if (!accent) throw new Error("Project accent was not computed");
       if (!matchingProps) throw new Error("Project, thread, bubble, and composer props do not share an accent");
-      if (projectThreadRowCount === 0) throw new Error("No visible project child thread rows appeared; project sidebar styling was not proven");
+      if (liveProjectRows.length < 10) throw new Error(`Expected at least 10 styled project rows, found ${liveProjectRows.length}`);
+      if (new Set(liveProjectAccents).size < 6) throw new Error(`Expected at least 6 distinct project accents, found ${new Set(liveProjectAccents).size}`);
       if (unstyledProjectThreadLists.length > 0) {
         throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
       }
-      if (!mountedComposer?.marked || !mountedComposer?.projectMarked || mountedComposer?.accent !== selectedProjectAccent) {
+      if (!mountedComposer?.marked || !mountedComposer?.projectMarked || !expectedComposerAccents.includes(mountedComposer?.accent)) {
         throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
       }
       pass("projectColors", {
         ...details,
         accent,
         matchingProps,
+        liveProjectRows: liveProjectRows.length,
+        liveProjectAccents: Array.from(new Set(liveProjectAccents)).slice(0, 12),
         liveRows: liveRows.length,
         liveAccents: Array.from(new Set(liveAccents)).slice(0, 8),
+        expandedProjects,
         styledProjectThreadLists: projectThreadRowCount,
+        projectChildRowsAvailable: projectThreadRowCount > 0,
         mountedComposer,
       });
     } catch (error) {
@@ -1627,6 +1884,8 @@ async function runAudit(args, {
   const findPort = operations.findFreePort || findFreePort;
   const patchApp = operations.patchCodexApp || patchCodexApp;
   const syncHome = operations.syncDevHome || syncDevHome;
+  const buildFixture = operations.buildAuditFixture || buildAuditFixture;
+  const seedFixtureBrowserState = operations.seedAuditFixtureBrowserState || seedAuditFixtureBrowserState;
   const launchApp = operations.launchDevApp || launchDevApp;
   const waitRenderer = operations.waitForRendererTarget || waitForRendererTarget;
   const Session = operations.CdpSession || CdpSession;
@@ -1644,6 +1903,7 @@ async function runAudit(args, {
   const identity = readIdentity();
   let applyResult = null;
   let syncResult = null;
+  let fixtureResult = null;
   let launchResult = null;
   let target = null;
   let cdp = null;
@@ -1668,15 +1928,29 @@ async function runAudit(args, {
       );
     }
     if (args.apply || args.launch) {
-      syncResult = await withAuditProgress(
-        progress,
-        "Syncing dev home",
-        "Synced dev home",
-        () => syncHome({
-          sourceHome: args.sourceHome,
-          devHome: args.devHome,
-        }),
-      );
+      if (args.useLiveSourceHome) {
+        syncResult = await withAuditProgress(
+          progress,
+          "Syncing live source home",
+          "Synced live source home",
+          () => syncHome({
+            sourceHome: args.sourceHome,
+            devHome: args.devHome,
+          }),
+        );
+      } else {
+        fixtureResult = await withAuditProgress(
+          progress,
+          "Preparing generated audit fixture",
+          "Prepared generated audit fixture",
+          () => buildFixture({
+            devHome: args.devHome,
+            electronUserDataPath: args.electronUserDataPath,
+            appServerBinary: path.join(path.resolve(args.target), "Contents/Resources/codex"),
+            credentialsSourceHome: args.sourceHome,
+          }),
+        );
+      }
     }
     if (preflight.launch) {
       launchResult = await withAuditProgress(
@@ -1713,6 +1987,14 @@ async function runAudit(args, {
       "App shell mounted",
       () => waitAppShell(cdp),
     );
+    if (fixtureResult) {
+      await withAuditProgress(
+        progress,
+        "Seeding fixture browser state",
+        "Seeded fixture browser state",
+        () => seedFixtureBrowserState(cdp, fixtureResult),
+      );
+    }
     const live = await withAuditProgress(
       progress,
       "Running plugin probes",
@@ -1801,6 +2083,19 @@ async function runAudit(args, {
         worktrees: syncResult.worktrees,
         sessions: syncResult.sessions,
       },
+      fixtureResult: fixtureResult && {
+        mode: fixtureResult.mode,
+        files: fixtureResult.files,
+        credentials: fixtureResult.credentials,
+        workRoot: fixtureResult.workRoot,
+        threads: fixtureResult.threads?.map((thread) => ({
+          id: thread.id,
+          title: thread.title,
+          cwd: thread.cwd,
+          projectId: thread.projectId,
+        })),
+        browserState: fixtureResult.browserState,
+      },
       launchResult: launchResult && {
         command: launchResult.command,
         args: launchResult.args,
@@ -1846,6 +2141,19 @@ async function runAudit(args, {
         sqliteSnapshots: syncResult.sqliteSnapshots,
         worktrees: syncResult.worktrees,
         sessions: syncResult.sessions,
+      },
+      fixtureResult: fixtureResult && {
+        mode: fixtureResult.mode,
+        files: fixtureResult.files,
+        credentials: fixtureResult.credentials,
+        workRoot: fixtureResult.workRoot,
+        threads: fixtureResult.threads?.map((thread) => ({
+          id: thread.id,
+          title: thread.title,
+          cwd: thread.cwd,
+          projectId: thread.projectId,
+        })),
+        browserState: fixtureResult.browserState,
       },
       launchResult: launchResult && {
         command: launchResult.command,

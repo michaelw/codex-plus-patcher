@@ -192,6 +192,32 @@ npm run regression:sources -- --clean --filter 61825
 Cleanup only removes generated output under `work/regression/sources/`; it must
 not remove the original app cache under `work/sources/`.
 
+Plugin audits and source regressions create a generated Codex home fixture by
+default. The fixture seeds synthetic projects, threads, project assignments,
+nested repositories, pinned/projectless sidebar state, and appearance state
+under the audit or regression output directory. It does not copy or rewrite the
+user's real `~/.codex` databases; it may copy only `auth.json` from
+`--source-home` so the app mounts the signed-in shell. For manual live-state
+debugging only, pass `--use-live-source-home` or an explicit
+`--source-home <path>`.
+
+The generated fixture and `audit-plugins` probes must cover the plugin
+regressions that have broken in real ports:
+
+- Review panel nested repositories render immediately after opening Review,
+  before selecting `Unstaged` or changing the main branch selector.
+- Nested repository branch selectors open and are populated with branch choices.
+- Nested repository diffs keep host syntax highlighting.
+- User bubble colors remain legible with both a light color such as `#e0218a`
+  and a dark color.
+- Synthetic fixture threads do not trigger backend "unknown thread" errors.
+- At least ten projects are present so project color assignment is exercised
+  beyond the first few palette entries.
+- Pinned threads inherit the color of their project.
+- Project chats have stable colors based on their project identity.
+- `regression:sources --json` includes each failing audit probe's detailed
+  fields, not only the summarized plugin failure message.
+
 ## Release And Package Checks
 
 Before publishing or attaching release assets, run:

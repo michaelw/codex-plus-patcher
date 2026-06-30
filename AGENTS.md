@@ -21,6 +21,9 @@ This repo ships patch source only. Never commit `Codex.app`, generated
   `work/sources/` tree.
 - Use `npm run regression:sources` to audit cached original apps under
   `work/sources/` against the current patch code.
+- Automated plugin audits use generated Codex home fixtures by default. Use
+  `--use-live-source-home` or `--source-home <path>` only for manual live-state
+  debugging, not as the normal regression path.
 - Validate real patch application against a workspace-local target under
   `work/`, not the user's real app target.
 - Do not commit downloaded zips, extracted original apps, or generated

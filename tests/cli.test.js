@@ -173,12 +173,14 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(args.electronUserDataPath, path.join(os.homedir(), "dev-electron"));
   assert.equal(args.devInstanceId, "manual-audit");
   assert.equal(args.remoteDebuggingPort, 9240);
+  assert.equal(args.useLiveSourceHome, true);
 
   const defaults = parseArgs(["audit-plugins"]);
   assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
   assert.equal(defaults.remoteDebuggingPort, 9234);
   assert.equal(defaults.includeNativeOpenProbes, false);
   assert.equal(defaults.devInstanceId, "audit");
+  assert.equal(defaults.useLiveSourceHome, false);
 });
 
 test("formatResult prints a concise open command for created apps", () => {
@@ -522,6 +524,12 @@ test("review panel verifier returns sanitized success details", async () => {
         tryAgainVisible: false,
         repoHeaderVisible: true,
         mainVisible: true,
+        nativeReviewSourceVisible: true,
+        nestedRepoVisible: true,
+        nestedBranchPickerPopulated: true,
+        nestedBranchPickerOptionCounts: [1, 1],
+        rawNestedDiffFallbackCount: 0,
+        reviewDiffCardCount: 2,
         reviewTabCount: 1,
       });
     },
@@ -530,6 +538,9 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.equal(result.ok, true);
   assert.equal(result.candidateCount, 3);
   assert.equal(result.reviewControlFound, true);
+  assert.deepEqual(result.nestedBranchPickerOptionCounts, [1, 1]);
+  assert.equal(result.rawNestedDiffFallbackCount, 0);
+  assert.equal(result.reviewDiffCardCount, 2);
   assert.equal(result.message, undefined);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "title"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "path"), false);
@@ -797,6 +808,8 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
         findFreePort() { return Promise.resolve(9234); },
         patchCodexApp() { return Promise.resolve({ patchSet: "codex-test" }); },
         syncDevHome() { return Promise.resolve({ copied: [] }); },
+        buildAuditFixture() { return Promise.resolve({ mode: "fixture", files: [] }); },
+        seedAuditFixtureBrowserState() { return Promise.resolve({}); },
         launchDevApp() { return Promise.resolve({ pid: 123, command: "Codex", args: [] }); },
         waitForRendererTarget() {
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
@@ -1047,6 +1060,8 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
         findFreePort() { return Promise.resolve(9234); },
         patchCodexApp() { return Promise.resolve({ patchSet: "codex-test" }); },
         syncDevHome() { return Promise.resolve({ copied: [] }); },
+        buildAuditFixture() { return Promise.resolve({ mode: "fixture", files: [] }); },
+        seedAuditFixtureBrowserState() { return Promise.resolve({}); },
         launchDevApp() { return Promise.resolve({ pid: 123, command: "Codex", args: [] }); },
         waitForRendererTarget() {
           return Promise.resolve({
