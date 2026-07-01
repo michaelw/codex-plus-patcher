@@ -16,6 +16,10 @@ This repo ships patch source only. Never commit `Codex.app`, generated
 - Use `docs/plugin-debugging.md` for the side-by-side dev launch and live proof
   workflow. Transform tests and ASAR readback are not enough for UI/plugin
   changes that depend on runtime mount points.
+- For repeat UI regressions, use a TDD loop: first add or tighten a plugin
+  audit or focused test that fails on the current supported Codex version,
+  then check an earlier cached version when available, and only then patch the
+  runtime or transform.
 - Use `npm run release:intake` before manually downloading mirror assets for a
   new Codex port. Store original apps only under the main checkout's ignored
   `work/sources/` tree.

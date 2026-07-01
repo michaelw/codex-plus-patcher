@@ -477,7 +477,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   });
 });
 
-test("project selector shortcut verifier keeps fuzzy DOM details diagnostic", async () => {
+test("project selector shortcut verifier fails with fuzzy DOM details diagnostic", async () => {
   const sent = [];
   const evaluations = [
     { triggerCount: 1, clickedNewChat: true },
@@ -503,9 +503,10 @@ test("project selector shortcut verifier keeps fuzzy DOM details diagnostic", as
 
   const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.opened, true);
   assert.equal(result.fuzzyDom.suitableProjectFound, false);
+  assert.match(result.message, /Project selector fuzzy filtering did not preserve/);
   assert.equal(JSON.stringify(result).includes("/"), false);
   assert.deepEqual(sent.map((call) => call.params.key), [".", ".", "Escape", "Escape"]);
 });
@@ -525,8 +526,12 @@ test("review panel verifier returns sanitized success details", async () => {
         mainVisible: true,
         nativeReviewSourceVisible: true,
         nestedRepoVisible: true,
+        strictNestedBranchPreload: true,
+        nestedBranchPickerCount: 2,
+        nestedBranchPickerPreloadBeforeOpen: true,
+        nestedBranchPickerPreloadComplete: true,
         nestedBranchPickerPopulated: true,
-        nestedBranchPickerOptionCounts: [1, 1],
+        nestedBranchPickerOptionCounts: [3, 3],
         rawNestedDiffFallbackCount: 0,
         reviewDiffCardCount: 2,
         reviewTabCount: 1,
@@ -537,12 +542,43 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.equal(result.ok, true);
   assert.equal(result.candidateCount, 3);
   assert.equal(result.reviewControlFound, true);
-  assert.deepEqual(result.nestedBranchPickerOptionCounts, [1, 1]);
+  assert.deepEqual(result.nestedBranchPickerOptionCounts, [3, 3]);
   assert.equal(result.rawNestedDiffFallbackCount, 0);
   assert.equal(result.reviewDiffCardCount, 2);
   assert.equal(result.message, undefined);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "title"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "path"), false);
+});
+
+test("review panel verifier rejects raw nested repository diffs", async () => {
+  const result = await verifyReviewPanelRender({
+    evaluate() {
+      return Promise.resolve({
+        candidateCount: 3,
+        attemptedCandidates: 1,
+        reviewControlFound: true,
+        clickedReview: true,
+        selectedReview: true,
+        boundaryVisible: false,
+        tryAgainVisible: false,
+        repoHeaderVisible: true,
+        mainVisible: true,
+        nativeReviewSourceVisible: true,
+        nestedRepoVisible: true,
+        nestedBranchPickerCount: 2,
+        nestedBranchPickerPopulated: true,
+        nestedBranchPickerOptionCounts: [1, 1],
+        rawNestedDiffFallbackCount: 2,
+        reviewDiffCardCount: 0,
+        reviewTabCount: 1,
+      });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.rawNestedDiffFallbackCount, 2);
+  assert.equal(result.reviewDiffCardCount, 0);
+  assert.equal(result.message, "Review panel did not render nested repository content");
 });
 
 test("review panel verifier fails when no review-capable thread exists", async () => {

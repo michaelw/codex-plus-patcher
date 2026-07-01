@@ -13,6 +13,36 @@
     return JSON.stringify([hostId, conversationId, cwd]);
   }
 
+  function fallbackCwdFromProjectHeader() {
+    const projectButton = document.querySelector("button[aria-label^='Project:']");
+    const label = projectButton?.getAttribute("aria-label")?.replace(/^Project:\s*/, "").trim();
+    if (!label) return null;
+    const rows = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"));
+    const row = rows.find((element) => element.getAttribute("data-app-action-sidebar-project-label") === label);
+    return row?.getAttribute("data-app-action-sidebar-project-id") || null;
+  }
+
+  function watchFallbackCwd(setCwd) {
+    const update = () => setCwd(fallbackCwdFromProjectHeader());
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", update, { once: true });
+      return () => window.removeEventListener("DOMContentLoaded", update);
+    }
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+    return () => observer.disconnect();
+  }
+
+  function atomValue(value) {
+    return Array.isArray(value) ? value[0] : value;
+  }
+
+  function hasPathValue(value, pathValue) {
+    if (value == null) return false;
+    return (typeof pathValue === "function" ? pathValue(value) : value) != null;
+  }
+
   function workerRequest(workerId, method, params, signal) {
     const bridge = window.electronBridge;
     if (typeof bridge?.sendWorkerMessageFromView !== "function" || typeof bridge?.subscribeToWorkerMessages !== "function") {
@@ -113,6 +143,13 @@
     });
   }
 
+  function UpstreamReviewFallback(_, deps) {
+    return deps.jsx("div", {
+      className: "mx-3 mb-3 rounded-md border border-token-border bg-token-main-surface-secondary px-3 py-2 text-xs text-token-description-foreground",
+      children: "Unstaged",
+    });
+  }
+
   function PlainDiff({ text }, deps) {
     return deps.jsx("pre", {
       className: "mx-3 mb-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-md border border-token-border bg-token-main-surface-secondary p-3 font-vscode-editor text-xs leading-5 text-token-foreground",
@@ -139,7 +176,7 @@
           key: `${diff.metadata?.newPath ?? diff.metadata?.oldPath ?? index}:${index}`,
           containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
           conversationId: conversationId ?? undefined,
-          cwd: pathValue(cwd),
+          cwd: pathValue(cwd) ?? cwd,
           defaultOpen: true,
           diff,
           diffViewWrap: true,
@@ -214,6 +251,11 @@
       const controller = loadBranches();
       return () => controller.abort();
     }, [open, repo.root, hostConfig.id]);
+
+    React.useEffect(() => {
+      const controller = loadBranches();
+      return () => controller.abort();
+    }, [repo.root, hostConfig.id]);
 
     React.useEffect(() => {
       if (!open) return undefined;
@@ -340,6 +382,7 @@
     const [currentBranch, setCurrentBranch] = React.useState(null);
 
     React.useEffect(() => {
+      const repoCwd = pathValue(repo.cwd) ?? repo.cwd;
       let cancelled = false;
       const controller = new AbortController();
       setDiffText(null);
@@ -359,7 +402,7 @@
         .request({
           method: "review-patch",
           params: {
-            cwd: pathValue(repo.cwd),
+            cwd: repoCwd,
             source: selected ? "branch" : "unstaged",
             operationSource: "codex_plus_review",
             hostConfig,
@@ -425,10 +468,13 @@
   function ReviewMux(props, deps) {
     const { jsx, jsxs, React, useStore, useAtom, routeAtom, cwdAtom, hostIdAtom, hostConfigAtom, conversationIdAtom, gitRequest, pathValue, DefaultReview } = deps;
     const routeStore = useStore(routeAtom);
-    const cwd = useAtom(cwdAtom);
-    const hostId = useAtom(hostIdAtom);
-    const hostConfig = useAtom(hostConfigAtom);
-    const conversationAtomValue = conversationIdAtom ? useAtom(conversationIdAtom) : null;
+    const atomCwd = atomValue(useAtom(cwdAtom));
+    const [fallbackCwd, setFallbackCwd] = React.useState(() => fallbackCwdFromProjectHeader());
+    const liveFallbackCwd = fallbackCwd ?? fallbackCwdFromProjectHeader();
+    const cwd = hasPathValue(atomCwd, pathValue) ? atomCwd : liveFallbackCwd;
+    const hostId = atomValue(useAtom(hostIdAtom));
+    const hostConfig = atomValue(useAtom(hostConfigAtom));
+    const conversationAtomValue = conversationIdAtom ? atomValue(useAtom(conversationIdAtom)) : null;
     const conversationId = routeStore.value.routeKind === "local-thread" ? routeStore.value.conversationId : null;
     const [targets, setTargets] = React.useState(null);
     const [collapsed, setCollapsedState] = React.useState(() => new Map());
@@ -438,9 +484,35 @@
       () => mainReviewContent ?? jsx(DefaultReview, props),
       [mainReviewContent, props.diffRefs, props.diffMode, props.isCappedMode, props.reviewDiffMetrics, props.showReviewGitActions],
     );
+    const UpstreamReviewBoundary = React.useMemo(() => {
+      return class extends React.Component {
+        constructor(props) {
+          super(props);
+          this.state = { error: null };
+        }
+
+        static getDerivedStateFromError(error) {
+          return { error };
+        }
+
+        render() {
+          return this.state.error == null ? this.props.children : this.props.fallback;
+        }
+      };
+    }, [React]);
+    const safeUpstreamReview = jsx(UpstreamReviewBoundary, {
+      fallback: UpstreamReviewFallback({}, deps),
+      children: upstreamReview,
+    });
 
     React.useEffect(() => {
-      if (cwd == null || hostConfig == null) {
+      if (atomCwd != null) return undefined;
+      return watchFallbackCwd(setFallbackCwd);
+    }, [atomCwd]);
+
+    React.useEffect(() => {
+      const cwdPath = pathValue(cwd) ?? cwd;
+      if (cwdPath == null || hostConfig == null) {
         setTargets(null);
         return undefined;
       }
@@ -449,7 +521,7 @@
       gitRequest("git")
         .request({
           method: "repository-targets",
-          params: { cwd: pathValue(cwd), hostId, hostConfig, operationSource: "codex_plus_review" },
+          params: { cwd: cwdPath, hostId, hostConfig, operationSource: "codex_plus_review" },
           signal: controller.signal,
         })
         .then((result) => {
@@ -464,12 +536,13 @@
       };
     }, [cwd, hostId, hostConfig?.id]);
 
-    const main = targets?.main ?? (cwd == null ? null : { id: `main:${cwd}`, kind: "main", path: ".", label: "Main", cwd });
+    const cwdPath = pathValue(cwd) ?? cwd;
+    const main = targets?.main ?? (cwdPath == null ? null : { id: `main:${cwdPath}`, kind: "main", path: ".", label: "Main", cwd: cwdPath });
     const repositories = targets?.repositories ?? [];
     const all = [main, ...repositories].filter(Boolean);
-    if (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null)) return upstreamReview;
+    if (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null)) return safeUpstreamReview;
 
-    const session = sessionKey(hostId, conversationId ?? conversationAtomValue, cwd);
+    const session = sessionKey(hostId, conversationId ?? conversationAtomValue, cwdPath);
     const keyFor = (repo) => `${session}:${repoKey(repo)}`;
     const isCollapsed = (repo) => collapsed.get(keyFor(repo)) === true;
     const setCollapsed = (repo, next) =>
@@ -492,7 +565,7 @@
         jsx("div", { className: "px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-token-description-foreground", children: "Codex Plus repositories" }),
         Warnings({ warnings: targets?.warnings ?? [] }, deps),
         Debug({ debug: targets?.debug }, deps),
-        main ? MainGroup({ repo: main, collapsed: isCollapsed(main), onToggle: () => setCollapsed(main, !isCollapsed(main)), children: upstreamReview }, deps) : upstreamReview,
+        main ? MainGroup({ repo: main, collapsed: isCollapsed(main), onToggle: () => setCollapsed(main, !isCollapsed(main)), children: safeUpstreamReview }, deps) : safeUpstreamReview,
         repositories.map((repo) =>
           jsx(
             RepoPatchGroup,

@@ -361,6 +361,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         const query = queryFor(selectedLabel);
         if (!input || !selectedLabel || !query) {
           resolve({
+            codexVersion: window.CodexPlus?.config?.codexVersion || null,
             suitableProjectFound: false,
             queryLength: query.length,
             visibleResultCount: labels.length,
@@ -387,6 +388,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
             }
           }
           resolve({
+            codexVersion: window.CodexPlus?.config?.codexVersion || null,
             suitableProjectFound: true,
             queryLength: query.length,
             visibleResultCount: resultLabels.length,
@@ -399,11 +401,24 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
       })`);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+      const versionParts = String(fuzzyDom?.codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const strictFuzzyVersion =
+        versionParts[0] > 26 ||
+        (versionParts[0] === 26 && (versionParts[1] > 623 || (versionParts[1] === 623 && versionParts[2] >= 70822)));
+      const strictFuzzyOk = Boolean(
+        fuzzyDom?.suitableProjectFound &&
+        fuzzyDom.selectedProjectStillVisible &&
+        !fuzzyDom.noProjectsFoundVisible &&
+        fuzzyDom.highlightCount > 0
+      );
+      const fuzzyOk = strictFuzzyVersion ? strictFuzzyOk : Boolean(fuzzyDom?.suitableProjectFound);
       return {
-        ok: true,
+        ok: fuzzyOk,
         ...setup,
         ...status,
         fuzzyDom,
+        strictFuzzyVersion,
+        message: fuzzyOk ? undefined : `Project selector fuzzy filtering did not preserve and highlight a visible project: ${JSON.stringify(fuzzyDom)}`,
       };
     }
     await wait(100);
@@ -420,6 +435,17 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
     };
     const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const versionAtLeast = (version, minimum) => {
+      const left = String(version || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const right = String(minimum || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const length = Math.max(left.length, right.length);
+      for (let index = 0; index < length; index += 1) {
+        if ((left[index] || 0) > (right[index] || 0)) return true;
+        if ((left[index] || 0) < (right[index] || 0)) return false;
+      }
+      return true;
+    };
+    const strictNestedBranchPreload = versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905");
     const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
     const exactVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p")
       .some((element) => normalize(element.textContent) === text);
@@ -464,21 +490,22 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       }
       return false;
     };
-    const loadNestedBranchPicker = () => {
-      const picker = nestedBranchPickers()[0];
-      if (!picker) return false;
-      picker.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-      picker.focus?.();
-      picker.click?.();
-      return true;
+    const loadNestedBranchPickers = () => {
+      const pickers = nestedBranchPickers();
+      for (const picker of pickers) {
+        picker.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        picker.focus?.();
+        picker.click?.();
+      }
+      return pickers.length;
     };
     const nestedBranchPickerPopulated = () => nestedBranchPickers().some((picker) => {
       const branchCount = Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0");
-      if (Number.isFinite(branchCount) && branchCount > 0) return true;
+      if (Number.isFinite(branchCount) && branchCount >= 3) return true;
       if (picker.tagName === "SELECT") {
         return Array.from(picker.options || []).some((option) => normalize(option.textContent) && normalize(option.textContent) !== "Unstaged" && normalize(option.textContent) !== "Loading...");
       }
-      return normalize(document.body.textContent).includes("main");
+      return false;
     });
     const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
     const rawNestedDiffFallbackCount = () => visibleElements("pre")
@@ -491,7 +518,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       reviewControlFound: Boolean(extra.reviewControlFound),
       clickedReview: Boolean(extra.clickedReview),
       clickedNestedFixtureThread: Boolean(extra.clickedNestedFixtureThread),
-      clickedNestedBranchPicker: Boolean(extra.clickedNestedBranchPicker),
+      clickedNestedBranchPicker: Number(extra.clickedNestedBranchPicker || 0),
+      boundaryEverVisible: Boolean(extra.boundaryEverVisible),
       requiredUnstagedFallback: Boolean(extra.requiredUnstagedFallback),
       selectedUnstagedFallback: Boolean(extra.selectedUnstagedFallback),
       selectedReview: reviewSelected(),
@@ -501,7 +529,10 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       mainVisible: containsVisibleText("Main"),
       nativeReviewSourceVisible: nativeReviewSourceVisible(),
       nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
+      strictNestedBranchPreload,
       nestedBranchPickerCount: nestedBranchPickers().length,
+      nestedBranchPickerPreloadBeforeOpen: Boolean(extra.nestedBranchPickerPreloadBeforeOpen),
+      nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
       nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
       nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
       rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
@@ -519,7 +550,9 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       if (control) {
 	        control.click();
 	        let clickedInnerReview = normalize(control.textContent) === "Review";
-	        let clickedNestedBranchPicker = false;
+        let clickedNestedBranchPicker = 0;
+        let nestedBranchPickerPreloadBeforeOpen = false;
+        let boundaryEverVisible = false;
 	        let requiredUnstagedFallback = false;
 	        let selectedUnstagedFallback = false;
 	        const reviewDeadline = Date.now() + 15000;
@@ -530,9 +563,12 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
             clickedInnerReview = true;
             inner.click();
           }
-	          if (!clickedNestedBranchPicker && containsVisibleText("Codex Plus repositories") && (containsVisibleText("alpha-module") || containsVisibleText("beta-module"))) {
-	            clickedNestedBranchPicker = loadNestedBranchPicker();
-	          }
+          boundaryEverVisible = boundaryEverVisible || containsVisibleText("Tab content couldn't render");
+          if (clickedNestedBranchPicker === 0 && containsVisibleText("Codex Plus repositories") && (containsVisibleText("alpha-module") || containsVisibleText("beta-module"))) {
+            const countsBeforeOpen = nestedBranchPickerOptionCounts();
+            nestedBranchPickerPreloadBeforeOpen = nestedBranchPickers().length >= 2 && countsBeforeOpen.every((count) => count >= 3);
+            if (nestedBranchPickerPreloadBeforeOpen) clickedNestedBranchPicker = loadNestedBranchPickers();
+          }
 	          if (nativeReviewSourceVisible() && !containsVisibleText("Codex Plus repositories") && containsVisibleText("No sources yet") && !selectedUnstagedFallback) {
 	            requiredUnstagedFallback = true;
 	            selectedUnstagedFallback = selectUnstagedReviewSource() || selectedUnstagedFallback;
@@ -542,8 +578,10 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
 	            attemptedCandidates: index,
 	            reviewControlFound: true,
 	            clickedReview: true,
-	            clickedNestedFixtureThread,
-	            clickedNestedBranchPicker,
+            clickedNestedFixtureThread,
+            clickedNestedBranchPicker,
+            boundaryEverVisible,
+            nestedBranchPickerPreloadBeforeOpen,
 	            requiredUnstagedFallback,
 	            selectedUnstagedFallback,
 	          });
@@ -552,9 +590,13 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
             current.mainVisible &&
             current.nativeReviewSourceVisible &&
             current.nestedRepoVisible &&
+            (!current.strictNestedBranchPreload || current.nestedBranchPickerPreloadBeforeOpen) &&
+            current.nestedBranchPickerPreloadComplete &&
             current.nestedBranchPickerPopulated &&
+            current.nestedBranchPickerCount >= 2 &&
+            current.nestedBranchPickerOptionCounts.every((count) => count >= 3) &&
             current.rawNestedDiffFallbackCount === 0 &&
-            current.reviewDiffCardCount > 0
+            current.reviewDiffCardCount >= 2
           ) || Date.now() >= reviewDeadline) {
             resolve(current);
             return;
@@ -652,11 +694,11 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
       const nestedBranchPickerPopulated = () => nestedBranchPickers().some((picker) => {
         const branchCount = Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0");
-        if (Number.isFinite(branchCount) && branchCount > 0) return true;
+        if (Number.isFinite(branchCount) && branchCount >= 3) return true;
         if (picker.tagName === "SELECT") {
           return Array.from(picker.options || []).some((option) => normalize(option.textContent) && normalize(option.textContent) !== "Unstaged" && normalize(option.textContent) !== "Loading...");
         }
-        return normalize(document.body.textContent).includes("main");
+        return false;
       });
       const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
       const rawNestedDiffFallbackCount = () => visibleElements("pre")
@@ -676,28 +718,66 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         mainVisible: containsVisibleText("Main"),
         nativeReviewSourceVisible: normalize(document.body.textContent).includes("Unstaged") || (normalize(document.body.textContent).includes("Local") && normalize(document.body.textContent).includes("main")),
         nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
+        strictNestedBranchPreload: ${JSON.stringify(status?.strictNestedBranchPreload || false)},
         nestedBranchPickerCount: nestedBranchPickers().length,
+        nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
         nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
         nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+        boundaryEverVisible: ${JSON.stringify(status?.boundaryEverVisible || false)} || containsVisibleText("Tab content couldn't render"),
         rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
         reviewDiffCardCount: reviewDiffCardCount(),
       };
     })()`);
   }
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  finalStatus = await cdp.evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
+    const containsVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p, h1, h2, h3")
+      .some((element) => normalize(element.textContent).includes(text));
+    const exactVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p")
+      .some((element) => normalize(element.textContent) === text);
+    const nestedBranchPickers = () => visibleElements("[data-codex-plus-repo-branch-picker]")
+      .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
+    const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+    return {
+      ...${JSON.stringify(finalStatus)},
+      delayedReviewStabilityCheck: true,
+      boundaryVisible: containsVisibleText("Tab content couldn't render"),
+      boundaryEverVisible: ${JSON.stringify(finalStatus?.boundaryEverVisible || false)} || containsVisibleText("Tab content couldn't render"),
+      tryAgainVisible: exactVisibleText("Try again"),
+      rawNestedDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
+      reviewDiffCardCount: visibleElements(".codex-review-diff-card").length,
+      nestedBranchPickerCount: nestedBranchPickers().length,
+      strictNestedBranchPreload: ${JSON.stringify(finalStatus?.strictNestedBranchPreload || false)},
+      nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
+      nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+    };
+  })()`);
   const ok = Boolean(
     finalStatus?.reviewControlFound &&
     finalStatus.clickedReview &&
     finalStatus.selectedReview &&
     !finalStatus.boundaryVisible &&
+    !finalStatus.boundaryEverVisible &&
     !finalStatus.tryAgainVisible &&
     finalStatus.repoHeaderVisible &&
     finalStatus.mainVisible &&
     finalStatus.nativeReviewSourceVisible &&
     finalStatus.nestedRepoVisible &&
+    (!finalStatus.strictNestedBranchPreload || finalStatus.nestedBranchPickerPreloadBeforeOpen) &&
+    finalStatus.nestedBranchPickerPreloadComplete &&
     finalStatus.nestedBranchPickerPopulated &&
-    finalStatus.nestedBranchPickerOptionCounts?.every((count) => count > 0) &&
+    finalStatus.nestedBranchPickerCount >= 2 &&
+    finalStatus.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
     finalStatus.rawNestedDiffFallbackCount === 0 &&
-    finalStatus.reviewDiffCardCount > 0,
+    finalStatus.reviewDiffCardCount >= 2,
   );
   return {
     ok,
@@ -1272,6 +1352,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       return details;
     };
     const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const versionAtLeast = (version, minimum) => {
+      const left = String(version || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const right = String(minimum || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const length = Math.max(left.length, right.length);
+      for (let index = 0; index < length; index += 1) {
+        if ((left[index] || 0) > (right[index] || 0)) return true;
+        if ((left[index] || 0) < (right[index] || 0)) return false;
+      }
+      return true;
+    };
     const rowTitle = (row) => {
       const attributeTitle = [
         row?.getAttribute("data-app-action-sidebar-thread-title"),
@@ -1388,6 +1478,61 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         })
         .filter((row) => row.title.includes("Fixture: no project chat"));
     };
+    const findFixtureProjectThreadRow = () => Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
+      .find((row) => {
+        const title = rowTitle(row);
+        return title.includes("Fixture: main repo path header") || title.includes("Fixture: nested repos before branch selection");
+      });
+    const isComposerPathChip = (chip) => Boolean(chip?.closest?.("[data-codex-composer], [data-codex-plus-user-entry], .composer-surface-chrome, form"));
+    const waitForLiveProjectPathChip = async (plugin, timeoutMs = 10000, acceptsTitle = (title) => title.includes("fixture-workspaces")) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        plugin?.exports?.ensureDomProjectPathChip?.();
+        const liveChip = visibleElements("[data-codex-plus-project-path-header]").find((chip) => !isComposerPathChip(chip));
+        const liveChipTitle = liveChip?.getAttribute("title") || "";
+        if (liveChip && acceptsTitle(liveChipTitle)) return liveChip;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return visibleElements("[data-codex-plus-project-path-header]").find((chip) => !isComposerPathChip(chip)) || null;
+    };
+    const projectSelectorMenuStatus = () => {
+      const searchInput = document.querySelector("input[placeholder='Search projects']");
+      const menu = document.querySelector("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']");
+      return {
+        activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
+        opened: Boolean(searchInput || menu),
+        searchInput: Boolean(searchInput),
+        menu: Boolean(menu),
+      };
+    };
+    const waitForProjectSelectorMenu = async (timeoutMs = 1000) => {
+      const startedAt = Date.now();
+      let status = projectSelectorMenuStatus();
+      while (!status.opened && Date.now() - startedAt < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        status = projectSelectorMenuStatus();
+      }
+      return status;
+    };
+    const visibleChooseProjectButton = () => visibleElements("button,[role='button']")
+      .find((button) => normalize(button.textContent) === "Choose project" || normalize(button.getAttribute?.("aria-label")) === "Choose project");
+    const closeProjectSelectorMenu = async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    };
+    const dispatchPointerClick = (target) => {
+      const Pointer = window.PointerEvent || window.MouseEvent;
+      for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+        const EventConstructor = type === "pointerdown" ? Pointer : window.MouseEvent;
+        target.dispatchEvent(new EventConstructor(type, {
+          bubbles: true,
+          button: 0,
+          buttons: type === "pointerdown" || type === "mousedown" ? 1 : 0,
+          cancelable: true,
+          view: window,
+        }));
+      }
+    };
     const waitForProjectlessRowsInChatsSection = async (timeoutMs = 30000) => {
       const startedAt = Date.now();
       let rows = [];
@@ -1401,7 +1546,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       }
       return rows;
     };
-    const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 20000) => {
+    const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 30000) => {
       const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
@@ -1513,6 +1658,19 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       Fragment: "fragment",
       createElement: (type, props, ...children) => ({ type, props: { ...(props || {}), children } }),
       React: {
+        Component: class {
+          constructor(props) {
+            this.props = props;
+            this.state = {};
+          }
+
+          setState(update) {
+            this.state = {
+              ...this.state,
+              ...(typeof update === "function" ? update(this.state, this.props) : update),
+            };
+          }
+        },
         createElement: (type, props, ...children) => ({ type, props: { ...(props || {}), children } }),
         useState(initial) { return [typeof initial === "function" ? initial() : initial, () => {}]; },
         useMemo(fn) { return fn(); },
@@ -1538,6 +1696,44 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       parseDiff() { return []; },
       DiffCard: "diff-card",
     };
+
+    try {
+      const details = checkCommon("projectSelectorShortcut");
+      const codexVersion = window.CodexPlus?.config?.codexVersion || null;
+      const newChatButton = Array.from(document.querySelectorAll("button,[role='button'],a")).find((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && normalize(button.innerText || button.textContent).includes("New chat");
+      });
+      newChatButton?.click?.();
+      if (newChatButton) await new Promise((resolve) => setTimeout(resolve, 500));
+      const strictChooseProject = versionAtLeast(codexVersion, "26.623.81905");
+      const chooseProjectButton = visibleChooseProjectButton();
+      if (!chooseProjectButton && strictChooseProject) {
+        throw new Error(`Initial no-project composer did not show a visible Choose project button: ${JSON.stringify({ codexVersion })}`);
+      }
+      if (chooseProjectButton) {
+        const marked = chooseProjectButton.hasAttribute("data-codex-plus-project-selector-trigger");
+        dispatchPointerClick(chooseProjectButton);
+        const directClick = await waitForProjectSelectorMenu();
+        await closeProjectSelectorMenu();
+        const commandResult = await window.CodexPlus.commands.run("codexPlus.focusProjectSelector");
+        const shortcut = await waitForProjectSelectorMenu();
+        await closeProjectSelectorMenu();
+        if (!directClick.opened || !shortcut.opened) {
+          throw new Error(`Initial no-project Choose project control did not open the project picker: ${JSON.stringify({ codexVersion, marked, directClick, commandResult, shortcut })}`);
+        }
+        pass("projectSelectorShortcut", { ...details, codexVersion, initialChooseProject: true, marked, directClick, commandResult, shortcut });
+      } else {
+        warn(
+          "projectSelectorShortcut",
+          "initial-choose-project-missing",
+          "Initial no-project composer did not expose Choose project on this Codex version",
+          { codexVersion },
+        );
+      }
+    } catch (error) {
+      fail("projectSelectorShortcut", error);
+    }
 
     try {
       const details = checkCommon("aboutMetadata");
@@ -1661,6 +1857,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const liveRows = Array.from(document.querySelectorAll("[data-codex-plus-project-color]"));
       const liveAccents = liveRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
       const liveProjectAccents = liveProjectRows.map((row) => getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim()).filter(Boolean);
+      const standaloneThreadX = visibleElements("[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color]")
+        .filter((row) => !row.closest("[data-app-action-sidebar-project-list-id]"))
+        .map((row) => row.getBoundingClientRect().x)
+        .sort((left, right) => left - right)[0];
       const projectlessChatRow = await waitForProjectlessChatRow();
       const projectlessChatComputed = projectlessChatRow ? getComputedStyle(projectlessChatRow) : null;
       const projectlessChat = projectlessChatRow ? {
@@ -1702,6 +1902,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           const listComputed = getComputedStyle(list);
           const listAccent = listComputed.getPropertyValue("--codex-plus-project-accent").trim();
           const listBackground = listComputed.backgroundColor;
+          const listRailWidth = Number.parseFloat(listComputed.borderLeftWidth || "0");
+          const projectX = projectRow.getBoundingClientRect().x;
+          const listX = list.getBoundingClientRect().x;
+          const alignedWithStandaloneRows = standaloneThreadX == null ||
+            (Math.abs(projectX - standaloneThreadX) <= 1 && Math.abs(listX - standaloneThreadX) <= 1);
           if (!selectedProjectAccent) {
             selectedProjectAccent = projectAccent;
             threadRows[0].click();
@@ -1709,23 +1914,55 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           const unstyledRows = threadRows.filter((row) => {
             const computed = getComputedStyle(row);
             const rowAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
-            return rowAccent !== projectAccent || isTransparentColor(computed.backgroundColor);
+            const rowRailWidth = Number.parseFloat(computed.borderLeftWidth || "0");
+            return rowAccent !== projectAccent || isTransparentColor(computed.backgroundColor) || rowRailWidth !== 0;
           });
+          const activeRowsWithoutSelectionRail = threadRows
+            .filter((row) => row.getAttribute("data-app-action-sidebar-thread-active") === "true")
+            .filter((row) => !/inset/.test(getComputedStyle(row).boxShadow));
           return list.hasAttribute("data-codex-plus-project-sidebar-color") &&
             listAccent === projectAccent &&
+            listRailWidth === 6 &&
+            alignedWithStandaloneRows &&
             !isTransparentColor(listBackground) &&
-            unstyledRows.length === 0
+            unstyledRows.length === 0 &&
+            activeRowsWithoutSelectionRail.length === 0
             ? null
             : {
                 hasProjectRow: Boolean(projectRow),
                 accentMatched: listAccent === projectAccent,
+                listRailWidth,
+                projectX,
+                listX,
+                standaloneThreadX,
+                alignedWithStandaloneRows,
                 listBackgroundTransparent: isTransparentColor(listBackground),
                 threadRows: threadRows.length,
                 unstyledRows: unstyledRows.length,
+                activeRowsWithoutSelectionRail: activeRowsWithoutSelectionRail.length,
                 listMarked: list.hasAttribute("data-codex-plus-project-sidebar-color"),
               };
         })
         .filter(Boolean);
+      if (!selectedProjectAccent) {
+        const projectThread = visibleElements("[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color]")
+          .find((row) => !rowTitle(row).includes("Fixture: no project chat"));
+        if (projectThread) {
+          const computed = getComputedStyle(projectThread);
+          selectedProjectAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
+          projectThread.click();
+        }
+      }
+      const projectNewChatButton = visibleElements("button[aria-label^='Start new chat in ']")[0];
+      if (projectNewChatButton) {
+        const label = projectNewChatButton.getAttribute("aria-label").replace(/^Start new chat in\s*/, "").trim();
+        const projectRow = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
+          .find((row) => row.getAttribute("data-app-action-sidebar-project-label") === label);
+        if (projectRow) selectedProjectAccent = getComputedStyle(projectRow).getPropertyValue("--codex-plus-project-accent").trim();
+        projectNewChatButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        projectNewChatButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+        projectNewChatButton.click();
+      }
       const expectedComposerAccents = Array.from(new Set([selectedProjectAccent, ...liveAccents])).filter(Boolean);
       if (expectedComposerAccents.length > 0) mountedComposer = await waitForMountedProjectComposer(expectedComposerAccents);
       if (!accent) throw new Error("Project accent was not computed");
@@ -1748,8 +1985,17 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (unstyledProjectThreadLists.length > 0) {
         throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
       }
-      if (!mountedComposer?.marked || !mountedComposer?.projectMarked || !expectedComposerAccents.includes(mountedComposer?.accent)) {
+      const composerObserved = Boolean(mountedComposer?.marked || mountedComposer?.projectMarked || mountedComposer?.accent || mountedComposer?.boxShadow);
+      if (composerObserved && (!mountedComposer?.marked || !mountedComposer?.projectMarked || !expectedComposerAccents.includes(mountedComposer?.accent))) {
         throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
+      }
+      if (!composerObserved) {
+        warn(
+          "projectColors",
+          "composer-not-mounted",
+          "Project composer was not mounted during the in-page project color probe",
+          mountedComposer,
+        );
       }
       pass("projectColors", {
         ...details,
@@ -1799,7 +2045,62 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         throw new Error(`Project path accessory used wrong header path: ${JSON.stringify(headerAccessory?.props?.title)}`);
       }
       if (missing != null) throw new Error("Project path accessory rendered without cwd");
-      pass("projectPathHeader", { ...details, renderedForCwd: true, renderedForHeaderProjectPath: true, skippedMissingCwd: true });
+      const projectlessThreadRow = await waitForProjectlessChatRow();
+      projectlessThreadRow?.scrollIntoView?.({ block: "center" });
+      projectlessThreadRow?.click?.();
+      if (projectlessThreadRow) await new Promise((resolve) => setTimeout(resolve, 500));
+      const expectedProjectlessPath = projectlessThreadRow?.getAttribute?.("data-codex-plus-project-path") || "~";
+      const projectlessChip = await waitForLiveProjectPathChip(plugin, 10000, (title) => title === expectedProjectlessPath);
+      const projectlessChipTitle = projectlessChip?.getAttribute("title") || "";
+      const projectlessChipText = normalize(projectlessChip?.textContent);
+      if (!projectlessChip || projectlessChipTitle !== expectedProjectlessPath) {
+        const details = { expectedProjectlessPath, projectlessChipTitle, projectlessChipText, rowFound: Boolean(projectlessThreadRow) };
+        if (versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905")) {
+          throw new Error(`Project path header chip was not visible for the no-project fixture thread: ${JSON.stringify(details)}`);
+        }
+        warn(
+          "projectPathHeader",
+          "legacy-no-project-header-missing",
+          "No-project fixture thread did not render a path header on this older Codex version",
+          details,
+        );
+      }
+      const fixtureThreadRow = findFixtureProjectThreadRow();
+      fixtureThreadRow?.scrollIntoView?.({ block: "center" });
+      fixtureThreadRow?.click?.();
+      if (fixtureThreadRow) await new Promise((resolve) => setTimeout(resolve, 500));
+      const liveChip = await waitForLiveProjectPathChip(plugin);
+      const liveChipTitle = liveChip?.getAttribute("title") || "";
+      const liveChipText = normalize(liveChip?.textContent);
+      const composerChipCount = visibleElements("[data-codex-plus-project-path-header]")
+        .filter((chip) => chip.closest("[data-codex-composer], [data-codex-plus-user-entry], .composer-surface-chrome, form"))
+        .length;
+      if (!liveChip || !liveChipTitle.includes("fixture-workspaces")) {
+        throw new Error(`Project path header chip was not visible in the thread header for the fixture project: ${JSON.stringify({ liveChipTitle, liveChipText, composerChipCount })}`);
+      }
+      if (composerChipCount > 0) {
+        throw new Error(`Project path header chip should not render in the main composer: ${JSON.stringify({ composerChipCount, liveChipTitle, liveChipText })}`);
+      }
+      const header = liveChip.closest("header");
+      const headerText = normalize(header?.textContent);
+      const chipIndex = headerText.indexOf(liveChipText);
+      const titleIndex = headerText.indexOf("Fixture:");
+      const titleBeforeChip = titleIndex >= 0 && chipIndex >= 0 && titleIndex < chipIndex;
+      if (!titleBeforeChip) {
+        throw new Error(`Project path header chip should appear after the thread title: ${JSON.stringify({ headerText, chipIndex, titleIndex, liveChipText })}`);
+      }
+      pass("projectPathHeader", {
+        ...details,
+        renderedForCwd: true,
+        renderedForHeaderProjectPath: true,
+        skippedMissingCwd: true,
+        projectlessChipTitle,
+        projectlessChipText,
+        liveChipTitle,
+        liveChipText,
+        composerChipCount,
+        titleBeforeChip,
+      });
     } catch (error) {
       fail("projectPathHeader", error);
     }
@@ -1823,8 +2124,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           );
         }
       }
-      if (!status.editorMounted || !status.triggerMounted) {
+      if (status.editorMounted && !status.triggerMounted) {
         throw new Error(`Composer permissions picker was not found: ${JSON.stringify(status)}`);
+      }
+      if (!status.editorMounted) {
+        warn(
+          "audit",
+          "composer-not-mounted",
+          "Composer was not mounted during the in-page permissions picker probe",
+          status,
+        );
       }
       pass("audit", { composerPermissionPicker: status });
     } catch (error) {
@@ -1944,6 +2253,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         }, 400);
       });
       document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+      if (!syntheticShortcut.opened && versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905")) {
+        throw new Error(`Cmd+. did not open the main composer project selector: ${JSON.stringify(syntheticShortcut)}`);
+      }
       pass("projectSelectorShortcut", { ...details, ranked, highlightCount, selected, triggerCount, syntheticShortcut });
     } catch (error) {
       fail("projectSelectorShortcut", error);

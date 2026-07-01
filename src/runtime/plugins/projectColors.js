@@ -170,9 +170,13 @@
     const directStyle = style(project);
     const inlineStyle = resolvedProject ? style(resolvedProject) : directStyle ?? activeSidebarStyle();
     if (inlineStyle == null) return undefined;
+    const projectPath = project?.path ?? project?.cwd ?? project?.projectPath ?? project?.remotePath ?? project?.root ?? project?.workspaceRoot;
+    const projectless = project?.projectless === true || project?.kind === "chat" || project?.projectKind === "chat";
     return {
       "data-codex-plus-project-color": "",
       ...(sidebar ? { "data-codex-plus-project-sidebar-color": "" } : {}),
+      ...(sidebar && projectless ? { "data-codex-plus-projectless": "true" } : {}),
+      ...(sidebar && projectPath ? { "data-codex-plus-project-path": String(projectPath) } : {}),
       style: inlineStyle,
     };
   }
@@ -187,6 +191,7 @@
       hostId: props?.hostId,
       id,
       title: props?.title,
+      path: props?.path ?? props?.cwd,
       projectless: true,
     }, true);
   }
@@ -212,6 +217,52 @@
     });
   }
 
+  function decorateRenderedProjectLists() {
+    for (const list of document.querySelectorAll("[data-app-action-sidebar-project-list-id]")) {
+      const project = list.closest("[data-codex-plus-project-sidebar-color]");
+      if (!project) continue;
+      const computed = getComputedStyle(project);
+      const accent = computed.getPropertyValue("--codex-plus-project-accent").trim();
+      if (accent === "") continue;
+      list.setAttribute("data-codex-plus-project-color", "");
+      list.setAttribute("data-codex-plus-project-sidebar-color", "");
+      for (const property of [
+        "--codex-plus-project-accent",
+        "--codex-plus-project-bg-light",
+        "--codex-plus-project-fg-light",
+        "--codex-plus-project-soft-light",
+        "--codex-plus-project-bg-dark",
+        "--codex-plus-project-fg-dark",
+        "--codex-plus-project-border-dark",
+        "--codex-plus-project-separator-light",
+        "--codex-plus-project-separator-dark",
+      ]) {
+        const value = computed.getPropertyValue(property).trim();
+        if (value !== "") list.style.setProperty(property, value);
+      }
+      list.style.borderLeft = `6px solid ${accent}`;
+    }
+  }
+
+  function watchRenderedProjectLists() {
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", watchRenderedProjectLists, { once: true });
+      return () => window.removeEventListener("DOMContentLoaded", watchRenderedProjectLists);
+    }
+    decorateRenderedProjectLists();
+    const observer = new MutationObserver(decorateRenderedProjectLists);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }
+
+  function needsSidebarRailCompensation() {
+    return CodexPlus.config?.codexVersion === "26.623.81905";
+  }
+
+  function setSidebarRailCompensation(enabled) {
+    document.documentElement?.toggleAttribute("data-codex-plus-sidebar-rail-compensate", Boolean(enabled));
+  }
+
   CodexPlus.registerPlugin(
     CodexPlus.definePlugin({
       id: "projectColors",
@@ -221,16 +272,16 @@
       styles:
         ":root:not(.dark):not(.electron-dark) :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]){border-radius:0;background-color:var(--codex-plus-project-soft-light);border-left-color:var(--codex-plus-project-accent)}" +
         ":root:not(.dark):not(.electron-dark) [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color]{background-color:var(--codex-plus-project-soft-light);border-left-color:var(--codex-plus-project-accent)}" +
-        ":root:not(.dark):not(.electron-dark) [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]:not([data-app-action-sidebar-thread-active=\"true\"]){border-left-color:transparent!important}" +
+        ":is([data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color]){border-left-width:0!important;border-left-color:transparent!important}" +
         ":root:not(.dark):not(.electron-dark) :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"]{background-color:var(--codex-plus-project-bg-light);box-shadow:inset 6px 0 0 var(--codex-plus-project-accent)}" +
         ":root.dark :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]),:root.electron-dark :is([data-app-action-sidebar-project-row],[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]){border-radius:0;background-color:var(--codex-plus-project-bg-dark);border-left-color:var(--codex-plus-project-border-dark)}" +
         ":root.dark [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color],:root.electron-dark [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color]{background-color:var(--codex-plus-project-bg-dark);border-left-color:var(--codex-plus-project-border-dark)}" +
-        ":root.dark [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]:not([data-app-action-sidebar-thread-active=\"true\"]),:root.electron-dark [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]:not([data-app-action-sidebar-thread-active=\"true\"]){border-left-color:transparent!important}" +
         ":root.dark :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"],:root.electron-dark :is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row])[data-app-action-sidebar-thread-active=\"true\"]{background-color:color-mix(in srgb,var(--codex-plus-project-accent) 38%,transparent);border-left-color:color-mix(in srgb,var(--codex-plus-project-accent) 88%,transparent);box-shadow:inset 6px 0 0 var(--codex-plus-project-accent)}" +
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-color],:root.electron-dark [data-codex-plus-project-color]{border-left-color:var(--codex-plus-project-border-dark)}" +
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]),:root.electron-dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-border-dark)}" +
+        "[data-codex-plus-sidebar-rail-compensate] :is([data-app-action-sidebar-project-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color]){margin-left:-6px;width:calc(100% + 6px)}" +
         "[data-codex-plus-user-entry][data-codex-plus-project-color]{box-shadow:inset 6px 0 0 var(--codex-plus-project-accent),0 0 0 .5px rgba(255,255,255,.2)!important}",
       exports: {
         colorFor,
@@ -260,6 +311,12 @@
         api.ui.sidebar.decorateThreadRow(sidebarThreadDataAttributes);
         api.ui.message.decorateUserBubble((props) => dataAttributes(props?.project, false));
         api.ui.composer.decorateSurface((props) => dataAttributes(props?.project, false));
+        setSidebarRailCompensation(needsSidebarRailCompensation());
+        const stopWatchingLists = watchRenderedProjectLists();
+        return () => {
+          stopWatchingLists?.();
+          setSidebarRailCompensation(false);
+        };
       },
     }),
   );
