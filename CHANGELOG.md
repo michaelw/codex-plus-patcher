@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.4](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.3...v0.12.4) (2026-07-01)
+
+
+### Bug Fixes
+
+* restore npm release publishing ([46ae7c2](https://github.com/michaelw/codex-plus-patcher/commit/46ae7c2b2077283676043e410a16ab3da66b4a64))
+* restore trusted npm publishing ([e4ed9bb](https://github.com/michaelw/codex-plus-patcher/commit/e4ed9bb888a6c63be6e04377a970b4696c9e7ae7))
+* stabilize sidebar fixture audit ([22cd4cd](https://github.com/michaelw/codex-plus-patcher/commit/22cd4cd326d5dea9fcbb06a8ee998b0010159f7a))
+* wire npm publish token ([7fac97d](https://github.com/michaelw/codex-plus-patcher/commit/7fac97df3e79c4e102fac81d170008f3b0a6ffc8))
+
 ## [0.12.3](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.2...v0.12.3) (2026-06-30)
 
 
