@@ -2698,6 +2698,7 @@ test("current app shell applies the Statsig dev fallback without the legacy time
 
   const transformed = transform(fakeAppShellBundle);
 
+  assert.match(transformed, /\}=e,f,CPXStatsigFallback=globalThis\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback===true/);
   assert.match(transformed, /CPXStatsigFallback=globalThis\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback===true/);
   assert.match(transformed, /new Cq\.StatsigClient\(c,e,Pq\)/);
   assert.match(transformed, /f\.initializeSync\(\)/);
