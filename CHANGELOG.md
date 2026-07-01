@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.0...v0.13.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* preserve Statsig provider local in production ([5ae41a1](https://github.com/michaelw/codex-plus-patcher/commit/5ae41a1a354980aa57abdaa06f8cdbd2091ad4cb))
+
 ## [0.13.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.4...v0.13.0) (2026-07-01)
 
 
