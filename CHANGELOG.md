@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.4...v0.13.0) (2026-07-01)
+
+
+### Features
+
+* support Codex 26.623.70822 ([87b52f1](https://github.com/michaelw/codex-plus-patcher/commit/87b52f19a9d79b6ca7a755b27ab3ddc67c8e2aa3))
+
+
+### Bug Fixes
+
+* repair Codex 81905 review regressions ([87b52f1](https://github.com/michaelw/codex-plus-patcher/commit/87b52f19a9d79b6ca7a755b27ab3ddc67c8e2aa3))
+
 ## [0.12.4](https://github.com/michaelw/codex-plus-patcher/compare/v0.12.3...v0.12.4) (2026-07-01)
 
 
