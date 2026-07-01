@@ -50,6 +50,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
     "local-task-row": "patchLocalTaskRow",
     review: "patchThreadSidePanelTabs",
     "run-command": "patchRunCommandProjectSelectorShortcut",
+    "statsig-startup": "patchStatsigDevFallback",
     "user-message-attachments": "patchUserMessageAttachmentsBubbleColors",
   };
   const transformName = transformNames[fileNamePrefix];
@@ -1405,9 +1406,12 @@ test("project selector Enter key adapter accepts only the first searched match",
 });
 
 test("run command patch bridges the native project selector shortcut to the runtime command", () => {
-  const fakeRunCommandBundle = [
+  const fakeMapRunCommandBundle = [
     "import{f as e}from\"./vscode-api-Cc4BqLmp.js\";",
     "var i=new Map([[`newThread`,()=>{}],[`openFolder`,()=>{r()}],[`toggleSidebar`,()=>{}]]),a=new Map;",
+  ].join("");
+  const fakeRegisterRunCommandBundle = [
+    "function kP(){let e=(0,AP.c)(4),t=R(S),n;e[0]===t?n=e[1]:(n=()=>{ia(t,!t.get(pa))},e[0]=t,e[1]=n);let r=n;tc(`toggleSidebar`,r);let i;e[2]===t?i=e[3]:(i=[t],e[2]=t,e[3]=i),Cn(`toggle-sidebar`,r,i)}",
   ].join("");
 
   for (const patchSet of patchSets) {
@@ -1415,12 +1419,15 @@ test("run command patch bridges the native project selector shortcut to the runt
 
     assert.equal(typeof transform, "function", `${patchSet.id} has run command transform`);
 
-    const transformed = transform(fakeRunCommandBundle);
+    const transformed = transform(fakeMapRunCommandBundle);
 
+    assert.match(transformed, /\[`codexPlus\.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`\]\.map\(e=>\[e,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\)\]\)/);
     assert.match(transformed, /\.\.\.\(window\.CodexPlus\?\.commands\?\.all\?\.\(\)\?\?\[\]\)\.map\(e=>\[e\.id,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\.id\)\]\)/);
     assert.match(transformed, /commands\?\.all[\s\S]*\[`toggleSidebar`/);
-    assert.doesNotMatch(transformed, /codexPlusToggleSidebarNameBlur`/);
-    assert.doesNotMatch(transformed, /codexPlus\.focusProjectSelector`/);
+
+    const latestTransformed = transform(fakeRegisterRunCommandBundle);
+    assert.match(latestTransformed, /for\(let e of \[`codexPlus\.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`\]\)tc\(e,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\)\)/);
+    assert.match(latestTransformed, /for\(let e of window\.CodexPlus\?\.commands\?\.all\?\.\(\)\?\?\[\]\)tc\(e\.id,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\.id\)\)/);
   }
 });
 
@@ -2400,6 +2407,8 @@ test("app main patch applies project colors to project headers and grouped row o
   assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]/);
   assert.match(blurPlugin, /data-codex-plus-sidebar-names-blurred/);
   assert.match(blurPlugin, /data-app-action-sidebar-project-row/);
+  assert.match(blurPlugin, /data-app-action-sidebar-thread-row/);
+  assert.doesNotMatch(blurPlugin, /data-app-action-sidebar-scroll/);
 });
 
 test("current project headers receive project color row attributes on the clickable row", () => {
@@ -2634,6 +2643,119 @@ test("local task row patch colors standalone rows from row project context", () 
     assert.match(transformed, /t\[87\]!==Fe/);
     assert.match(transformed, /t\[87\]=Fe/);
     assert.doesNotMatch(transformed, /CPX_rowDataAttributes/);
+  }
+});
+
+test("older local task row patches color pinned and projectless sidebar callers", () => {
+  const fake41415LocalTaskRowBundle = [
+    "function _p(e){let t=(0,yp.c)(134),",
+    "threadSummary:le,dataAttributes:ue}=e,de=c===void 0?!1:c,",
+    "dataAttributes:kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+  ].join("");
+  const fake42026LocalTaskRowBundle = [
+    "function Ef(e){let t=(0,Of.c)(134),",
+    "threadSummary:le,dataAttributes:ue}=e,de=l===void 0?!1:l,",
+    "dataAttributes:Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+  ].join("");
+
+  const patch41415 = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
+  const transformed41415 = transformFile(patch41415, findTransformPath(patch41415, "local-task-row"), fake41415LocalTaskRowBundle);
+  assert.match(transformed41415, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
+  assert.match(transformed41415, /dataAttributes:\{\.\.\.kr\.sidebarThreadRow\(\{active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x\}\),\.\.\.CPXPR\(\{projectId:ve,label:ge,path:D,cwd:D,hostId:p,threadId:l,title:x,projectKind:ve\|\|D\?void 0:`chat`,projectless:u===`projectless`\}\)\}/);
+
+  const patch42026 = patchSets.find((candidate) => candidate.id === "codex-26.623.42026-4514");
+  const transformed42026 = transformFile(patch42026, findTransformPath(patch42026, "local-task-row"), fake42026LocalTaskRowBundle);
+  assert.match(transformed42026, /CPXS=window\.CodexPlusHost\.adapters\.sidebar/);
+  assert.match(transformed42026, /dataAttributes:\{\.\.\.Rn\.sidebarThreadRow\(\{active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x\}\),\.\.\.CPXPR\(\{projectId:_e,label:ge,path:O,cwd:O,hostId:p,threadId:l,title:x,projectKind:_e\|\|O\?void 0:`chat`,projectless:u===`projectless`\}\)\}/);
+});
+
+test("current app shell applies the Statsig dev fallback without the legacy timeout text", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.70822-4559");
+  const transform = collectFileTransforms(patchSet)
+    .find(([, candidate]) => candidate.name === "patchStatsigDevFallback")?.[1];
+  assert.equal(typeof transform, "function", `${patchSet.id} has Statsig dev fallback transform`);
+  const fakeAppShellBundle = [
+    "function gq(e){let t=(0,xq.c)(31),{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d}=e,",
+    "f={mutationFn:async e=>{let t=await RK(e),n=new Cq.StatsigClient(c,t.user,Pq);return n.dataAdapter.setData(t.statsigPayload),n.initializeSync(),n},retry:vq},",
+    "e=(0,Oq.jsx)(dq,{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,statsigClientKey:c,systemName:l,systemVersion:u,children:d}),",
+    "v=(0,Oq.jsx)(yq,{appVersion:r,authMethod:i.authMethod,client:p,deviceId:s,hostBuildFlavor:o,children:d})",
+  ].join("");
+
+  const transformed = transform(fakeAppShellBundle);
+
+  assert.match(transformed, /CPXStatsigFallback=globalThis\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback===true/);
+  assert.match(transformed, /new Cq\.StatsigClient\(c,e,Pq\)/);
+  assert.match(transformed, /f\.initializeSync\(\)/);
+});
+
+test("supported patch sets mount the local thread catalog bridge for generated fixtures", () => {
+  const cases = [
+    ["codex-26.623.41415-4505", "statsig-startup", "MQ", "vDe"],
+    ["codex-26.623.42026-4514", "statsig-startup", "VG", "RG"],
+    ["codex-26.623.61825-4548", "statsig-startup", "tG", "QW"],
+    ["codex-26.623.70822-4559", "app-shell", "$H", "XH"],
+  ];
+
+  for (const [patchSetId, patchId, jsxNamespace, componentName] of cases) {
+    const patchSet = patchSets.find((candidate) => candidate.id === patchSetId);
+    const transform = patchId === "statsig-startup"
+      ? collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchStatsigDevFallback")?.[1]
+      : findTransform(patchSet, patchId);
+    assert.equal(typeof transform, "function", `${patchSet.id} has local thread catalog bootstrap transform`);
+    const fakeBundle = [
+      `function YH(e){let t=(0,ZH.c)(5),n;t[0]===e?n=t[1]:(n=e===void 0?{}:e,t[0]=e,t[1]=n);let{enabled:r}=n,i=u_(\`567837310\`),a=S_.localThreadCatalog,o;return t[2]!==r||t[3]!==i?(o=!(r??i)||a==null?null:(0,${jsxNamespace}.jsx)(${componentName},{service:a}),t[2]=r,t[3]=i,t[4]=o):o=t[4],o}`,
+      "function xdn(e){let t=(0,Cdn.c)(4),{onRetry:n}=e",
+      "children:[r,(0,NK.jsx)(Ud,{color:`secondary`,size:`default`,onClick:n,children:i})]",
+      "fallback:e=>(0,NK.jsx)(xdn,{onRetry:()=>{e.resetError()}})",
+    ].join(";");
+
+    const transformed = transform(fakeBundle);
+
+    assert.ok(
+      transformed.includes(`o=r===!1||a==null?null:(0,${jsxNamespace}.jsx)(${componentName},{service:a})`),
+      patchSetId,
+    );
+    assert.doesNotMatch(transformed, /o=!\(r\?\?i\)\|\|a==null/, patchSetId);
+  }
+});
+
+test("supported local thread catalog state is enabled for generated fixtures", () => {
+  const cases = [
+    [
+      "codex-26.623.41415-4505",
+      "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~bj5tp28r-D9_jEoo8.js",
+      "var SV,CV,wV=e((()=>{d(),SV={},CV=En(SV,!1),wV=ot(W,null)}));",
+      /CV=En\(SV,!0\),wV=ot\(W,null\)/,
+    ],
+    [
+      "codex-26.623.42026-4514",
+      "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~bj5tp28r-Dcs9S3fj.js",
+      "var qB,JB,YB=e((()=>{d(),qB={},JB=Qd(qB,!1),YB=S(q,null)}));",
+      /JB=Qd\(qB,!0\),YB=S\(q,null\)/,
+    ],
+    [
+      "codex-26.623.61825-4548",
+      "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~pull-requests-page~plug~fjtgnfyk-DDle9LSA.js",
+      "var jY,MY,NY=e((()=>{W(),d(),jY={},MY=te(T,!1),NY=te(T,jY)}));",
+      /MY=te\(T,!0\),NY=te\(T,jY\)/,
+    ],
+    [
+      "codex-26.623.70822-4559",
+      "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~ko8xg8gw-DEdbMp8p.js",
+      "var eQ,tQ,nQ,rQ=e((()=>{W(),d(),eQ={},tQ=R(m,!1),nQ=R(m,eQ)}));",
+      /tQ=R\(m,!0\),nQ=R\(m,eQ\)/,
+    ],
+  ];
+
+  for (const [patchSetId, expectedFilePath, source, expected] of cases) {
+    const patchSet = patchSets.find((candidate) => candidate.id === patchSetId);
+    const transformEntry = collectFileTransforms(patchSet)
+      .find(([, candidate]) => candidate.name === "patchLocalThreadCatalogEnabled");
+    assert.ok(transformEntry, `${patchSet.id} has local thread catalog state transform`);
+    const [filePath, transform] = transformEntry;
+
+    assert.equal(filePath, expectedFilePath);
+    assert.match(transform(source), expected);
   }
 });
 

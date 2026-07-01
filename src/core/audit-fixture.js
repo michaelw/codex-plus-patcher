@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const FIXTURE_NOW_SECONDS = 1782777600;
+const FIXTURE_NOW_SECONDS = Math.floor(Date.now() / 1000);
+const FIXTURE_NOW_MS = FIXTURE_NOW_SECONDS * 1000;
 const FIXTURE_BROWSER_COLORS = {
   light: "#e0218a",
   dark: "#244a36",
@@ -47,6 +48,7 @@ function createGitRepo(repoPath, { label, dirtyFile = "README.md", fsImpl = fs, 
 
 function fixtureLayout(rootDir) {
   const workRoot = path.join(rootDir, "fixture-workspaces");
+  const projectlessRoot = path.join(rootDir, "fixture-projectless-workspaces");
   const projectsRoot = path.join(workRoot, "projects");
   const codexWorktreesRoot = path.join(workRoot, "codex-worktrees");
   const alpha = path.join(projectsRoot, "alpha-main");
@@ -66,6 +68,7 @@ function fixtureLayout(rootDir) {
   ].map((name) => path.join(projectsRoot, name));
   return {
     workRoot,
+    projectlessRoot,
     projectsRoot,
     codexWorktreesRoot,
     alpha,
@@ -140,15 +143,18 @@ function createFixtureWorkspaces(rootDir, { fsImpl = fs, execFileSync = childPro
 
 function fixtureThreads(layout) {
   const projectlessThreads = Array.from({ length: 5 }, (_, index) => {
-    const id = `019f0000-0000-7000-8000-00000000001${index}`;
+    const timestamp = (FIXTURE_NOW_MS - (index * 120000)).toString(16).padStart(12, "0");
+    const id = `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-7000-8000-00000000001${index}`;
+    const outputDirectory = path.join(layout.projectlessRoot, id, "outputs");
     return {
       id,
       title: `Fixture: no project chat ${index + 1}`,
-      cwd: "",
-      sessionCwd: path.join(layout.workRoot, "outputs", id),
+      cwd: "~",
+      sessionCwd: "~",
+      outputDirectory,
       projectId: null,
       preview: `Projectless fixture chat ${index + 1}`,
-      pinned: true,
+      pinned: index < 2,
       projectless: true,
     };
   });
@@ -218,21 +224,21 @@ function createStateDatabase(dbPath, threads, { fsImpl = fs, execFileSync = chil
     return [
       sqliteLiteral(thread.id),
       sqliteLiteral(fixtureSessionPath(devHome, thread)),
-      created,
-      updated,
+      created * 1000,
+      updated * 1000,
       sqliteLiteral("vscode"),
       sqliteLiteral("openai"),
       sqliteLiteral(thread.cwd),
       sqliteLiteral(thread.title),
       sqliteLiteral("danger-full-access"),
       sqliteLiteral("never"),
-      0,
-      0,
+      1,
+      1,
       0,
       "null",
-      sqliteLiteral(thread.cwd ? FIXTURE_GIT_SHA : null),
-      sqliteLiteral("main"),
-      sqliteLiteral("https://example.invalid/codex-plus-fixture.git"),
+      sqliteLiteral(thread.projectless ? null : FIXTURE_GIT_SHA),
+      sqliteLiteral(thread.projectless ? null : "main"),
+      sqliteLiteral(thread.projectless ? null : "https://example.invalid/codex-plus-fixture.git"),
       sqliteLiteral("fixture"),
       sqliteLiteral(thread.preview),
       "null",
@@ -322,13 +328,13 @@ function createCatalogDatabase(dbPath, threads, { fsImpl = fs, execFileSync = ch
       sqliteLiteral("local"),
       sqliteLiteral(thread.id),
       sqliteLiteral(thread.title),
-      created,
-      updated,
+      created * 1000,
+      updated * 1000,
       sqliteLiteral(thread.cwd),
       sqliteLiteral("vscode"),
       "null",
       sqliteLiteral("openai"),
-      sqliteLiteral("main"),
+      sqliteLiteral(thread.projectless ? null : "main"),
       index + 1,
       0,
     ].join(", ");
@@ -466,9 +472,9 @@ function seedStateDatabase(dbPath, threads, { execFileSync = childProcess.execFi
       0,
       0,
       "null",
-      sqliteLiteral(thread.cwd ? FIXTURE_GIT_SHA : null),
-      sqliteLiteral("main"),
-      sqliteLiteral("https://example.invalid/codex-plus-fixture.git"),
+      sqliteLiteral(thread.projectless ? null : FIXTURE_GIT_SHA),
+      sqliteLiteral(thread.projectless ? null : "main"),
+      sqliteLiteral(thread.projectless ? null : "https://example.invalid/codex-plus-fixture.git"),
       sqliteLiteral("fixture"),
       sqliteLiteral(thread.preview),
       "null",
@@ -498,7 +504,7 @@ function seedStateDatabase(dbPath, threads, { execFileSync = childProcess.execFi
       sqliteLiteral("vscode"),
       "null",
       sqliteLiteral("openai"),
-      sqliteLiteral("main"),
+      sqliteLiteral(thread.projectless ? null : "main"),
       index + 1,
       0,
     ].join(", ");
@@ -581,12 +587,17 @@ function createGlobalState(layout, threads) {
     target[thread.id] = value;
     target[`local:${thread.id}`] = value;
   };
+  const addProjectlessThreadKey = (target, thread, value) => {
+    target[thread.id] = value;
+    target[`local:${thread.id}`] = value;
+  };
   for (const thread of threads) {
     if (thread.cwd) {
-      addThreadKey(workspaceHints, thread, thread.projectId || (thread.projectless ? layout.workRoot : thread.cwd));
-      addThreadKey(writableRoots, thread, [thread.cwd]);
+      const addKey = thread.projectless ? addProjectlessThreadKey : addThreadKey;
+      addKey(workspaceHints, thread, thread.projectId || (thread.projectless ? layout.projectlessRoot : thread.cwd));
+      if (!thread.projectless) addThreadKey(writableRoots, thread, [thread.cwd]);
     }
-    if (thread.projectless) addThreadKey(outputDirectories, thread, path.join(layout.workRoot, "outputs", thread.id));
+    if (thread.projectless) addProjectlessThreadKey(outputDirectories, thread, thread.outputDirectory || path.join(thread.cwd, "outputs"));
     if (thread.projectId) {
       const assignment = {
         projectKind: "local",
@@ -727,7 +738,7 @@ function writeSessionIndex(devHome, threads, fsImpl = fs) {
           thread_source: "user",
           model_provider: "openai",
           base_instructions: { text: "Synthetic Codex Plus audit fixture." },
-          ...(thread.cwd ? { git: { commit_hash: FIXTURE_GIT_SHA, branch: "main" } } : {}),
+          ...(!thread.projectless && thread.cwd ? { git: { commit_hash: FIXTURE_GIT_SHA, branch: "main" } } : {}),
         },
       },
       {
@@ -822,7 +833,8 @@ function buildAuditFixture({
   const layout = createFixtureWorkspaces(rootDir, { fsImpl, execFileSync });
   const threads = fixtureThreads(layout);
   for (const thread of threads) {
-    if (thread.sessionCwd) fsImpl.mkdirSync(thread.sessionCwd, { recursive: true });
+    if (thread.sessionCwd && thread.sessionCwd !== "~") fsImpl.mkdirSync(thread.sessionCwd, { recursive: true });
+    if (thread.outputDirectory) fsImpl.mkdirSync(thread.outputDirectory, { recursive: true });
   }
   const credentials = copyFixtureCredentials({
     sourceHome: credentialsSourceHome,
