@@ -1,6 +1,6 @@
 {
   "name": "codex-plus-patcher",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": false,
   "description": "Patch queue tool for building a local Codex Plus.app from an installed Codex.app.",
   "repository": {
