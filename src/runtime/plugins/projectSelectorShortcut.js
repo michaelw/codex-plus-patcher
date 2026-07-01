@@ -2,6 +2,7 @@
   const CodexPlus = window.CodexPlus;
   const triggerSelector = "[data-codex-plus-project-selector-trigger]";
   let keydownHandler = null;
+  let projectButtonObserver = null;
 
   function normalizeForFzf(value) {
     const source = String(value ?? "");
@@ -223,6 +224,36 @@
     return candidate ?? null;
   }
 
+  function shouldDecorateProjectButton(button) {
+    const aria = String(button?.getAttribute?.("aria-label") || "").trim();
+    const text = String(button?.textContent || "").replace(/\s+/g, " ").trim();
+    return (
+      aria.startsWith("Project:") ||
+      aria.startsWith("Change project:") ||
+      aria === "Choose project" ||
+      text === "Choose project"
+    );
+  }
+
+  function decorateHeaderProjectButtons() {
+    for (const button of document.querySelectorAll("button")) {
+      if (!(button instanceof HTMLElement)) continue;
+      if (!shouldDecorateProjectButton(button)) continue;
+      button.setAttribute("data-codex-plus-project-selector-trigger", "true");
+      button.setAttribute("data-codex-plus-project-selector-variant", "default");
+    }
+  }
+
+  function watchHeaderProjectButtons() {
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", watchHeaderProjectButtons, { once: true });
+      return;
+    }
+    decorateHeaderProjectButtons();
+    projectButtonObserver = new MutationObserver(decorateHeaderProjectButtons);
+    projectButtonObserver.observe(document.body, { attributeFilter: ["aria-label"], attributes: true, childList: true, subtree: true });
+  }
+
   function focusProjectSelector() {
     const candidate = projectSelectorTrigger();
     if (candidate == null) return false;
@@ -260,6 +291,7 @@
           fuzzyFilter,
           fuzzyHighlight,
         };
+        watchHeaderProjectButtons();
         keydownHandler = (event) => {
           if (event.defaultPrevented || event.key !== "." || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) {
             return;
@@ -271,6 +303,9 @@
       stop() {
         if (keydownHandler) document.removeEventListener("keydown", keydownHandler, true);
         keydownHandler = null;
+        window.removeEventListener("DOMContentLoaded", watchHeaderProjectButtons);
+        projectButtonObserver?.disconnect();
+        projectButtonObserver = null;
       },
     }),
   );

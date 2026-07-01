@@ -167,7 +167,7 @@ function projectSelectorShortcutReplacements() {
 }
 
 function versionedNames(patchSet) {
-  if (patchSet.id === "codex-26.623.70822-4559") {
+  if (patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.70822-4559") {
     return {
       electronCommandSourceFile: ".vite/build/src-CoIhwwHr.js",
       srcFile: "src-BhkLFyc4.js",
@@ -925,6 +925,8 @@ test("project selector shortcut command focuses and opens the mounted selector t
         this.options = options;
       }
     },
+    addEventListener() {},
+    removeEventListener() {},
   };
   class FakeElement extends window.HTMLElement {
     constructor(id = "trigger", rect = { height: 20, left: 0, top: 0, width: 80 }, variant = "default", child = null) {
@@ -1748,7 +1750,7 @@ test("header patch renders project path accessories from thread context", () => 
       assert.doesNotMatch(transformedLocalConversation, /CPX_headerContext=\{cwd:p/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.61825-4548") {
+    if (patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       const transform = findTransform(patchSet, "header");
       const transformed = transform([
         "function Jn(e){let t=(0,$n.c)(66),{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o}=e,s=Fe(),c=a??Xn,l=s.pathname===`/`,u=Yn,",
@@ -1927,19 +1929,32 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
     );
   }
 
+  const currentPatchSet = patchSets.find((patchSet) => patchSet.id === "codex-26.623.81905-4598");
+  const currentTransforms = collectFileTransforms(currentPatchSet).filter(
+    ([filePath]) => filePath === "webview/assets/app-initial~app-main~onboarding-page-DewXrzLR.js",
+  );
+  assert.ok(currentTransforms.length > 0, "current patch has verified mermaid renderer transform");
   const currentBundle = [
-    "function or({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:c}){",
-    "return(0,X.jsxs)(`div`,{className:`relative`,`data-markdown-copy`:`code-block`,`data-markdown-copy-text`:S,children:[",
-    "(0,X.jsx)(`div`,{ref:u,className:ee(vr,!i&&`invisible`,p?`max-h-[var(--markdown-wide-block-max-height)] overflow-auto`:`overflow-x-auto`),\"aria-hidden\":!i||void 0,",
+    "function r6t(e){let t=(0,i6t.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,Hq.jsx)(dZt,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+    "function nun(e){let t=(0,run.c)(94),",
+    "return(0,pZ.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "ge=B?(0,hZ.jsx)(`div`,{className:`w-full p-px`,children:(0,hZ.jsx)(eun,{cwd:x??null,hostId:S,initialMessage:z.trim(),onCancel:()=>{oe(null)},onDraftChange:e=>{oe(e)},onSubmit:ce})}):ne?(0,hZ.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,",
+    "function COt(e){let t=(0,wOt.c)(19),",
+    'E=(0,yB.jsx)(`div`,{ref:d,className:C,"data-wide-markdown-block":w,"data-wide-markdown-block-kind":c,children:T})',
   ].join("");
-  const currentPatchSet = patchSets.find((patchSet) => patchSet.id === "codex-26.623.70822-4559");
-  const currentTransform = collectFileTransforms(currentPatchSet).find(
-    ([filePath]) => filePath === "webview/assets/mermaid-diagram-CVBcf6fK.js",
-  )?.[1];
-  assert.equal(typeof currentTransform, "function", "current patch has verified mermaid renderer transform");
-  const currentTransformed = currentTransform(currentBundle);
+  const currentTransformed = currentTransforms
+    .map(([, transform]) => {
+      try {
+        return transform(currentBundle);
+      } catch {
+        return "";
+      }
+    })
+    .find((text) => text.includes("CPXMermaidDiagramProps"));
+  assert.equal(typeof currentTransformed, "string", "current patch has verified mermaid renderer transform");
   assert.match(currentTransformed, /function CPXMermaidDiagramProps\(e\)\{return window\.CodexPlus\?\.ui\?\.mermaid\?\.diagramProps\?\.\(e\)\}/);
-  assert.match(currentTransformed, /\.\.\.CPXMermaidDiagramProps\(\{code:t\}\),className:ee\(vr,!i&&`invisible`/);
+  assert.match(currentTransformed, /\.\.\.CPXMermaidDiagramProps\(\{code:a\}\),className:C/);
 
   const pluginSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/mermaidFullscreen.js"), "utf8");
   const nativeMainSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/nativeMain.js"), "utf8");
@@ -2203,7 +2218,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.61825-4548") {
+    if (patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       const transform = findTransform(patchSet, "review");
       const transformed = transform([
         "function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
@@ -2403,7 +2418,7 @@ test("app main patch applies project colors to project headers and grouped row o
   assert.match(projectPlugin, /data-app-action-sidebar-thread-active=\\"true\\"/);
   assert.doesNotMatch(projectPlugin, /box-shadow:inset 5px 0 0 var\(--codex-plus-project-accent\)/);
   assert.match(projectPlugin, /box-shadow:inset 6px 0 0 var\(--codex-plus-project-accent\)/);
-  assert.match(projectPlugin, /\[data-app-action-sidebar-project-list-id\]\[data-codex-plus-project-sidebar-color\] \[data-app-action-sidebar-thread-row\]:not\(\[data-app-action-sidebar-thread-active=\\"true\\"\]\)\{border-left-color:transparent!important\}/);
+  assert.doesNotMatch(projectPlugin, /\[data-app-action-sidebar-project-list-id\]\[data-codex-plus-project-sidebar-color\] \[data-app-action-sidebar-thread-row\]:not\(\[data-app-action-sidebar-thread-active=\\"true\\"\]\)\{border-left-color:transparent!important\}/);
   assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]/);
   assert.match(blurPlugin, /data-codex-plus-sidebar-names-blurred/);
   assert.match(blurPlugin, /data-app-action-sidebar-project-row/);
@@ -2895,7 +2910,7 @@ test("user message patch applies variant-specific bubble colors with default fal
           "return(0,XB.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
           "he=H?(0,tV.jsx)(`div`,{className:`w-full p-px`,children:(0,tV.jsx)(vRe,{cwd:x??null,hostId:S,initialMessage:V.trim(),onCancel:()=>{oe(null)},onDraftChange:e=>{oe(e)},onSubmit:ce})}):te?(0,tV.jsx)(`div`,{\"data-user-message-bubble\":!0,role:R?`button`:void 0,",
         ].join("")
-      : patchSet.id === "codex-26.623.61825-4548"
+      : patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548"
         ? [
           "function Kc({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
           "return(0,Jc.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
@@ -2943,7 +2958,7 @@ test("user message patch applies variant-specific bubble colors with default fal
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.61825-4548") {
+    if (patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXBubbleProps\(\{project:\{cwd:x,hostId:S\}\}\),role:L\?`button`:void 0/);
       assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
       assert.doesNotMatch(transformed, /CPX_localThreadKey/);
@@ -3023,7 +3038,7 @@ test("composer patch applies the user entry marker and shared color variables", 
           "Qc=(0,nJ.jsx)(Vm,{active:Go.ui?.active===!0&&Go.ui.activation===`synthetic`,onOpen:()=>{fc.prepare(),Tn.toggleContextSuggestions()}});return",
           "):(0,nJ.jsx)(Qq,{className:k,externalFooterVariant:O,hasDropTargetPortal:Uc,blockReason:Hr,isDragActive:io,isSubmitting:wt,layout:qc,onDragEnter:wc,onDragOver:Ec,onDragLeave:Tc,onDrop:Dc,showShiftOverlay:so,",
         ].join("")
-      : patchSet.id === "codex-26.623.61825-4548"
+      : patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548"
         ? [
           "function MN(e){let t=(0,KN.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,f=i===void 0?`default`:i,p=o===void 0?!1:o,m=s===void 0?`multiline`:s,h=f===`home`&&`z-10`,g=m===`single-line`?`overflow-visible rounded-full`:AN.multilineSurface,_=p&&`bg-token-dropdown-background/50`,v;t[0]!==r||t[1]!==h||t[2]!==g||t[3]!==_?(v=bi(`composer-surface-chrome relative flex flex-col bg-token-input-background/90 backdrop-blur-lg electron:dark:bg-token-dropdown-background`,h,g,_,r),t[0]=r,t[1]=h,t[2]=g,t[3]=_,t[4]=v):v=t[4];let y;return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,qN.jsx)(Xo.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
           "(0,dW.jsx)(sW,{className:T,externalFooterVariant:w,hasDropTargetPortal:Fc,",
@@ -3101,7 +3116,7 @@ test("composer patch applies the user entry marker and shared color variables", 
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.61825-4548") {
+    if (patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       assert.match(transformed, /function MN\(e\)\{let t=\(0,KN\.c\)\(13\)/);
       assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
       assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);

@@ -77,7 +77,8 @@ test("audit fixture writes project assignments, pinned data, and projectless thr
     assert.equal(projectlessThreads.length, 5);
     assert.equal(projectlessThreads.filter((thread) => thread.pinned).length, 2);
     assert.ok(state["projectless-thread-ids"].includes(projectlessThread.id));
-    assert.equal(state["projectless-thread-ids"].filter((threadId) => !threadId.startsWith("local:")).length, 5);
+    assert.equal(state["projectless-thread-ids"].length, 5);
+    assert.equal(state["projectless-thread-ids"].some((threadId) => threadId.startsWith("local:")), false);
     assert.equal(state["project-order"].length >= 10, true);
     assert.equal(projectlessThread.sessionCwd, "~");
     assert.equal(projectlessThread.cwd, "~");
@@ -147,6 +148,20 @@ test("audit fixture creates nested repository inputs for review probes", () => {
         encoding: "utf8",
       }),
       /README\.md/,
+    );
+    assert.match(
+      childProcess.execFileSync("git", ["branch", "--list"], {
+        cwd: fixture.workspaces.nestedAlphaModule,
+        encoding: "utf8",
+      }),
+      /audit-alpha-base/,
+    );
+    assert.match(
+      childProcess.execFileSync("git", ["branch", "--list"], {
+        cwd: fixture.workspaces.nestedBetaModule,
+        encoding: "utf8",
+      }),
+      /audit-beta-base/,
     );
   });
 });

@@ -35,7 +35,7 @@ function git(args, cwd, execFileSync = childProcess.execFileSync) {
   });
 }
 
-function createGitRepo(repoPath, { label, dirtyFile = "README.md", fsImpl = fs, execFileSync = childProcess.execFileSync }) {
+function createGitRepo(repoPath, { label, dirtyFile = "README.md", branches = [], fsImpl = fs, execFileSync = childProcess.execFileSync }) {
   fsImpl.mkdirSync(repoPath, { recursive: true });
   git(["init", "-b", "main"], repoPath, execFileSync);
   git(["config", "user.email", "fixture@example.invalid"], repoPath, execFileSync);
@@ -43,6 +43,7 @@ function createGitRepo(repoPath, { label, dirtyFile = "README.md", fsImpl = fs, 
   writeText(path.join(repoPath, dirtyFile), `# ${label}\n\nBaseline fixture content.\n`, fsImpl);
   git(["add", dirtyFile], repoPath, execFileSync);
   git(["commit", "-m", `Seed ${label}`], repoPath, execFileSync);
+  for (const branch of branches) git(["branch", branch], repoPath, execFileSync);
   fsImpl.appendFileSync(path.join(repoPath, dirtyFile), "\nUncommitted fixture change.\n");
 }
 
@@ -85,8 +86,8 @@ function fixtureLayout(rootDir) {
 }
 
 function createNestedRepositoryInputs(rootPath, { alphaModule, betaModule, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
-  createGitRepo(alphaModule, { label: "Nested Alpha Module", fsImpl, execFileSync });
-  createGitRepo(betaModule, { label: "Nested Beta Module", dirtyFile: "module.txt", fsImpl, execFileSync });
+  createGitRepo(alphaModule, { label: "Nested Alpha Module", branches: ["audit-alpha-base", "audit-shared-base"], fsImpl, execFileSync });
+  createGitRepo(betaModule, { label: "Nested Beta Module", dirtyFile: "module.txt", branches: ["audit-beta-base", "audit-shared-base"], fsImpl, execFileSync });
   writeText(
     path.join(rootPath, ".gitmodules"),
     [
@@ -585,11 +586,9 @@ function createGlobalState(layout, threads) {
   const outputDirectories = {};
   const addThreadKey = (target, thread, value) => {
     target[thread.id] = value;
-    target[`local:${thread.id}`] = value;
   };
   const addProjectlessThreadKey = (target, thread, value) => {
     target[thread.id] = value;
-    target[`local:${thread.id}`] = value;
   };
   for (const thread of threads) {
     if (thread.cwd) {
@@ -608,8 +607,8 @@ function createGlobalState(layout, threads) {
       addThreadKey(assignments, thread, assignment);
     }
   }
-  const pinnedThreadIds = threads.filter((thread) => thread.pinned).flatMap((thread) => [thread.id, `local:${thread.id}`]);
-  const projectlessThreadIds = threads.filter((thread) => thread.projectless).flatMap((thread) => [thread.id, `local:${thread.id}`]);
+  const pinnedThreadIds = threads.filter((thread) => thread.pinned).map((thread) => thread.id);
+  const projectlessThreadIds = threads.filter((thread) => thread.projectless).map((thread) => thread.id);
   const expandedProjects = Object.fromEntries(projectOrder.map((project) => [`sidebar-project-expanded-v1-codex:${project}`, true]));
   return {
     "electron-persisted-atom-state": {
