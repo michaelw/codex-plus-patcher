@@ -390,9 +390,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /finally \{/);
   assert.match(defaultExpression, /root\.removeAttribute\("data-codex-plus-sidebar-names-blurred"\)/);
   assert.match(defaultExpression, /root\.setAttribute\("data-codex-plus-sidebar-names-blurred", previous\)/);
-  assert.match(defaultExpression, /rendererSourceEvidence/);
-  assert.match(defaultExpression, /Sidebar blur command is not wired into the renderer command palette/);
-  assert.match(defaultExpression, /Renderer command palette cannot read literal Codex Plus command titles/);
+  assert.match(defaultExpression, /Sidebar blur computed style is not active on a visible project or thread row/);
+  assert.match(defaultExpression, /Sidebar blur should not blur the entire visible sidebar scroll container/);
   assert.match(defaultExpression, /Live Mermaid diagrams missing popout buttons/);
   assert.match(defaultExpression, /liveDiagramCount/);
   assert.match(defaultExpression, /Project sidebar child rows or list containers are not styled like their project rows/);
@@ -478,7 +477,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   });
 });
 
-test("project selector shortcut verifier fails when no suitable project label exists", async () => {
+test("project selector shortcut verifier keeps fuzzy DOM details diagnostic", async () => {
   const sent = [];
   const evaluations = [
     { triggerCount: 1, clickedNewChat: true },
@@ -504,9 +503,9 @@ test("project selector shortcut verifier fails when no suitable project label ex
 
   const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
 
-  assert.equal(result.ok, false);
+  assert.equal(result.ok, true);
+  assert.equal(result.opened, true);
   assert.equal(result.fuzzyDom.suitableProjectFound, false);
-  assert.match(result.message, /fuzzy filtering/);
   assert.equal(JSON.stringify(result).includes("/"), false);
   assert.deepEqual(sent.map((call) => call.params.key), [".", ".", "Escape", "Escape"]);
 });
@@ -837,6 +836,7 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
 });
 
 test("runAudit fails when the Mermaid viewer cannot render standalone", async () => {
+  const progressEvents = [];
   class FakeCdpSession {
     connect() { return Promise.resolve(); }
     send() { return Promise.resolve(); }
@@ -874,7 +874,11 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
       includeNativeOpenProbes: false,
     },
     {
-      progress: { start() {}, succeed() {}, fail() {} },
+      progress: {
+        start(text) { progressEvents.push(["start", text]); },
+        succeed(text) { progressEvents.push(["succeed", text]); },
+        fail(text) { progressEvents.push(["fail", text]); },
+      },
       operations: {
         auditPreflight() {
           return Promise.resolve({ port: 9234, launch: false, reuseExisting: true });
@@ -909,6 +913,86 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
     plugin: "mermaidFullscreen",
     message: "Mermaid viewer render failed: Mermaid render failed: Cannot read properties of undefined (reading 'adapters')",
   }]);
+  assert.ok(progressEvents.some(([kind, text]) => kind === "fail" && text === "Verifying Mermaid viewer render"));
+  assert.equal(progressEvents.some(([kind, text]) => kind === "succeed" && text === "Mermaid viewer rendered"), false);
+});
+
+test("runAudit progress fails when the project selector verifier returns not ok", async () => {
+  const progressEvents = [];
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    evaluate() {
+      return Promise.resolve({
+        ok: true,
+        failures: [],
+        pluginResults: {
+          projectSelectorShortcut: {
+            ok: true,
+            registered: true,
+            started: true,
+          },
+        },
+        registeredPlugins: ["projectSelectorShortcut"],
+        startedPlugins: ["projectSelectorShortcut"],
+      });
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: false,
+      launch: false,
+      keepOpen: false,
+      includeNativeOpenProbes: false,
+    },
+    {
+      progress: {
+        start(text) { progressEvents.push(["start", text]); },
+        succeed(text) { progressEvents.push(["succeed", text]); },
+        fail(text) { progressEvents.push(["fail", text]); },
+      },
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({ port: 9234, launch: false, reuseExisting: true });
+        },
+        waitForRendererTarget() {
+          return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
+        waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
+        verifyProjectSelectorShortcutKey() {
+          return Promise.resolve({
+            ok: false,
+            message: "Project selector fuzzy filtering did not preserve and highlight a visible project",
+          });
+        },
+        cleanupLaunchedAuditApp() {
+          return Promise.resolve({ attempted: false, keptOpen: false, ok: true });
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.pluginResults.projectSelectorShortcut.ok, false);
+  assert.deepEqual(result.failures, [{
+    plugin: "projectSelectorShortcut",
+    message: "Project selector fuzzy filtering did not preserve and highlight a visible project",
+  }]);
+  assert.ok(progressEvents.some(([kind, text]) => kind === "fail" && text === "Verifying project selector shortcut and fuzzy match"));
+  assert.equal(progressEvents.some(([kind, text]) => kind === "succeed" && text === "Project selector shortcut fuzzy match passed"), false);
 });
 
 test("runAudit fails when the Review panel live probe cannot find a review thread", async () => {

@@ -26,6 +26,8 @@ module.exports = buildCodexPlusPatchSet({
     localTaskRow: "webview/assets/app-initial~app-main~remote-conversation-page~projects-index-page-px21igmO.js",
     mermaidDiagramShell: "webview/assets/mermaid-diagram-CVBcf6fK.js",
     keyboardShortcutsSearchInput: "webview/assets/app-initial~app-main~automations-page-Bc0ZtIBr.js",
+    statsigStartup: "webview/assets/app-initial~app-main~automations-page-Bc0ZtIBr.js",
+    localThreadCatalogState: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~ko8xg8gw-DEdbMp8p.js",
     src: "webview/assets/src-BhkLFyc4.js",
     sidebarThreadKeys: null,
     sidebarThreadRowSignals: null,

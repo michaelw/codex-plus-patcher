@@ -42,7 +42,11 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     );
     assert.equal(
       sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select count(*) from local_thread_catalog where cwd = '';"),
-      "5",
+      "0",
+    );
+    assert.equal(
+      sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select count(distinct cwd) from local_thread_catalog where display_title like 'Fixture: no project chat%';"),
+      "1",
     );
 
     const serialized = fs.readFileSync(path.join(devHome, ".codex-global-state.json"), "utf8") +
@@ -71,10 +75,27 @@ test("audit fixture writes project assignments, pinned data, and projectless thr
     assert.ok(state["pinned-project-ids"].includes(fixture.workspaces.alpha));
     assert.ok(state["pinned-thread-ids"].includes(pinnedThread.id));
     assert.equal(projectlessThreads.length, 5);
+    assert.equal(projectlessThreads.filter((thread) => thread.pinned).length, 2);
     assert.ok(state["projectless-thread-ids"].includes(projectlessThread.id));
     assert.equal(state["projectless-thread-ids"].filter((threadId) => !threadId.startsWith("local:")).length, 5);
     assert.equal(state["project-order"].length >= 10, true);
-    assert.equal(fs.existsSync(projectlessThread.sessionCwd), true);
+    assert.equal(projectlessThread.sessionCwd, "~");
+    assert.equal(projectlessThread.cwd, "~");
+    assert.equal(fs.existsSync(projectlessThread.outputDirectory), true);
+    assert.equal(projectlessThread.cwd, projectlessThread.sessionCwd);
+    assert.equal(path.dirname(projectlessThread.outputDirectory), path.join(fixture.workspaces.projectlessRoot, projectlessThread.id));
+    assert.equal(new Set(projectlessThreads.map((thread) => thread.cwd)).size, 1);
+    assert.equal(new Set(projectlessThreads.map((thread) => thread.outputDirectory)).size, 5);
+    assert.equal(atomState["thread-project-assignments"][projectlessThread.id], undefined);
+    assert.equal(state["thread-writable-roots"][projectlessThread.id], undefined);
+    assert.equal(
+      sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), `select count(*) from threads where title like 'Fixture: no project chat%' and git_sha is null and git_branch is null and git_origin_url is null;`),
+      "5",
+    );
+    assert.equal(
+      sqliteValue(path.join(fixture.devHome, "sqlite", "codex-dev.db"), `select count(*) from local_thread_catalog where display_title like 'Fixture: no project chat%' and git_branch is null;`),
+      "5",
+    );
     assert.deepEqual(state["thread-writable-roots"][nestedThread.id], [fixture.workspaces.nestedWorktree]);
     assert.equal(nestedAssignment.projectId, fixture.workspaces.nestedProject);
     assert.equal(nestedAssignment.cwd, fixture.workspaces.nestedWorktree);

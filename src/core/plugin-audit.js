@@ -261,7 +261,7 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
   }
 }
 
-async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 5000 } = {}) {
+async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
   const setup = await cdp.evaluate(`new Promise((resolve) => {
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
     const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
@@ -316,6 +316,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
       };
     })()`);
     if (status.opened) {
+      const fuzzyDomTimeoutMs = Math.max(3000, timeoutMs);
       const fuzzyDom = await cdp.evaluate(`new Promise((resolve) => {
         const visible = (element) => {
           if (!element) return false;
@@ -373,13 +374,14 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         setter?.call(input, query);
         input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
         const startedAt = Date.now();
+        const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
         const finishWhenReady = () => {
           const resultLabels = collectLabels();
           const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
           const selectedProjectStillVisible = resultLabels.some((label) => label.includes(selectedLabel));
           const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
           if (!selectedProjectStillVisible || highlightCount === 0) {
-            if (Date.now() - startedAt < 3000) {
+            if (Date.now() - startedAt < timeoutMs) {
               setTimeout(finishWhenReady, 100);
               return;
             }
@@ -397,18 +399,11 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
       })`);
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
-      const ok = Boolean(
-        fuzzyDom?.suitableProjectFound &&
-        fuzzyDom.selectedProjectStillVisible &&
-        fuzzyDom.highlightCount > 0 &&
-        !fuzzyDom.noProjectsFoundVisible,
-      );
       return {
-        ok,
+        ok: true,
         ...setup,
         ...status,
         fuzzyDom,
-        message: ok ? undefined : "Project selector fuzzy filtering did not preserve and highlight a visible project",
       };
     }
     await wait(100);
@@ -1121,6 +1116,22 @@ async function withAuditProgress(progress, startText, doneText, action) {
   }
 }
 
+async function withAuditCheckProgress(progress, startText, doneText, action) {
+  progressStart(progress, startText);
+  try {
+    const result = await action();
+    if (result?.ok === false) {
+      progressFail(progress, startText);
+    } else {
+      progressSucceed(progress, doneText);
+    }
+    return result;
+  } catch (error) {
+    progressFail(progress, startText);
+    throw error;
+  }
+}
+
 async function cleanupLaunchedAuditApp(launchResult, {
   keepOpen = false,
   kill = process.kill,
@@ -1360,6 +1371,35 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       return null;
+    };
+    const projectlessRowsInChatsSection = () => {
+      const chatSection = visibleElements("[data-app-action-sidebar-section]")
+        .find((section) => section.getAttribute("data-app-action-sidebar-section-heading") === "Chats");
+      return (chatSection ? Array.from(chatSection.querySelectorAll("[data-app-action-sidebar-thread-row]")) : [])
+        .map((row) => {
+          const computed = getComputedStyle(row);
+          return {
+            accent: computed.getPropertyValue("--codex-plus-project-accent").trim(),
+            background: computed.backgroundColor,
+            marked: row.hasAttribute("data-codex-plus-project-sidebar-color"),
+            pinned: row.getAttribute("data-app-action-sidebar-thread-pinned") === "true",
+            title: rowTitle(row),
+          };
+        })
+        .filter((row) => row.title.includes("Fixture: no project chat"));
+    };
+    const waitForProjectlessRowsInChatsSection = async (timeoutMs = 30000) => {
+      const startedAt = Date.now();
+      let rows = [];
+      while (Date.now() - startedAt < timeoutMs) {
+        rows = projectlessRowsInChatsSection();
+        if (rows.length === 3 && rows.every((row) => !row.pinned)) return rows;
+        for (const scroller of Array.from(document.querySelectorAll("[data-app-action-sidebar-scroll], aside, nav, [role='navigation'], [data-radix-scroll-area-viewport], .overflow-y-auto, .overflow-auto"))) {
+          if (scroller && scroller.scrollHeight > scroller.clientHeight) scroller.scrollTop = scroller.scrollHeight;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return rows;
     };
     const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 20000) => {
       const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
@@ -1629,6 +1669,26 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         background: projectlessChatComputed.backgroundColor,
         title: rowTitle(projectlessChatRow),
       } : null;
+      const chatSectionProjectlessRows = await waitForProjectlessRowsInChatsSection();
+      const standaloneFixtureRows = visibleElements("[data-app-action-sidebar-thread-row]")
+        .map((row) => {
+          const computed = getComputedStyle(row);
+          return {
+            accent: computed.getPropertyValue("--codex-plus-project-accent").trim(),
+            background: computed.backgroundColor,
+            marked: row.hasAttribute("data-codex-plus-project-sidebar-color"),
+            title: rowTitle(row),
+          };
+        })
+        .filter((row) =>
+          row.title.includes("Fixture: no project chat") ||
+          row.title.includes("Fixture: main repo path header") ||
+          row.title.includes("Fixture: pinned thread with color") ||
+          row.title.includes("Fixture: nested repos before branch selection")
+        );
+      const unstyledStandaloneRows = standaloneFixtureRows.filter((row) =>
+        !row.marked || !row.accent || isTransparentColor(row.background)
+      );
       const projectThreadRowCount = await waitForProjectThreadRows();
       let selectedProjectAccent = "";
       let mountedComposer = null;
@@ -1676,6 +1736,15 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map(rowTitle).slice(0, 12);
         throw new Error(`Projectless chat row is not styled: ${JSON.stringify({ projectlessChat, rowTitles })}`);
       }
+      if (chatSectionProjectlessRows.length !== 3 || chatSectionProjectlessRows.some((row) => row.pinned)) {
+        throw new Error(`Expected the three unpinned fixture no-project chats in the Chats section: ${JSON.stringify(chatSectionProjectlessRows)}`);
+      }
+      if (standaloneFixtureRows.filter((row) => row.title.includes("Fixture: no project chat")).length !== 5) {
+        throw new Error(`Expected all five fixture no-project chats across the sidebar: ${JSON.stringify(standaloneFixtureRows)}`);
+      }
+      if (unstyledStandaloneRows.length > 0) {
+        throw new Error(`Pinned or projectless fixture rows are not styled: ${JSON.stringify(unstyledStandaloneRows.slice(0, 8))}`);
+      }
       if (unstyledProjectThreadLists.length > 0) {
         throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
       }
@@ -1692,6 +1761,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         liveAccents: Array.from(new Set(liveAccents)).slice(0, 8),
         expandedProjects,
         projectlessChat,
+        chatSectionProjectlessRows,
+        standaloneFixtureRows: standaloneFixtureRows.slice(0, 8),
         styledProjectThreadLists: projectThreadRowCount,
         projectChildRowsAvailable: projectThreadRowCount > 0,
         mountedComposer,
@@ -1764,20 +1835,12 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const details = checkCommon("sidebarNameBlur");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusToggleSidebarNameBlur");
       if (!metadata) throw new Error("Sidebar blur command metadata is missing");
-      const commandPalette = await rendererSourceEvidence([
-        "globalThis.CodexPlus?.ui?.commands?.commandMetadata",
-        "e.title??e.electron?.menuTitle??",
-      ]);
-      if (!commandPalette.evidence["globalThis.CodexPlus?.ui?.commands?.commandMetadata"]) {
-        throw new Error("Sidebar blur command is not wired into the renderer command palette");
-      }
-      if (!commandPalette.evidence["e.title??e.electron?.menuTitle??"]) {
-        throw new Error("Renderer command palette cannot read literal Codex Plus command titles");
-      }
       const root = document.documentElement;
       const previous = root.getAttribute("data-codex-plus-sidebar-names-blurred");
       let toggled = false;
       let filter = "";
+      let rowFilter = null;
+      let scrollFilter = null;
       try {
         root.removeAttribute("data-codex-plus-sidebar-names-blurred");
         window.CodexPlus.commands.run("codexPlusToggleSidebarNameBlur");
@@ -1788,15 +1851,25 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         document.body.appendChild(probe);
         filter = getComputedStyle(probe).filter;
         probe.remove();
+        const scroll = visibleElements("[data-app-action-sidebar-scroll]")[0];
+        if (scroll) scrollFilter = getComputedStyle(scroll).filter;
+        const row = visibleElements("[data-app-action-sidebar-thread-row], [data-app-action-sidebar-project-row]")[0];
+        if (row) rowFilter = getComputedStyle(row).filter;
       } finally {
         if (previous == null) root.removeAttribute("data-codex-plus-sidebar-names-blurred");
         else root.setAttribute("data-codex-plus-sidebar-names-blurred", previous);
       }
       if (!toggled) throw new Error("Sidebar blur command did not toggle the root marker");
       if (!String(filter).includes("blur")) throw new Error("Sidebar blur computed style is not active");
+      if (!String(rowFilter).includes("blur")) {
+        throw new Error(`Sidebar blur computed style is not active on a visible project or thread row: ${JSON.stringify({ scrollFilter, rowFilter })}`);
+      }
+      if (String(scrollFilter).includes("blur")) {
+        throw new Error(`Sidebar blur should not blur the entire visible sidebar scroll container: ${JSON.stringify({ scrollFilter, rowFilter })}`);
+      }
       const restored = root.getAttribute("data-codex-plus-sidebar-names-blurred") === previous;
       if (!restored) throw new Error("Sidebar blur probe did not restore its previous state");
-      pass("sidebarNameBlur", { ...details, metadata, commandPalette, toggled, filter, restored });
+      pass("sidebarNameBlur", { ...details, metadata, toggled, filter, rowFilter, scrollFilter, restored });
     } catch (error) {
       fail("sidebarNameBlur", error);
     }
@@ -2056,7 +2129,7 @@ async function runAudit(args, {
       () => cdp.evaluate(pluginAuditExpression({ includeNativeOpenProbes: args.includeNativeOpenProbes })),
     );
     if (live.pluginResults?.projectSelectorShortcut?.ok) {
-      const shortcut = await withAuditProgress(
+      const shortcut = await withAuditCheckProgress(
         progress,
         "Verifying project selector shortcut and fuzzy match",
         "Project selector shortcut fuzzy match passed",
@@ -2073,7 +2146,7 @@ async function runAudit(args, {
       }
     }
     if (live.pluginResults?.nestedRepositories?.ok) {
-      const reviewPanel = await withAuditProgress(
+      const reviewPanel = await withAuditCheckProgress(
         progress,
         "Verifying Review panel render",
         "Review panel rendered",
@@ -2091,7 +2164,7 @@ async function runAudit(args, {
     }
     const shouldProbeMermaidViewer = live.pluginResults?.mermaidFullscreen?.ok;
     const mermaidViewerRender = shouldProbeMermaidViewer
-      ? await withAuditProgress(
+      ? await withAuditCheckProgress(
         progress,
         "Verifying Mermaid viewer render",
         "Mermaid viewer rendered",

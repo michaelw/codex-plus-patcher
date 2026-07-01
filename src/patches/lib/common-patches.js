@@ -52,7 +52,7 @@ function buildCodexPlusPatchSet(config) {
   const sidebarThreadRowSignalsFile = files.sidebarThreadRowSignals;
   const branchPickerDropdownContentFile = files.branchPickerDropdownContent;
   const statsigStartupFile = files.statsigStartup;
-  const localThreadCatalogStateFile = files.localThreadCatalogState || files.mermaidDiagramShell;
+  const localThreadCatalogStateFile = files.localThreadCatalogState;
 
 function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
@@ -417,7 +417,21 @@ function patchThreadSidePanelTabs(text) {
     "review body mux anchor",
   );
 }
+function patchLocalThreadCatalogBootstrap(text) {
+  const match = text.match(
+    /o=!\(r\?\?i\)\|\|a==null\?null:\(0,([A-Za-z0-9_$]+)\.jsx\)\(([A-Za-z0-9_$]+),\{service:a\}\)/,
+  );
+  if (!match) return text;
+  return replaceOnce(
+    text,
+    match[0],
+    `o=r===!1||a==null?null:(0,${match[1]}.jsx)(${match[2]},{service:a})`,
+    "local thread catalog bootstrap anchor",
+  );
+}
+
 function patchAppShell(text) {
+  text = patchLocalThreadCatalogBootstrap(text);
   if (text.includes("function hte(){let e=(0,zA.c)(3),t,n;")) {
     let patched = replaceOnce(
       text,
@@ -1625,12 +1639,21 @@ function patchLocalTaskRow(text) {
       `${projectColorHook()}function Ef(e){let t=(0,Of.c)(134),`,
       "local task row project color helper insertion anchor",
     );
-    return replaceOnce(
+    patched = replaceOnce(
       patched,
       "threadSummary:le,dataAttributes:ue}=e,de=l===void 0?!1:l,",
       "threadSummary:le,dataAttributes:ue=CPXPR({projectId:oe,label:se,path:r,cwd:r})}=e,de=l===void 0?!1:l,",
       "local task row project assignment anchor",
     );
+    if (patched.includes("dataAttributes:Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})")) {
+      patched = replaceOnce(
+        patched,
+        "dataAttributes:Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+        "dataAttributes:{...Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:_e,label:ge,path:O,cwd:O,hostId:p,threadId:l,title:x,projectKind:_e||O?void 0:`chat`,projectless:u===`projectless`})}",
+        "local sidebar row project color attributes anchor",
+      );
+    }
+    return patched;
   }
   if (text.includes("function _p(e){let t=(0,yp.c)(134),")) {
     let patched = replaceOnce(
@@ -1645,7 +1668,20 @@ function patchLocalTaskRow(text) {
       "threadSummary:le,dataAttributes:ue=CPXPR({projectId:oe,label:se,path:r,cwd:r,hostId:R?.id})}=e,de=c===void 0?!1:c,",
       "local task row project assignment anchor",
     );
-    return patched;
+    if (patched.includes("dataAttributes:kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})")) {
+      return replaceOnce(
+        patched,
+        "dataAttributes:kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+        "dataAttributes:{...kr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:ve,label:ge,path:D,cwd:D,hostId:p,threadId:l,title:x,projectKind:ve||D?void 0:`chat`,projectless:u===`projectless`})}",
+        "local sidebar row project color attributes anchor",
+      );
+    }
+    return replaceOnce(
+      patched,
+      "dataAttributes:Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+      "dataAttributes:{...Rn.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:ve,label:ge,path:D,cwd:D,hostId:p,threadId:l,title:x,projectKind:ve||D?void 0:`chat`,projectless:u===`projectless`})}",
+      "local sidebar row project color attributes anchor",
+    );
   }
   let patched = replaceOnce(
     text,
@@ -1843,11 +1879,14 @@ function patchMainMenuDiagnostics(text) {
 }
 
 function patchStatsigDevFallback(text) {
-  if (!text.includes("Timed out while fetching post-login Statsig bootstrap")) return text;
+  text = patchLocalThreadCatalogBootstrap(text);
   const providerPattern =
     /function ([A-Za-z0-9_$]+)\(e\)\{let t=\(0,([A-Za-z0-9_$]+)\.c\)\((\d+)\),\{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,stableId:s,statsigClientKey:c,systemName:l,systemVersion:u,children:d\}=e,/;
   const match = text.match(providerPattern);
-  if (!match) throw new Error("Could not find post-login Statsig provider anchor");
+  if (!match) {
+    if (!text.includes("Timed out while fetching post-login Statsig bootstrap")) return text;
+    throw new Error("Could not find post-login Statsig provider anchor");
+  }
   const [anchor, functionName, cacheName, cacheSize] = match;
   const providerStart = match.index ?? text.indexOf(anchor);
   const providerBody = text.slice(providerStart, providerStart + 2500);
@@ -1873,9 +1912,15 @@ function patchStatsigDevFallback(text) {
 }
 
 function patchLocalThreadCatalogEnabled(text) {
-  const anchor = "MY=te(T,!1),NY=te(T,jY)";
-  if (!text.includes(anchor)) return text;
-  return replaceOnce(text, anchor, "MY=te(T,!0),NY=te(T,jY)", "local thread catalog enabled anchor");
+  const anchors = [
+    ["CV=En(SV,!1),wV=ot(W,null)", "CV=En(SV,!0),wV=ot(W,null)"],
+    ["JB=Qd(qB,!1),YB=S(q,null)", "JB=Qd(qB,!0),YB=S(q,null)"],
+    ["MY=te(T,!1),NY=te(T,jY)", "MY=te(T,!0),NY=te(T,jY)"],
+    ["tQ=R(m,!1),nQ=R(m,eQ)", "tQ=R(m,!0),nQ=R(m,eQ)"],
+  ];
+  const match = anchors.find(([anchor]) => text.includes(anchor));
+  if (!match) throw new Error("Could not find local thread catalog enabled anchor");
+  return replaceOnce(text, match[0], match[1], "local thread catalog enabled anchor");
 }
 
 return makePatchSet({

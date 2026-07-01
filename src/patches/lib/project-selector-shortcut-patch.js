@@ -376,12 +376,15 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
 }
 
 function patchRunCommandProjectSelectorShortcut(text) {
-  const runtimeCommandEntries = "...(window.CodexPlus?.commands?.all?.()??[]).map(e=>[e.id,()=>window.CodexPlus?.commands?.run?.(e.id)])";
+  const staticRuntimeCommandIds = "[`codexPlus.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`]";
+  const runtimeCommandEntries = `...${staticRuntimeCommandIds}.map(e=>[e,()=>window.CodexPlus?.commands?.run?.(e)]),...(window.CodexPlus?.commands?.all?.()??[]).map(e=>[e.id,()=>window.CodexPlus?.commands?.run?.(e.id)])`;
+  const registerStaticRuntimeCommands = (name) =>
+    `(()=>{for(let e of ${staticRuntimeCommandIds})${name}(e,()=>window.CodexPlus?.commands?.run?.(e));for(let e of window.CodexPlus?.commands?.all?.()??[])${name}(e.id,()=>window.CodexPlus?.commands?.run?.(e.id))})()`;
   if (text.includes("Fi(`newThread`,S),")) {
     return replaceOnce(
       text,
       "Fi(`newThread`,S),",
-      "Fi(`newThread`,S),(window.CodexPlus?.commands?.all?.()??[]).forEach(e=>Fi(e.id,()=>window.CodexPlus?.commands?.run?.(e.id))),",
+      `Fi(\`newThread\`,S),${registerStaticRuntimeCommands("Fi")},`,
       "codex plus runtime command dispatch anchor",
     );
   }
@@ -389,7 +392,7 @@ function patchRunCommandProjectSelectorShortcut(text) {
     return replaceOnce(
       text,
       "Xi(`toggleSidebar`,r);",
-      "Xi(`toggleSidebar`,r);for(let e of window.CodexPlus?.commands?.all?.()??[])Xi(e.id,()=>window.CodexPlus?.commands?.run?.(e.id));",
+      `Xi(\`toggleSidebar\`,r);${registerStaticRuntimeCommands("Xi")};`,
       "codex plus runtime command dispatch anchor",
     );
   }
@@ -397,7 +400,15 @@ function patchRunCommandProjectSelectorShortcut(text) {
     return replaceOnce(
       text,
       "Jy(`toggleSidebar`,r);",
-      "Jy(`toggleSidebar`,r);for(let e of window.CodexPlus?.commands?.all?.()??[])Jy(e.id,()=>window.CodexPlus?.commands?.run?.(e.id));",
+      `Jy(\`toggleSidebar\`,r);${registerStaticRuntimeCommands("Jy")};`,
+      "codex plus runtime command dispatch anchor",
+    );
+  }
+  if (text.includes("tc(`toggleSidebar`,r);")) {
+    return replaceOnce(
+      text,
+      "tc(`toggleSidebar`,r);",
+      `tc(\`toggleSidebar\`,r);${registerStaticRuntimeCommands("tc")};`,
       "codex plus runtime command dispatch anchor",
     );
   }

@@ -27,6 +27,7 @@ module.exports = buildCodexPlusPatchSet({
     mermaidDiagramShell: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~pull-requests-page~plug~fjtgnfyk-DDle9LSA.js",
     keyboardShortcutsSearchInput: "webview/assets/app-initial~app-main~automations-page-DxmBjnZu.js",
     statsigStartup: "webview/assets/app-initial~app-main~automations-page-DxmBjnZu.js",
+    localThreadCatalogState: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~pull-requests-page~plug~fjtgnfyk-DDle9LSA.js",
     src: "webview/assets/src-BP6b_0YB.js",
     sidebarThreadKeys: null,
     sidebarThreadRowSignals: null,
