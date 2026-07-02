@@ -51,14 +51,17 @@ test("regression sources parses options and rejects unsafe combinations", () => 
     keepOpen: false,
     newest: null,
     noProgress: false,
+    remoteDebuggingPort: 9234,
     sourcesDir: null,
     useLiveSourceHome: false,
   });
 
   assert.equal(parseArgs(["--clean"]).clean, true);
   assert.equal(parseArgs(["--newest", "2"]).newest, 2);
+  assert.equal(parseArgs(["--port", "9334"]).remoteDebuggingPort, 9334);
   assert.equal(parseArgs(["--use-live-source-home"]).useLiveSourceHome, true);
   assert.throws(() => parseArgs(["--newest", "0"]), /--newest must be a positive integer/);
+  assert.throws(() => parseArgs(["--remote-debugging-port", "0"]), /must be a positive integer/);
   assert.throws(() => parseArgs(["--auto-clean", "--keep-open"]), /cannot be combined/);
 });
 
@@ -182,9 +185,11 @@ test("regression sources runs supported sources and continues after failures", a
         keepOpen: false,
         newest: null,
         noProgress: true,
+        remoteDebuggingPort: 9400,
         sourcesDir,
       },
       {
+        findFreePort: async (port) => port + 10,
         getAppIdentity: (appPath) => identities.get(appPath),
         patchSets: [
           patchSet("26.623.70822", "4559", "sha-a"),
@@ -208,6 +213,8 @@ test("regression sources runs supported sources and continues after failures", a
     assert.equal(calls[0].target, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "Codex Plus.app"));
     assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "codex-home"));
     assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "electron-user-data"));
+    assert.equal(calls[0].remoteDebuggingPort, 9410);
+    assert.equal(calls[1].remoteDebuggingPort, 9411);
     assert.equal(calls[0].includeNativeOpenProbes, true);
     assert.equal(calls[0].useLiveSourceHome, false);
   });
@@ -234,6 +241,7 @@ test("regression sources passes prefixed progress into audits", async () => {
         keepOpen: false,
         newest: null,
         noProgress: false,
+        remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {
@@ -274,6 +282,7 @@ test("regression sources auto-cleans generated version output", async () => {
         keepOpen: false,
         newest: null,
         noProgress: true,
+        remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {
@@ -315,6 +324,7 @@ test("regression sources cleanup removes generated dirs only and supports filter
         keepOpen: false,
         newest: null,
         noProgress: true,
+        remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {
@@ -378,6 +388,7 @@ test("regression sources formats json-shaped result data", async () => {
         keepOpen: false,
         newest: 1,
         noProgress: true,
+        remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {

@@ -226,13 +226,14 @@
     const [searchError, setSearchError] = React.useState(null);
     const selected = (baseBranch ?? "").trim();
 
-    const loadBranches = () => {
+    const loadBranches = ({ force = false } = {}) => {
+      if (!force && branches.length > 0) return { abort() {} };
       const controller = new AbortController();
       setLoading(true);
       setError(null);
       gitRequest("git")
         .request({
-          method: "recent-branches",
+          method: "codex-plus-branches",
           params: { root: repo.root, limit: 100, hostConfig, operationSource: "codex_plus_review" },
           signal: controller.signal,
         })
@@ -250,10 +251,10 @@
       if (!open) return undefined;
       const controller = loadBranches();
       return () => controller.abort();
-    }, [open, repo.root, hostConfig.id]);
+    }, [open, repo.root, hostConfig.id, branches.length]);
 
     React.useEffect(() => {
-      const controller = loadBranches();
+      const controller = loadBranches({ force: true });
       return () => controller.abort();
     }, [repo.root, hostConfig.id]);
 
@@ -272,7 +273,7 @@
         setSearchError(null);
         gitRequest("git")
           .request({
-            method: "search-branches",
+            method: "codex-plus-branches",
             params: { root: repo.root, query: trimmed, limit: 50, hostConfig, operationSource: "codex_plus_review" },
             signal: controller.signal,
           })
@@ -293,28 +294,66 @@
     const title = selected || "Unstaged";
     const currentBranches = currentBranch ? [{ name: currentBranch }] : [];
     const displayBranches = mergeBranches(currentBranches, branches, searchedBranches);
+    const loadState = error != null ? "error" : loading && displayBranches.length === 0 ? "loading" : displayBranches.length > 0 ? "loaded" : "empty";
+    const searchState = searchError != null ? "error" : searchLoading ? "loading" : searchedBranches.length > 0 ? "loaded" : query.trim() ? "empty" : "idle";
     if (!Button || !Tooltip || !Icon || !Dropdown || !DropdownMenu || !BranchPickerDropdownContent) {
-      return jsxs("label", {
-        className: "flex min-w-32 max-w-52 shrink-0 items-center gap-1 text-xs text-token-description-foreground",
+      return jsxs("div", {
+        className: "relative min-w-32 max-w-52 shrink-0 text-xs text-token-description-foreground",
         children: [
           jsx("span", { className: "sr-only", children: "Base branch" }),
-          jsx("select", {
+          jsx("button", {
+            type: "button",
             "data-codex-plus-repo-branch-picker": "",
             "data-codex-plus-repo-kind": repo.kind,
             "data-codex-plus-repo-path": repo.path ?? "",
             "data-codex-plus-repo-branch-count": String(displayBranches.length),
             "data-codex-plus-repo-current-branch": currentBranch ?? "",
+            "data-codex-plus-repo-branch-load-state": loadState,
+            "data-codex-plus-repo-branch-load-error": error ?? "",
+            "data-codex-plus-repo-branch-search-state": searchState,
+            "data-codex-plus-repo-branch-search-error": searchError ?? "",
             className:
-              "min-w-0 flex-1 rounded-md border border-token-border bg-token-main-surface-primary px-1.5 py-1 text-xs text-token-foreground",
-            value: selected,
-            disabled: loading || error != null,
-            onFocus: loadBranches,
-            onChange: (event) => setBaseBranch(event.target.value),
+              "flex h-7 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-token-border bg-token-main-surface-primary px-2 py-1 text-left text-xs text-token-foreground",
+            disabled: (loading || error != null) && displayBranches.length === 0,
+            onClick: () => setOpen(!open),
             children: [
-              jsx("option", { value: "", children: loading ? "Loading..." : "Unstaged" }, "unstaged"),
-              ...displayBranches.map((branch) => jsx("option", { value: branch.name, children: branch.name }, branch.name)),
+              jsx("span", { className: "min-w-0 truncate", children: loading && displayBranches.length === 0 ? "Loading..." : title }),
+              jsx("span", { className: "shrink-0 text-token-description-foreground", children: "⌄" }),
             ],
           }),
+          open
+            ? jsxs("div", {
+                className:
+                  "absolute right-0 z-50 mt-1 max-h-64 min-w-full overflow-auto rounded-md border border-token-border bg-token-main-surface-primary p-1 shadow-lg",
+                role: "menu",
+                children: [
+                  jsx("button", {
+                    type: "button",
+                    role: "menuitem",
+                    "data-codex-plus-repo-branch-option": "unstaged",
+                    className: "block w-full rounded px-2 py-1 text-left text-xs text-token-foreground hover:bg-token-list-hover-background",
+                    onClick: () => {
+                      setBaseBranch("");
+                      setOpen(false);
+                    },
+                    children: "Unstaged",
+                  }, "unstaged"),
+                  ...displayBranches.map((branch) =>
+                    jsx("button", {
+                      type: "button",
+                      role: "menuitem",
+                      "data-codex-plus-repo-branch-option": branch.name,
+                      className: "block w-full rounded px-2 py-1 text-left text-xs text-token-foreground hover:bg-token-list-hover-background",
+                      onClick: () => {
+                        setBaseBranch(branch.name);
+                        setOpen(false);
+                      },
+                      children: branch.name,
+                    }, branch.name),
+                  ),
+                ],
+              })
+            : null,
         ],
       });
     }
@@ -325,6 +364,10 @@
       "data-codex-plus-repo-path": repo.path ?? "",
       "data-codex-plus-repo-branch-count": String(displayBranches.length),
       "data-codex-plus-repo-current-branch": currentBranch ?? "",
+      "data-codex-plus-repo-branch-load-state": loadState,
+      "data-codex-plus-repo-branch-load-error": error ?? "",
+      "data-codex-plus-repo-branch-search-state": searchState,
+      "data-codex-plus-repo-branch-search-error": searchError ?? "",
       color: selected ? "ghostActive" : "ghost",
       size: "toolbar",
       className: "max-w-44 min-w-0 shrink-0 border-token-border px-1.5",
@@ -336,11 +379,11 @@
       selectedBranch: selected,
       disabled: false,
       isError: error != null,
-      isLoading: loading,
+      isLoading: loading && displayBranches.length === 0,
       isSearchError: searchError != null,
       isSearchLoading: searchLoading,
       onClose: () => setOpen(false),
-      onRetry: loadBranches,
+      onRetry: () => loadBranches({ force: true }),
       onRetrySearch: () => setQuery(query),
       onSearchQueryChange: setQuery,
       onSelectBranch: (branch) => {
@@ -389,7 +432,7 @@
       setError(null);
       setLoading(true);
       gitRequest("git")
-        .request({ method: "current-branch", params: { root: repo.root, hostConfig, operationSource: "codex_plus_review" }, signal: controller.signal })
+        .request({ method: "codex-plus-current-branch", params: { root: repo.root, hostConfig, operationSource: "codex_plus_review" }, signal: controller.signal })
         .then((result) => {
           if (!cancelled) setCurrentBranch(result?.branch ?? null);
         })

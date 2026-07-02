@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { getAppIdentity } = require("../src/core/patch-engine");
-const { createAuditProgress, runAudit } = require("../src/core/plugin-audit");
+const { createAuditProgress, findFreePort, runAudit } = require("../src/core/plugin-audit");
 const { patchSets } = require("../src/patches");
 const { resolveDefaultSourcesDir } = require("./release-intake");
 
@@ -25,6 +25,7 @@ function parseArgs(argv) {
     keepOpen: false,
     newest: null,
     noProgress: false,
+    remoteDebuggingPort: 9234,
     sourcesDir: null,
     useLiveSourceHome: false,
   };
@@ -49,6 +50,11 @@ function parseArgs(argv) {
       args.newest = value;
     }
     else if (arg === "--no-progress") args.noProgress = true;
+    else if (arg === "--remote-debugging-port" || arg === "--port") {
+      const value = Number(next());
+      if (!Number.isInteger(value) || value < 1) throw new Error(`${arg} must be a positive integer`);
+      args.remoteDebuggingPort = value;
+    }
     else if (arg === "--sources-dir") args.sourcesDir = path.resolve(expandPath(next()));
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
@@ -73,6 +79,7 @@ Options:
   --use-live-source-home       Use ~/.codex live state instead of generated fixture state
   --include-native-open-probes Include native window-opening audit probes
   --no-progress                Suppress audit progress output
+  --remote-debugging-port <N>  Starting port for audit apps. Default: 9234
   --json                       Print the machine-readable result
 `;
 }
@@ -252,7 +259,9 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
   }
 
   const runAuditImpl = operations.runAudit || runAudit;
+  const findFreePortImpl = operations.findFreePort || findFreePort;
   const sourceProgress = prefixProgress(progress, label);
+  const remoteDebuggingPort = await findFreePortImpl(args.remoteDebuggingPort + index - 1);
   const auditArgs = {
     apply: true,
     devHome: paths.devHome,
@@ -264,7 +273,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     launch: true,
     noProgress: args.noProgress,
     quiet: args.json,
-    remoteDebuggingPort: 9234,
+    remoteDebuggingPort,
     source: source.sourceApp,
     sourceHome: path.join(os.homedir(), ".codex"),
     target: paths.targetApp,

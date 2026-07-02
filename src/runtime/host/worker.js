@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const childProcess = require("node:child_process");
 
 function errorObject(error) {
   return {
@@ -79,6 +80,72 @@ async function readPlusToml(projectRoot, platform) {
 
 function normalizeSlash(value) {
   return String(value || "").replaceAll("\\", "/");
+}
+
+function execGit(root, args, signal) {
+  return new Promise((resolve, reject) => {
+    const child = childProcess.execFile(
+      "git",
+      args,
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+        maxBuffer: 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          error.stderr = stderr;
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      },
+    );
+    signal?.addEventListener?.("abort", () => {
+      child.kill();
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+}
+
+function normalizeBranchEntries(text, { query = "", limit = 100 } = {}) {
+  const needle = String(query || "").trim().toLowerCase();
+  const max = Math.max(1, Math.min(Number(limit) || 100, 200));
+  const seen = new Set();
+  const branches = [];
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const name = line.trim();
+    if (!name || seen.has(name)) continue;
+    if (needle && !name.toLowerCase().includes(needle)) continue;
+    seen.add(name);
+    branches.push({ name });
+    if (branches.length >= max) break;
+  }
+  return branches;
+}
+
+async function listBranches(params, signal) {
+  const limit = Math.max(1, Math.min(Number(params?.limit) || 100, 200));
+  const query = String(params?.query || "").trim();
+  const stdout = await execGit(params.root, [
+    "for-each-ref",
+    ...(query ? [] : [`--count=${limit}`]),
+    "--sort=-committerdate",
+    "refs/heads",
+    "--format=%(refname:short)",
+  ], signal);
+  return { branches: normalizeBranchEntries(stdout, { query, limit }) };
+}
+
+async function currentBranch(params, signal) {
+  try {
+    const stdout = await execGit(params.root, ["branch", "--show-current"], signal);
+    const branch = stdout.trim();
+    return { branch: branch || null };
+  } catch {
+    return { branch: null };
+  }
 }
 
 async function repositoryTargets(gitManager, params, platform, signal, getSubmodulePaths) {
@@ -218,7 +285,10 @@ async function repositoryTargets(gitManager, params, platform, signal, getSubmod
 }
 
 function isReadOnlyBranchRequest(requestKind, source) {
-  return source === "codex_plus_review" && (requestKind === "recent-branches" || requestKind === "search-branches");
+  return source === "codex_plus_review" && (
+    requestKind === "codex-plus-branches" ||
+    requestKind === "codex-plus-current-branch"
+  );
 }
 
 function repositoryTargetsFromHost(gitManager, params, platform, signal, getSubmodulePaths) {
@@ -229,7 +299,9 @@ function repositoryTargetsFromHost(gitManager, params, platform, signal, getSubm
 
 module.exports = {
   isReadOnlyBranchRequest,
+  listBranches,
   repositoryTargetsFromHost,
   repositoryTargets,
+  currentBranch,
   traceRequest,
 };

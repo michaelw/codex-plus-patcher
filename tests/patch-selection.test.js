@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -2272,14 +2273,17 @@ test("review patch mounts repository mux before main branch selection", () => {
   assert.match(pluginSource, /mt-3 clear-both border-b border-token-border-default/);
   assert.match(pluginSource, /jsx\(BranchPicker, \{ repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps \}\)/);
   assert.match(pluginSource, /data-codex-plus-repo-branch-count/);
+  assert.match(pluginSource, /data-codex-plus-repo-branch-option/);
+  assert.doesNotMatch(pluginSource, /jsx\("select"/);
   assert.match(pluginSource, /mergeBranches\(currentBranches, branches, searchedBranches\)/);
   assert.match(pluginSource, /jsx\(\s*RepoPatchGroup,/);
   const directRepoPatchGroupCalls = pluginSource
     .split("\n")
     .filter((line) => /RepoPatchGroup\(\s*(\{|$)/.test(line) && !line.includes("function RepoPatchGroup"));
   assert.deepEqual(directRepoPatchGroupCalls, []);
-  assert.match(pluginSource, /method: "recent-branches"/);
-  assert.match(pluginSource, /method: "search-branches"/);
+  assert.match(pluginSource, /method: "codex-plus-branches"/);
+  assert.doesNotMatch(pluginSource, /method: "recent-branches"/);
+  assert.doesNotMatch(pluginSource, /method: "search-branches"/);
   assert.match(pluginSource, /function workerRequest/);
   assert.match(pluginSource, /sendWorkerMessageFromView\(workerId, \{ type: "worker-request", workerId, request \}\)/);
   assert.match(pluginSource, /subscribeToWorkerMessages\(workerId/);
@@ -2301,22 +2305,51 @@ test("worker patch allows codex plus branch picker read-only branch requests", (
 
     const transformed = transform(fakeWorker);
 
-    assert.match(transformed, /case`repository-targets`:a=X\(await CPXR/);
-    assert.match(transformed, /case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:/);
+    assert.match(transformed, /case`repository-targets`:a=X\(await CPXW\.repositoryTargetsFromHost/);
+    assert.match(transformed, /case`codex-plus-branches`:a=X\(await CPXW\.listBranches/);
+    assert.match(transformed, /case`codex-plus-current-branch`:a=X\(await CPXW\.currentBranch/);
+    assert.match(transformed, /case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`codex-plus-branches`:case`codex-plus-current-branch`:case`submodule-paths`:case`cat-file`:/);
     assert.match(transformed, /const CPXW=require\("\.\/codex-plus-worker\.js"\)/);
-    assert.match(transformed, /CPXB=\(e,t\)=>CPXW\.isReadOnlyBranchRequest\(e,t\)/);
     assert.match(
       transformed,
-      /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPXB\(e,t\)\}/,
+      /function u2\(\{requestKind:e,source:t\}\)\{return l2\.has\(e\?\?``\)\|\|d2\(t\)\|\|CPXW\.isReadOnlyBranchRequest\(e,t\)\}/,
     );
   }
 
   const workerSource = fs.readFileSync(path.join(__dirname, "../src/runtime/host/worker.js"), "utf8");
   assert.match(workerSource, /function repositoryTargets/);
   assert.match(workerSource, /function repositoryTargetsFromHost/);
+  assert.match(workerSource, /function listBranches/);
+  assert.match(workerSource, /function currentBranch/);
   assert.match(workerSource, /function isReadOnlyBranchRequest/);
-  assert.match(workerSource, /recent-branches/);
-  assert.match(workerSource, /search-branches/);
+  assert.match(workerSource, /codex-plus-branches/);
+  assert.match(workerSource, /codex-plus-current-branch/);
+});
+
+test("codex plus worker branch methods return normalized local branches", async () => {
+  const { currentBranch, isReadOnlyBranchRequest, listBranches } = require("../src/runtime/host/worker");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-branches-"));
+  childProcess.execFileSync("git", ["init", "-b", "main"], { cwd: tmpDir, stdio: "ignore" });
+  childProcess.execFileSync("git", ["config", "user.email", "codex-plus@example.invalid"], { cwd: tmpDir, stdio: "ignore" });
+  childProcess.execFileSync("git", ["config", "user.name", "Codex Plus"], { cwd: tmpDir, stdio: "ignore" });
+  fs.writeFileSync(path.join(tmpDir, "README.md"), "fixture\n");
+  childProcess.execFileSync("git", ["add", "README.md"], { cwd: tmpDir, stdio: "ignore" });
+  childProcess.execFileSync("git", ["commit", "-m", "fixture"], { cwd: tmpDir, stdio: "ignore" });
+  childProcess.execFileSync("git", ["branch", "audit-alpha-base"], { cwd: tmpDir, stdio: "ignore" });
+  childProcess.execFileSync("git", ["branch", "audit-shared-base"], { cwd: tmpDir, stdio: "ignore" });
+
+  const all = await listBranches({ root: tmpDir, limit: 100 });
+  assert.deepEqual(
+    all.branches.map((branch) => branch.name).sort(),
+    ["audit-alpha-base", "audit-shared-base", "main"],
+  );
+
+  const filtered = await listBranches({ root: tmpDir, query: "alpha", limit: 100 });
+  assert.deepEqual(filtered.branches, [{ name: "audit-alpha-base" }]);
+  assert.deepEqual(await currentBranch({ root: tmpDir }), { branch: "main" });
+  assert.equal(isReadOnlyBranchRequest("codex-plus-branches", "codex_plus_review"), true);
+  assert.equal(isReadOnlyBranchRequest("codex-plus-current-branch", "codex_plus_review"), true);
+  assert.equal(isReadOnlyBranchRequest("recent-branches", "codex_plus_review"), false);
 });
 
 test("appearance settings patch adds user bubble colors and project colors only", () => {

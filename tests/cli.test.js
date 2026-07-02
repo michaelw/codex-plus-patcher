@@ -532,6 +532,10 @@ test("review panel verifier returns sanitized success details", async () => {
         nestedBranchPickerPreloadComplete: true,
         nestedBranchPickerPopulated: true,
         nestedBranchPickerOptionCounts: [3, 3],
+        nestedBranchPickerDetails: [
+          { kind: "submodule", path: "repos/alpha-module", branchCount: 3, currentBranch: "main", branchLoadState: "loaded", branchLoadError: "" },
+          { kind: "configured", path: "repos/beta-module", branchCount: 3, currentBranch: "main", branchLoadState: "loaded", branchLoadError: "" },
+        ],
         rawNestedDiffFallbackCount: 0,
         reviewDiffCardCount: 2,
         reviewTabCount: 1,
@@ -543,6 +547,7 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.equal(result.candidateCount, 3);
   assert.equal(result.reviewControlFound, true);
   assert.deepEqual(result.nestedBranchPickerOptionCounts, [3, 3]);
+  assert.deepEqual(result.nestedBranchPickerDetails.map((detail) => detail.branchLoadState), ["loaded", "loaded"]);
   assert.equal(result.rawNestedDiffFallbackCount, 0);
   assert.equal(result.reviewDiffCardCount, 2);
   assert.equal(result.message, undefined);
@@ -568,6 +573,10 @@ test("review panel verifier rejects raw nested repository diffs", async () => {
         nestedBranchPickerCount: 2,
         nestedBranchPickerPopulated: true,
         nestedBranchPickerOptionCounts: [1, 1],
+        nestedBranchPickerDetails: [
+          { kind: "submodule", path: "repos/alpha-module", branchCount: 1, currentBranch: "", branchLoadState: "error", branchLoadError: "blocked" },
+          { kind: "configured", path: "repos/beta-module", branchCount: 1, currentBranch: "", branchLoadState: "empty", branchLoadError: "" },
+        ],
         rawNestedDiffFallbackCount: 2,
         reviewDiffCardCount: 0,
         reviewTabCount: 1,
@@ -578,6 +587,7 @@ test("review panel verifier rejects raw nested repository diffs", async () => {
   assert.equal(result.ok, false);
   assert.equal(result.rawNestedDiffFallbackCount, 2);
   assert.equal(result.reviewDiffCardCount, 0);
+  assert.deepEqual(result.nestedBranchPickerDetails.map((detail) => detail.branchLoadState), ["error", "empty"]);
   assert.equal(result.message, "Review panel did not render nested repository content");
 });
 
