@@ -407,6 +407,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Composer attachment pill text is unreadable/);
   assert.match(defaultExpression, /pillBackground/);
   assert.match(defaultExpression, /color\\\(srgb/);
+  assert.match(defaultExpression, /composer-attachment-surface/);
+  assert.match(defaultExpression, /cardSurface/);
   assert.match(defaultExpression, /composer-permission-picker-disabled/);
   assert.match(defaultExpression, /expectedWarnings/);
   assert.match(defaultExpression, /triggerAriaDisabled/);

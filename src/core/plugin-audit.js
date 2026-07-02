@@ -1684,14 +1684,22 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const editor = document.querySelector("[data-codex-composer]");
       const surface = editor?.closest("[data-codex-plus-user-entry]");
       const surfaceStyle = surface ? getComputedStyle(surface) : null;
-      let synthetic = null;
+      const synthetic = [];
       if (surface && !visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]").length) {
-        synthetic = document.createElement("div");
-        synthetic.setAttribute("data-composer-attachment-pill", "");
-        synthetic.innerHTML = '<span class="text-token-description-foreground opacity-50">README.md</span><button type="button"><svg viewBox="0 0 10 10"><path d="M2 2L8 8"/></svg></button>';
-        surface.prepend(synthetic);
+        const pill = document.createElement("div");
+        pill.setAttribute("data-composer-attachment-pill", "");
+        pill.innerHTML = '<span class="text-token-description-foreground opacity-50">README.md</span><button type="button"><svg viewBox="0 0 10 10"><path d="M2 2L8 8"/></svg></button>';
+        surface.prepend(pill);
+        synthetic.push(pill);
       }
-      const pills = visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]");
+      if (surface && !visibleElements("[data-codex-plus-user-entry] .composer-attachment-surface").length) {
+        const card = document.createElement("span");
+        card.className = "composer-attachment-surface group/file-attachment relative w-fit max-w-64 flex-shrink-0 bg-token-input-background";
+        card.innerHTML = '<span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-token-bg-secondary text-token-text-secondary"><svg viewBox="0 0 20 20"><path d="M4 4h12v12H4z"/></svg></span><span class="text-size-chat truncate font-medium text-token-foreground"># Codex Plus Patch.md</span><button type="button" class="pointer-events-auto inline-flex cursor-interaction items-center gap-0.5 text-token-text-secondary underline underline-offset-2 hover:text-token-foreground">Show in text field</button><button type="button" aria-label="Remove" class="text-token-text-secondary">×</button>';
+        surface.prepend(card);
+        synthetic.push(card);
+      }
+      const pills = visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill], [data-codex-plus-user-entry] .composer-attachment-surface");
       const pillDetails = pills.map((pill) => {
         const pillStyle = getComputedStyle(pill);
         const textNode = Array.from(pill.querySelectorAll("*")).find((node) => normalize(node.textContent)) || pill;
@@ -1709,15 +1717,17 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           surfaceBackground: surfaceStyle?.backgroundColor || null,
           textContrast: contrast(effectiveTextColor, pillStyle.backgroundColor),
           textFillTransparent: isTransparent(textFillColor),
-          synthetic: pill === synthetic,
+          synthetic: synthetic.includes(pill),
+          cardSurface: pill.classList.contains("composer-attachment-surface"),
+          markerSurface: pill.hasAttribute("data-composer-attachment-pill"),
         };
       });
-      if (synthetic) synthetic.remove();
+      synthetic.forEach((node) => node.remove());
       return {
         editorMounted: Boolean(editor),
         surfaceMounted: Boolean(surface),
         pillCount: pillDetails.length,
-        syntheticMounted: Boolean(synthetic),
+        syntheticMounted: synthetic.length > 0,
         pills: pillDetails,
       };
     };
