@@ -508,6 +508,14 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       return false;
     });
     const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+    const nestedBranchPickerDetails = () => nestedBranchPickers().map((picker) => ({
+      kind: picker.getAttribute("data-codex-plus-repo-kind") || "",
+      path: picker.getAttribute("data-codex-plus-repo-path") || "",
+      branchCount: Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"),
+      currentBranch: picker.getAttribute("data-codex-plus-repo-current-branch") || "",
+      branchLoadState: picker.getAttribute("data-codex-plus-repo-branch-load-state") || "",
+      branchLoadError: picker.getAttribute("data-codex-plus-repo-branch-load-error") || "",
+    }));
     const rawNestedDiffFallbackCount = () => visibleElements("pre")
       .filter((element) => /diff --git/.test(element.textContent || ""))
       .length;
@@ -535,6 +543,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
       nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
       nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+      nestedBranchPickerDetails: nestedBranchPickerDetails(),
       rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
       reviewDiffCardCount: reviewDiffCardCount(),
       reviewTabCount: visibleElements("button, [role='tab'], [role='button']").filter((element) => normalize(element.textContent) === "Review").length,
@@ -701,6 +710,14 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         return false;
       });
       const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+      const nestedBranchPickerDetails = () => nestedBranchPickers().map((picker) => ({
+        kind: picker.getAttribute("data-codex-plus-repo-kind") || "",
+        path: picker.getAttribute("data-codex-plus-repo-path") || "",
+        branchCount: Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"),
+        currentBranch: picker.getAttribute("data-codex-plus-repo-current-branch") || "",
+        branchLoadState: picker.getAttribute("data-codex-plus-repo-branch-load-state") || "",
+        branchLoadError: picker.getAttribute("data-codex-plus-repo-branch-load-error") || "",
+      }));
       const rawNestedDiffFallbackCount = () => visibleElements("pre")
         .filter((element) => /diff --git/.test(element.textContent || ""))
         .length;
@@ -723,6 +740,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
         nestedBranchPickerPopulated: nestedBranchPickerPopulated(),
         nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+        nestedBranchPickerDetails: nestedBranchPickerDetails(),
         boundaryEverVisible: ${JSON.stringify(status?.boundaryEverVisible || false)} || containsVisibleText("Tab content couldn't render"),
         rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
         reviewDiffCardCount: reviewDiffCardCount(),
@@ -746,6 +764,14 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     const nestedBranchPickers = () => visibleElements("[data-codex-plus-repo-branch-picker]")
       .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
     const nestedBranchPickerOptionCounts = () => nestedBranchPickers().map((picker) => Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"));
+    const nestedBranchPickerDetails = () => nestedBranchPickers().map((picker) => ({
+      kind: picker.getAttribute("data-codex-plus-repo-kind") || "",
+      path: picker.getAttribute("data-codex-plus-repo-path") || "",
+      branchCount: Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0"),
+      currentBranch: picker.getAttribute("data-codex-plus-repo-current-branch") || "",
+      branchLoadState: picker.getAttribute("data-codex-plus-repo-branch-load-state") || "",
+      branchLoadError: picker.getAttribute("data-codex-plus-repo-branch-load-error") || "",
+    }));
     return {
       ...${JSON.stringify(finalStatus)},
       delayedReviewStabilityCheck: true,
@@ -758,6 +784,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       strictNestedBranchPreload: ${JSON.stringify(finalStatus?.strictNestedBranchPreload || false)},
       nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
       nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
+      nestedBranchPickerDetails: nestedBranchPickerDetails(),
     };
   })()`);
   const ok = Boolean(
@@ -1650,7 +1677,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         triggerClassName: String(trigger?.className || ""),
       };
     };
-    const jsx = (type, props, key) => ({ type, props: props || {}, key });
+    const jsx = (type, props, key) => {
+      if (typeof type === "function") {
+        if (type.prototype?.render) return { type, props: props || {}, key };
+        return type(props || {});
+      }
+      return { type, props: props || {}, key };
+    };
     const jsxs = jsx;
     const reviewDeps = {
       jsx,
@@ -1751,16 +1784,21 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const details = checkCommon("nestedRepositories");
       let nestedStateCalls = 0;
       const repositoryTargetRequests = [];
+      const branchRequests = [];
+      const branchRepos = new Set();
       const nestedReviewDeps = {
         ...reviewDeps,
         React: {
           ...reviewDeps.React,
           useState(initial) {
             nestedStateCalls += 1;
-            if (nestedStateCalls === 1) {
+            if (nestedStateCalls === 2) {
               return [{
                 main: { id: "main:/tmp/codex-plus-audit", kind: "main", path: ".", label: "Main", cwd: "/tmp/codex-plus-audit" },
-                repositories: [{ id: "repo:pkg", kind: "nested", path: "pkg", label: "pkg", cwd: "/tmp/codex-plus-audit/pkg" }],
+                repositories: [
+                  { id: "repo:pkg-a", kind: "nested", path: "pkg-a", label: "pkg-a", cwd: "/tmp/codex-plus-audit/pkg-a", root: "/tmp/codex-plus-audit/pkg-a" },
+                  { id: "repo:pkg-b", kind: "configured", path: "pkg-b", label: "pkg-b", cwd: "/tmp/codex-plus-audit/pkg-b", root: "/tmp/codex-plus-audit/pkg-b" },
+                ],
                 warnings: [],
               }, () => {}];
             }
@@ -1775,9 +1813,21 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           return {
         request(request) {
           repositoryTargetRequests.push(request);
+          if (request?.method === "codex-plus-branches") {
+            return Promise.resolve({ branches: [{ name: "main" }, { name: "audit-base" }, { name: "audit-shared-base" }] });
+          }
+          if (request?.method === "codex-plus-current-branch") {
+            return Promise.resolve({ branch: "main" });
+          }
+          if (request?.method === "review-patch") {
+            return Promise.resolve({ diff: { type: "success", unifiedDiff: "" } });
+          }
           return Promise.resolve({
             main: { id: "main:/tmp/codex-plus-audit", kind: "main", path: ".", label: "Main", cwd: "/tmp/codex-plus-audit" },
-            repositories: [{ id: "repo:pkg", kind: "nested", path: "pkg", label: "pkg", cwd: "/tmp/codex-plus-audit/pkg" }],
+            repositories: [
+              { id: "repo:pkg-a", kind: "nested", path: "pkg-a", label: "pkg-a", cwd: "/tmp/codex-plus-audit/pkg-a", root: "/tmp/codex-plus-audit/pkg-a" },
+              { id: "repo:pkg-b", kind: "configured", path: "pkg-b", label: "pkg-b", cwd: "/tmp/codex-plus-audit/pkg-b", root: "/tmp/codex-plus-audit/pkg-b" },
+            ],
             warnings: [],
           });
         },
@@ -1800,10 +1850,23 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       if (repositoryTargetParams.operationSource !== "codex_plus_review") {
         throw new Error(`Repository target request used wrong operation source: ${JSON.stringify(repositoryTargetParams.operationSource)}`);
       }
+      for (const request of repositoryTargetRequests) {
+        if (request?.method !== "codex-plus-branches") continue;
+        branchRequests.push(request);
+        if (request.params?.root) branchRepos.add(request.params.root);
+        if (request.params?.operationSource !== "codex_plus_review") {
+          throw new Error(`Branch request used wrong operation source: ${JSON.stringify(request.params?.operationSource)}`);
+        }
+      }
+      if (branchRequests.length < 2 || branchRepos.size < 2) {
+        throw new Error(`Nested repository branch requests were not loaded: ${JSON.stringify({ branchRequests })}`);
+      }
       pass("nestedRepositories", {
         ...details,
         hostModuleRegistered,
         reviewWrapped: true,
+        branchRequestCount: branchRequests.length,
+        branchRequestRoots: Array.from(branchRepos),
         repositoryTargetRequest: {
           cwd: repositoryTargetParams.cwd,
           hostId: repositoryTargetParams.hostId,

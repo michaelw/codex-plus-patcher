@@ -278,25 +278,25 @@ function patchWorker(text) {
     let patched = replaceOnce(
       text,
       "var d2=gG(`git`),",
-      'const CPXW=require("./codex-plus-worker.js"),CPXT=e=>CPXW.traceRequest(e),CPXR=(e,t,n,r)=>CPXW.repositoryTargetsFromHost(e,t,n,r,yae),CPXB=e=>CPXW.isReadOnlyBranchRequest(e?.requestKind,e?.source);var d2=gG(`git`),',
+      'const CPXW=require("./codex-plus-worker.js");var d2=gG(`git`),',
       "worker helper insertion anchor",
     );
     patched = replaceOnce(
       patched,
       "if(!Z0(y)&&!t2(n))return",
-      "if(!Z0(y)&&!CPXB(y)&&!t2(n))return",
+      "if(!Z0(y)&&!CPXW.isReadOnlyBranchRequest(y?.requestKind,y?.source)&&!t2(n))return",
       "codex plus branch picker git allowlist anchor",
     );
     patched = replaceOnce(
       patched,
       "case`commit-message-diff`:a=X(await o7(nae(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`submodule-paths`:a=X({paths:await yae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
-      "case`commit-message-diff`:a=X(await o7(nae(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`codex-plus-trace`:a=X(CPXT(e.params));break;case`repository-targets`:a=X(await CPXR(this.gitManager,e.params,r,t.signal));break;case`submodule-paths`:a=X({paths:await yae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+      "case`commit-message-diff`:a=X(await o7(nae(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`codex-plus-trace`:a=X(CPXW.traceRequest(e.params));break;case`repository-targets`:a=X(await CPXW.repositoryTargetsFromHost(this.gitManager,e.params,r,t.signal,yae));break;case`codex-plus-branches`:a=X(await CPXW.listBranches(e.params,t.signal));break;case`codex-plus-current-branch`:a=X(await CPXW.currentBranch(e.params,t.signal));break;case`submodule-paths`:a=X({paths:await yae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
       "repository-targets worker switch anchor",
     );
     return replaceOnce(
       patched,
       "case`review-patch`:case`commit-message-diff`:case`submodule-paths`:case`cat-file`:",
-      "case`review-patch`:case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:",
+      "case`review-patch`:case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`codex-plus-branches`:case`codex-plus-current-branch`:case`submodule-paths`:case`cat-file`:",
       "repository-targets worker readonly method anchor",
     );
   }
@@ -309,19 +309,19 @@ function patchWorker(text) {
   patched = replaceOnce(
     patched,
     "case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
-    "case`codex-plus-trace`:a=X(CPXT(e.params));break;case`repository-targets`:a=X(await CPXR(this.gitManager,e.params,r,t.signal));break;case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+    "case`codex-plus-trace`:a=X(CPXW.traceRequest(e.params));break;case`repository-targets`:a=X(await CPXW.repositoryTargetsFromHost(this.gitManager,e.params,r,t.signal,pae));break;case`codex-plus-branches`:a=X(await CPXW.listBranches(e.params,t.signal));break;case`codex-plus-current-branch`:a=X(await CPXW.currentBranch(e.params,t.signal));break;case`submodule-paths`:a=X({paths:await pae(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
     "repository-targets worker switch anchor",
   );
   patched = replaceOnce(
     patched,
     "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)}",
-    "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)||CPXB(e,t)}",
+    "function u2({requestKind:e,source:t}){return l2.has(e??``)||d2(t)||CPXW.isReadOnlyBranchRequest(e,t)}",
     "codex plus branch picker git allowlist anchor",
   );
   return replaceOnce(
     patched,
     "case`commit-message-diff`:case`submodule-paths`:case`cat-file`:",
-    "case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`submodule-paths`:case`cat-file`:",
+    "case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`codex-plus-branches`:case`codex-plus-current-branch`:case`submodule-paths`:case`cat-file`:",
     "repository-targets worker readonly method anchor",
   );
 }
