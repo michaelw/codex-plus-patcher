@@ -1609,8 +1609,12 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       };
     };
     const rgb = (value) => {
-      const match = String(value || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+      const text = String(value || "");
+      const rgbMatch = text.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+      const srgbMatch = text.match(/color\(srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
+      if (!srgbMatch) return null;
+      return [srgbMatch[1], srgbMatch[2], srgbMatch[3]].map((channel) => Math.round(Number(channel) * 255));
     };
     const luminance = (color) => {
       if (!color) return null;
@@ -1701,8 +1705,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
           textColor: textStyle.color,
           textFillColor,
           textOpacity: textStyle.opacity,
+          pillBackground: pillStyle.backgroundColor,
           surfaceBackground: surfaceStyle?.backgroundColor || null,
-          textContrast: contrast(effectiveTextColor, surfaceStyle?.backgroundColor),
+          textContrast: contrast(effectiveTextColor, pillStyle.backgroundColor),
           textFillTransparent: isTransparent(textFillColor),
           synthetic: pill === synthetic,
         };
