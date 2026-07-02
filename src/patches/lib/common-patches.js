@@ -439,7 +439,7 @@ function patchLocalThreadCatalogBootstrap(text) {
   return replaceOnce(
     text,
     match[0],
-    `o=r===!1||a==null?null:(0,${match[1]}.jsx)(${match[2]},{service:a})`,
+    `o=globalThis.__CodexPlusRuntimeConfig?.devModeStatsigFallback===true?r===!1||a==null?null:(0,${match[1]}.jsx)(${match[2]},{service:a}):!(r??i)||a==null?null:(0,${match[1]}.jsx)(${match[2]},{service:a})`,
     "local thread catalog bootstrap anchor",
   );
 }
