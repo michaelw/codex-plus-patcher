@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.1...v0.13.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* stabilize nested review branch picker ([eb15ca0](https://github.com/michaelw/codex-plus-patcher/commit/eb15ca0d073271d6a4d0b7cde72284548b47405a))
+
 ## [0.13.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.0...v0.13.1) (2026-07-01)
 
 
