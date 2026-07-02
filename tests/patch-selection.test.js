@@ -2761,10 +2761,11 @@ test("supported patch sets mount the local thread catalog bridge for generated f
     const transformed = transform(fakeBundle);
 
     assert.ok(
-      transformed.includes(`o=r===!1||a==null?null:(0,${jsxNamespace}.jsx)(${componentName},{service:a})`),
+      transformed.includes(
+        `o=globalThis.__CodexPlusRuntimeConfig?.devModeStatsigFallback===true?r===!1||a==null?null:(0,${jsxNamespace}.jsx)(${componentName},{service:a}):!(r??i)||a==null?null:(0,${jsxNamespace}.jsx)(${componentName},{service:a})`,
+      ),
       patchSetId,
     );
-    assert.doesNotMatch(transformed, /o=!\(r\?\?i\)\|\|a==null/, patchSetId);
   }
 });
 
