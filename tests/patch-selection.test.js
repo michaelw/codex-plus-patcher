@@ -3038,6 +3038,9 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /\[data-composer-attachment-pill\]\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-light-bg\)\)!important.*color:#fff!important/);
   assert.match(bubblePlugin, /\[data-composer-attachment-pill\] :is\(\*,\[class\*="text-token"\],\[class\*="opacity-"\]\)\{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important\}/);
   assert.match(bubblePlugin, /\[data-composer-attachment-pill\],:root\.electron-dark \[data-composer-attachment-pill\]\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:#fff!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-light-bg\)\)!important.*color:#fff!important.*opacity:1!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface :is\(\*,\[class\*="text-token"\],\[class\*="opacity-"\]\)\{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important\}/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface,:root\.electron-dark \[data-codex-plus-user-entry\] \.composer-attachment-surface\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:#fff!important/);
   assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /background-image:none!important/);
 });
