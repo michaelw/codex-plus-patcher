@@ -31,6 +31,10 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
 
     assert.equal(fixture.mode, "fixture");
     assert.equal(fixture.devHome, devHome);
+    assert.deepEqual(fixture.browserState.userBubbleColors, {
+      light: "#e0218a",
+      dark: "#e0218a",
+    });
     assert.equal(fs.existsSync(path.join(devHome, "state_5.sqlite")), true);
     assert.equal(fs.existsSync(path.join(devHome, "sqlite", "codex-dev.db")), true);
     assert.equal(fs.existsSync(path.join(devHome, ".codex-global-state.json")), true);

@@ -400,14 +400,17 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
+  assert.match(defaultExpression, /composerAttachmentPillStatus/);
   assert.match(defaultExpression, /const expectedWarnings = \[\]/);
   assert.match(defaultExpression, /const warn = \(id, code, message, details = \{\}\)/);
   assert.match(defaultExpression, /Composer permissions picker text is unreadable/);
+  assert.match(defaultExpression, /Composer attachment pill text is unreadable/);
   assert.match(defaultExpression, /composer-permission-picker-disabled/);
   assert.match(defaultExpression, /expectedWarnings/);
   assert.match(defaultExpression, /triggerAriaDisabled/);
   assert.match(defaultExpression, /surfaceBackground/);
   assert.match(defaultExpression, /labelTextFillTransparent/);
+  assert.match(defaultExpression, /composerAttachmentPill/);
   assert.match(defaultExpression, /webkitTextFillColor/);
   assert.match(defaultExpression, /Project selector shortcut trigger marker is missing from the main composer/);
   assert.match(defaultExpression, /includes\("New chat"\)/);
