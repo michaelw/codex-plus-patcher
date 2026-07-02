@@ -7,7 +7,7 @@ const FIXTURE_NOW_SECONDS = Math.floor(Date.now() / 1000);
 const FIXTURE_NOW_MS = FIXTURE_NOW_SECONDS * 1000;
 const FIXTURE_BROWSER_COLORS = {
   light: "#e0218a",
-  dark: "#244a36",
+  dark: "#e0218a",
 };
 const FIXTURE_GIT_SHA = "0123456789abcdef0123456789abcdef01234567";
 const CREDENTIAL_FILES = ["auth.json"];
@@ -894,8 +894,28 @@ async function seedAuditFixtureBrowserState(cdp, fixture) {
     if (state.userBubbleColors) {
       localStorage.setItem("codex-plus:user-message-bubble-colors", JSON.stringify(state.userBubbleColors));
       window.dispatchEvent(new CustomEvent("codex-plus:user-message-bubble-colors-change", { detail: state.userBubbleColors }));
+      window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.setVars?.();
     }
-    return state;
+    const storedUserBubbleColors = JSON.parse(localStorage.getItem("codex-plus:user-message-bubble-colors") || "{}");
+    const rootStyle = getComputedStyle(document.documentElement);
+    const readback = {
+      userBubbleColors: storedUserBubbleColors,
+      userBubbleLightBg: rootStyle.getPropertyValue("--codex-plus-user-bubble-light-bg").trim(),
+      userBubbleDarkBg: rootStyle.getPropertyValue("--codex-plus-user-bubble-dark-bg").trim(),
+      userBubbleLightFg: rootStyle.getPropertyValue("--codex-plus-user-bubble-light-fg").trim(),
+      userBubbleDarkFg: rootStyle.getPropertyValue("--codex-plus-user-bubble-dark-fg").trim(),
+    };
+    if (state.userBubbleColors) {
+      for (const variant of ["light", "dark"]) {
+        if (storedUserBubbleColors[variant] !== state.userBubbleColors[variant]) {
+          throw new Error(\`Fixture user bubble \${variant} color did not persist: \${JSON.stringify(readback)}\`);
+        }
+        if (readback[\`userBubble\${variant[0].toUpperCase() + variant.slice(1)}Bg\`] !== state.userBubbleColors[variant]) {
+          throw new Error(\`Fixture user bubble \${variant} CSS variable did not update: \${JSON.stringify(readback)}\`);
+        }
+      }
+    }
+    return { state, readback };
   })()`);
 }
 

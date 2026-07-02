@@ -1608,34 +1608,33 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         boxShadow: computed?.boxShadow || "",
       };
     };
+    const rgb = (value) => {
+      const match = String(value || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const contrast = (foreground, background) => {
+      const fg = luminance(rgb(foreground));
+      const bg = luminance(rgb(background));
+      if (fg == null || bg == null) return null;
+      const lighter = Math.max(fg, bg);
+      const darker = Math.min(fg, bg);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const isTransparent = (value) => {
+      const text = String(value || "").trim();
+      return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\([^)]*,\s*0\)$/.test(text);
+    };
     const composerPermissionPickerStatus = () => {
       const editor = document.querySelector("[data-codex-composer]");
       const labels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
-      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
-      const rgb = (value) => {
-        const match = String(value || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-      };
-      const luminance = (color) => {
-        if (!color) return null;
-        const channel = (value) => {
-          const normalized = value / 255;
-          return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
-        };
-        return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
-      };
-      const contrast = (foreground, background) => {
-        const fg = luminance(rgb(foreground));
-        const bg = luminance(rgb(background));
-        if (fg == null || bg == null) return null;
-        const lighter = Math.max(fg, bg);
-        const darker = Math.min(fg, bg);
-        return (lighter + 0.05) / (darker + 0.05);
-      };
-      const isTransparent = (value) => {
-        const text = String(value || "").trim();
-        return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\([^)]*,\s*0\)$/.test(text);
-      };
       const trigger = Array.from(document.querySelectorAll("button")).find((button) => {
         const text = normalize(button.textContent);
         return labels.some((label) => text === label || text.startsWith(`${label} `));
@@ -1675,6 +1674,46 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         triggerContrast: contrast(effectiveLabelColor, surfaceBackground),
         labelTextFillTransparent: isTransparent(labelTextFillColor),
         triggerClassName: String(trigger?.className || ""),
+      };
+    };
+    const composerAttachmentPillStatus = () => {
+      const editor = document.querySelector("[data-codex-composer]");
+      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      const surfaceStyle = surface ? getComputedStyle(surface) : null;
+      let synthetic = null;
+      if (surface && !visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]").length) {
+        synthetic = document.createElement("div");
+        synthetic.setAttribute("data-composer-attachment-pill", "");
+        synthetic.innerHTML = '<span class="text-token-description-foreground opacity-50">README.md</span><button type="button"><svg viewBox="0 0 10 10"><path d="M2 2L8 8"/></svg></button>';
+        surface.prepend(synthetic);
+      }
+      const pills = visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]");
+      const pillDetails = pills.map((pill) => {
+        const pillStyle = getComputedStyle(pill);
+        const textNode = Array.from(pill.querySelectorAll("*")).find((node) => normalize(node.textContent)) || pill;
+        const textStyle = getComputedStyle(textNode);
+        const textFillColor = textStyle.webkitTextFillColor || null;
+        const effectiveTextColor = textFillColor && !isTransparent(textFillColor) ? textFillColor : textStyle.color;
+        return {
+          text: normalize(pill.textContent),
+          pillColor: pillStyle.color,
+          pillOpacity: pillStyle.opacity,
+          textColor: textStyle.color,
+          textFillColor,
+          textOpacity: textStyle.opacity,
+          surfaceBackground: surfaceStyle?.backgroundColor || null,
+          textContrast: contrast(effectiveTextColor, surfaceStyle?.backgroundColor),
+          textFillTransparent: isTransparent(textFillColor),
+          synthetic: pill === synthetic,
+        };
+      });
+      if (synthetic) synthetic.remove();
+      return {
+        editorMounted: Boolean(editor),
+        surfaceMounted: Boolean(surface),
+        pillCount: pillDetails.length,
+        syntheticMounted: Boolean(synthetic),
+        pills: pillDetails,
       };
     };
     const jsx = (type, props, key) => {
@@ -2204,6 +2243,43 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
     }
 
     try {
+      const status = composerAttachmentPillStatus();
+      if (status.surfaceMounted) {
+        if (status.pillCount === 0) {
+          throw new Error(`Composer attachment pill was not testable: ${JSON.stringify(status)}`);
+        }
+        const unreadable = status.pills.find((pill) =>
+          Number(pill.pillOpacity) < 0.99 ||
+          Number(pill.textOpacity) < 0.99 ||
+          pill.textFillTransparent ||
+          (pill.textContrast != null && pill.textContrast < 4.5)
+        );
+        if (unreadable) {
+          throw new Error(`Composer attachment pill text is unreadable: ${JSON.stringify({ ...status, unreadable })}`);
+        }
+      }
+      if (status.editorMounted && !status.surfaceMounted) {
+        warn(
+          "audit",
+          "composer-entry-surface-not-mounted",
+          "Composer entry surface was not mounted during the attachment pill contrast probe",
+          status,
+        );
+      }
+      if (!status.editorMounted) {
+        warn(
+          "audit",
+          "composer-not-mounted",
+          "Composer was not mounted during the attachment pill contrast probe",
+          status,
+        );
+      }
+      pass("audit", { composerAttachmentPill: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    try {
       const details = checkCommon("sidebarNameBlur");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusToggleSidebarNameBlur");
       if (!metadata) throw new Error("Sidebar blur command metadata is missing");
@@ -2406,6 +2482,7 @@ async function runAudit(args, {
   let applyResult = null;
   let syncResult = null;
   let fixtureResult = null;
+  let fixtureBrowserStateResult = null;
   let launchResult = null;
   let target = null;
   let cdp = null;
@@ -2490,7 +2567,7 @@ async function runAudit(args, {
       () => waitAppShell(cdp),
     );
     if (fixtureResult) {
-      await withAuditProgress(
+      fixtureBrowserStateResult = await withAuditProgress(
         progress,
         "Seeding fixture browser state",
         "Seeded fixture browser state",
@@ -2597,6 +2674,7 @@ async function runAudit(args, {
           projectId: thread.projectId,
         })),
         browserState: fixtureResult.browserState,
+        browserStateReadback: fixtureBrowserStateResult,
       },
       launchResult: launchResult && {
         command: launchResult.command,
@@ -2656,6 +2734,7 @@ async function runAudit(args, {
           projectId: thread.projectId,
         })),
         browserState: fixtureResult.browserState,
+        browserStateReadback: fixtureBrowserStateResult,
       },
       launchResult: launchResult && {
         command: launchResult.command,
