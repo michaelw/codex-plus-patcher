@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.3](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.2...v0.13.3) (2026-07-02)
+
+
+### Bug Fixes
+
+* keep composer attachment pills readable ([e70b8aa](https://github.com/michaelw/codex-plus-patcher/commit/e70b8aac30a44d22b4bce5fb8eea92f8541b66a5))
+* keep pasted text attachment cards readable ([921522f](https://github.com/michaelw/codex-plus-patcher/commit/921522f73df151fa1cc6abcf4f170004663d0a7d))
+* soften composer attachment pill contrast ([53d3cd3](https://github.com/michaelw/codex-plus-patcher/commit/53d3cd39aeed90951ac1251ae61bc15f0f760f05))
+
 ## [0.13.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.1...v0.13.2) (2026-07-02)
 
 
