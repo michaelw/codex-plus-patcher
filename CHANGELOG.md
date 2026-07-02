@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.1...v0.13.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* gate local thread catalog bridge in production ([#87](https://github.com/michaelw/codex-plus-patcher/issues/87)) ([6515df2](https://github.com/michaelw/codex-plus-patcher/commit/6515df2050d9b378fb722dc618a68544326f8354))
+* stabilize nested review branch picker ([eb15ca0](https://github.com/michaelw/codex-plus-patcher/commit/eb15ca0d073271d6a4d0b7cde72284548b47405a))
+
 ## [0.13.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.0...v0.13.1) (2026-07-01)
 
 
