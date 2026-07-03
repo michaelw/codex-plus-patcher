@@ -23,6 +23,7 @@ module.exports = buildCodexPlusPatchSet({
     localActiveWorkspaceRootDropdown: "webview/assets/local-remote-dropdown-D_A0sEZ_.js",
     homeProjectDropdown: "webview/assets/app-initial~app-main~projects-index-page~hotkey-window-new-thread-page~hotkey-window-home-p~hswrsggc-D6kmfwAX.js",
     runCommand: "webview/assets/app-initial~app-main~automations-page-Da2pvR4p.js",
+    runCommandExtra: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~pull-requests-page~plug~kmtatxxf-IUI8plS9.js",
     localTaskRow: "webview/assets/app-initial~app-main~remote-conversation-page~projects-index-page-B0ZxgNPu.js",
     mermaidDiagramShell: "webview/assets/app-initial~app-main~onboarding-page-DewXrzLR.js",
     keyboardShortcutsSearchInput: "webview/assets/app-initial~app-main~automations-page-Da2pvR4p.js",

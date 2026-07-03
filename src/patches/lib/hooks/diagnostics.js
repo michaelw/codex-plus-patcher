@@ -1,5 +1,5 @@
 function diagnosticDetailsHook() {
-  return "function CPXDiagnosticDetails(e){return window.CodexPlus?.ui?.errors?.renderDetails?.(e)??null}";
+  return "var CPXDiagnosticDetails=function(e){return window.CodexPlus?.ui?.errors?.renderDetails?.(e)??null};";
 }
 
 module.exports = {

@@ -426,6 +426,136 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
   return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
 }
 
+async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
+  await cdp.evaluate(`(() => {
+    document.documentElement.removeAttribute("data-codex-plus-sidebar-names-blurred");
+    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
+  })()`);
+
+  const waitForPalette = async (deadlineMs = 2000) => {
+    const deadline = Date.now() + deadlineMs;
+    let status = null;
+    while (Date.now() < deadline) {
+      status = await cdp.evaluate(`(() => {
+        const visible = (element) => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const dialog = Array.from(document.querySelectorAll(".command-menu-dialog, [role='dialog'], [cmdk-root]")).find(visible);
+        const input = Array.from(document.querySelectorAll("input, textarea, [contenteditable='true']"))
+          .find((element) => visible(element) && (dialog?.contains(element) || /command|search|type/i.test([
+            element.getAttribute("placeholder"),
+            element.getAttribute("aria-label"),
+            element.textContent,
+          ].filter(Boolean).join(" "))));
+        return {
+          opened: Boolean(dialog || input),
+          activeTag: document.activeElement?.tagName || "",
+          activePlaceholder: document.activeElement?.getAttribute?.("placeholder") || "",
+          inputPlaceholder: input?.getAttribute?.("placeholder") || "",
+        };
+      })()`);
+      if (status?.opened) return status;
+      await wait(100);
+    }
+    return status;
+  };
+
+  await cdp.evaluate(`window.postMessage({ type: "command-menu", query: "Toggle sidebar blur" }, "*")`);
+  let opened = await waitForPalette();
+
+  const shortcuts = [
+    { key: "k", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 4 },
+    { key: "P", code: "KeyP", windowsVirtualKeyCode: 80, modifiers: 12 },
+  ];
+  for (const shortcut of shortcuts) {
+    if (opened?.opened) break;
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...shortcut });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...shortcut });
+    opened = await waitForPalette();
+  }
+  if (!opened?.opened) {
+    return { ok: false, ...opened, message: `Command palette did not open: ${JSON.stringify(opened)}` };
+  }
+
+  const selected = await cdp.evaluate(`new Promise((resolve) => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const input = Array.from(document.querySelectorAll("input, textarea, [contenteditable='true']"))
+      .find((element) => visible(element) && /command|search|type/i.test([
+        element.getAttribute("placeholder"),
+        element.getAttribute("aria-label"),
+        element.textContent,
+      ].filter(Boolean).join(" ")));
+    if (!input) {
+      resolve({ selected: false, message: "Command palette input disappeared" });
+      return;
+    }
+    input.focus?.();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (input instanceof HTMLInputElement && setter) {
+      setter.call(input, "Toggle sidebar blur");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: "Toggle sidebar blur", inputType: "insertText" }));
+    } else {
+      input.textContent = "Toggle sidebar blur";
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: "Toggle sidebar blur", inputType: "insertText" }));
+    }
+    const startedAt = Date.now();
+    const finish = () => {
+      const item = Array.from(document.querySelectorAll("[cmdk-item], [role='option'], [role='menuitem'], button"))
+        .find((element) => visible(element) && normalize(element.textContent).includes("Toggle sidebar blur"));
+      if (!item) {
+        if (Date.now() - startedAt < ${JSON.stringify(timeoutMs)}) {
+          setTimeout(finish, 100);
+          return;
+        }
+        resolve({ selected: false, message: "Toggle sidebar blur command was not visible in the command palette" });
+        return;
+      }
+      item.click?.();
+      resolve({ selected: true, itemText: normalize(item.textContent) });
+    };
+    setTimeout(finish, 100);
+  })`);
+  if (!selected?.selected) return { ok: false, ...opened, ...selected };
+
+  const deadline = Date.now() + timeoutMs;
+  let status = null;
+  while (Date.now() < deadline) {
+    status = await cdp.evaluate(`(() => {
+      const root = document.documentElement;
+      const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row], [data-app-action-sidebar-project-row]"))
+        .find((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        });
+      return {
+        rootBlurred: root.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+        rowFilter: row ? getComputedStyle(row).filter : null,
+      };
+    })()`);
+    if (status.rootBlurred && String(status.rowFilter).includes("blur")) {
+      return { ok: true, ...opened, ...selected, ...status };
+    }
+    await wait(100);
+  }
+  return {
+    ok: false,
+    ...opened,
+    ...selected,
+    ...status,
+    message: `Selecting Toggle sidebar blur did not blur sidebar rows: ${JSON.stringify(status)}`,
+  };
+}
+
 async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandidates = 12 } = {}) {
   const status = await cdp.evaluate(`new Promise((resolve) => {
     const visible = (element) => {
@@ -2626,6 +2756,23 @@ async function runAudit(args, {
         live.failures.push({
           plugin: "nestedRepositories",
           message: reviewPanel.message || "Review panel did not render nested repository content",
+        });
+      }
+    }
+    if (live.pluginResults?.sidebarNameBlur?.ok) {
+      const commandPalette = await withAuditCheckProgress(
+        progress,
+        "Verifying sidebar blur command palette action",
+        "Sidebar blur command palette action passed",
+        () => verifySidebarBlurCommandPalette(cdp),
+      );
+      live.pluginResults.sidebarNameBlur.commandPalette = commandPalette;
+      if (!commandPalette.ok) {
+        live.ok = false;
+        live.pluginResults.sidebarNameBlur.ok = false;
+        live.failures.push({
+          plugin: "sidebarNameBlur",
+          message: commandPalette.message || "Command palette did not toggle sidebar blur",
         });
       }
     }
