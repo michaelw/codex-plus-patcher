@@ -57,6 +57,7 @@ test("help documents codex-plus-patcher as the only command", () => {
   assert.match(output, /codex-plus-patcher menu-diagnostics/);
   assert.match(output, /codex-plus-patcher asar-list/);
   assert.match(output, /codex-plus-patcher asar-cat/);
+  assert.match(output, /--manual\s+Launch a manual audit app and skip plugin probes/);
   assert.doesNotMatch(output, /codex-plus apply/);
 });
 
@@ -164,6 +165,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(args.noProgress, true);
   assert.equal(args.keepOpen, true);
   assert.equal(args.includeNativeOpenProbes, true);
+  assert.equal(args.manual, false);
   assert.equal(args.apply, false);
   assert.equal(args.launch, false);
   assert.equal(args.source, path.join(os.homedir(), "Codex.app"));
@@ -179,8 +181,22 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
   assert.equal(defaults.remoteDebuggingPort, 9234);
   assert.equal(defaults.includeNativeOpenProbes, false);
+  assert.equal(defaults.manual, false);
   assert.equal(defaults.devInstanceId, "audit");
   assert.equal(defaults.useLiveSourceHome, false);
+});
+
+test("audit-plugins manual mode parses and implies keep-open", () => {
+  const args = parseArgs(["audit-plugins", "--manual"]);
+
+  assert.equal(args.command, "audit-plugins");
+  assert.equal(args.manual, true);
+  assert.equal(args.keepOpen, true);
+
+  const noApply = parseArgs(["audit-plugins", "--manual", "--no-apply"]);
+  assert.equal(noApply.manual, true);
+  assert.equal(noApply.keepOpen, true);
+  assert.equal(noApply.apply, false);
 });
 
 test("formatResult prints a concise open command for created apps", () => {
@@ -284,6 +300,35 @@ test("audit human formatter prints success summary with expected warnings", () =
   assert.doesNotMatch(output, /Plugin audit failed/);
 });
 
+test("audit human formatter prints manual launch summary", () => {
+  const output = formatAuditResult(sampleAuditResult({
+    manual: true,
+    probesSkipped: true,
+    pluginResults: {},
+    devToolsUrl: "http://127.0.0.1:9234/json/list",
+    electronUserDataPath: "/repo/work/codex-plus-electron-user-data",
+    cleanupResult: {
+      attempted: false,
+      keptOpen: true,
+      ok: true,
+      pid: 123,
+    },
+    preflight: {
+      suggestedCommand: "codex-plus-patcher audit-plugins --no-apply --no-launch --keep-open --port 9234",
+    },
+  }));
+
+  assert.match(output, /Manual audit app launched\./);
+  assert.match(output, /Plugin probes skipped because --manual was set\./);
+  assert.match(output, /DevTools: http:\/\/127\.0\.0\.1:9234\/json\/list/);
+  assert.match(output, /Target: \/repo\/work\/Codex Plus\.app/);
+  assert.match(output, /Dev home: \/repo\/work\/codex-plus-dev-home/);
+  assert.match(output, /Electron user data: \/repo\/work\/codex-plus-electron-user-data/);
+  assert.match(output, /PID: 123/);
+  assert.match(output, /Attach command: codex-plus-patcher audit-plugins --no-apply --no-launch --keep-open --port 9234/);
+  assert.doesNotMatch(output, /All plugin probes passed/);
+});
+
 test("audit human formatter prints failure summary with failed plugins and patches", () => {
   const output = formatAuditResult(sampleAuditResult({
     ok: false,
@@ -342,6 +387,20 @@ test("audit json formatter preserves the machine payload shape", () => {
   assert.equal(parsed.target.app, "/repo/work/Codex Plus.app");
   assert.equal(parsed.devHome, "/repo/work/codex-plus-dev-home");
   assert.deepEqual(parsed.nativeOpenProbes, { included: false });
+});
+
+test("audit json formatter preserves manual launch fields", () => {
+  const parsed = JSON.parse(formatAuditJson(sampleAuditResult({
+    manual: true,
+    probesSkipped: true,
+    pluginResults: {},
+    devToolsUrl: "http://127.0.0.1:9234/json/list",
+  })));
+
+  assert.equal(parsed.manual, true);
+  assert.equal(parsed.probesSkipped, true);
+  assert.equal(parsed.devToolsUrl, "http://127.0.0.1:9234/json/list");
+  assert.deepEqual(parsed.pluginResults, {});
 });
 
 test("audit human formatter reports keep-open app exits as failures", () => {
@@ -1465,6 +1524,240 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
   }]);
   assert.equal(result.target.remoteDebuggingPort, 9234);
   assert.equal(result.syncResult, null);
+});
+
+test("runAudit manual mode launches and skips plugin probes and cleanup", async () => {
+  const progressEvents = [];
+  const calls = [];
+  class FakeCdpSession {
+    connect() {
+      calls.push("connect");
+      return Promise.resolve();
+    }
+    send(method) {
+      calls.push(["send", method]);
+      return Promise.resolve();
+    }
+    evaluate() {
+      throw new Error("manual mode must not run plugin probes");
+    }
+    close() {
+      calls.push("close");
+      return Promise.resolve();
+    }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: true,
+      launch: true,
+      keepOpen: true,
+      manual: true,
+      includeNativeOpenProbes: false,
+    },
+    {
+      progress: {
+        start(text) { progressEvents.push(["start", text]); },
+        succeed(text) { progressEvents.push(["succeed", text]); },
+        fail(text) { progressEvents.push(["fail", text]); },
+      },
+      operations: {
+        auditPreflight() {
+          calls.push("preflight");
+          return Promise.resolve({ port: 9234, launch: true, reuseExisting: false });
+        },
+        patchCodexApp() {
+          calls.push("patch");
+          return Promise.resolve({ sourceApp: "/Applications/Codex.app", patchSet: "codex-test" });
+        },
+        buildAuditFixture() {
+          calls.push("fixture");
+          return Promise.resolve({
+            mode: "fixture",
+            files: [],
+            workRoot: "/repo/dev-home/fixture-workspaces",
+            threads: [{ id: "thread-1", title: "Fixture", cwd: "/repo/dev-home/fixture-workspaces/main" }],
+          });
+        },
+        seedAuditFixtureBrowserState() {
+          calls.push("seed");
+          return Promise.resolve({ seeded: true });
+        },
+        launchDevApp() {
+          calls.push("launch");
+          return Promise.resolve({ pid: 123, command: "Codex", args: ["--remote-debugging-port=9234"] });
+        },
+        waitForRendererTarget() {
+          calls.push("waitRenderer");
+          return Promise.resolve({
+            url: "app://-/index.html",
+            webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1",
+          });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() {
+          calls.push("runtime");
+          return Promise.resolve({ registered: 10, started: 10 });
+        },
+        waitForAppShellMounted() {
+          calls.push("shell");
+          return Promise.resolve({ readyState: "complete", hasStartupLoader: false });
+        },
+        cleanupLaunchedAuditApp() {
+          throw new Error("manual mode must not cleanup the launched app");
+        },
+        checkKeepOpenAppStability() {
+          throw new Error("manual mode must not run post-probe stability checks");
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.manual, true);
+  assert.equal(result.probesSkipped, true);
+  assert.equal(result.devToolsUrl, "http://127.0.0.1:9234/json/list");
+  assert.deepEqual(result.pluginResults, {});
+  assert.equal(result.launchResult.pid, 123);
+  assert.equal(result.fixtureResult.browserStateReadback.seeded, true);
+  assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: true, ok: true, pid: 123 });
+  assert.deepEqual(
+    calls.filter((call) => typeof call === "string"),
+    ["preflight", "patch", "fixture", "launch", "waitRenderer", "connect", "runtime", "shell", "seed", "close"],
+  );
+  assert.equal(progressEvents.some(([, text]) => text === "Running plugin probes"), false);
+});
+
+test("runAudit manual no-launch mode attaches without launching or probing", async () => {
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    evaluate() {
+      throw new Error("manual no-launch mode must not run plugin probes");
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: false,
+      launch: false,
+      keepOpen: true,
+      manual: true,
+      includeNativeOpenProbes: false,
+    },
+    {
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({
+            port: 9234,
+            launch: false,
+            reuseExisting: true,
+            suggestedCommand: "codex-plus-patcher audit-plugins --no-apply --no-launch --keep-open --port 9234",
+          });
+        },
+        launchDevApp() {
+          throw new Error("manual no-launch mode must not launch");
+        },
+        waitForRendererTarget() {
+          return Promise.resolve({
+            url: "app://-/index.html",
+            webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1",
+          });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
+        waitForAppShellMounted() { return Promise.resolve({ readyState: "complete", hasStartupLoader: false }); },
+        cleanupLaunchedAuditApp() {
+          throw new Error("manual no-launch mode must not cleanup");
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.manual, true);
+  assert.equal(result.probesSkipped, true);
+  assert.equal(result.launchResult, null);
+  assert.equal(result.preflight.suggestedCommand, "codex-plus-patcher audit-plugins --no-apply --no-launch --keep-open --port 9234");
+  assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: false, ok: true, pid: null });
+});
+
+test("runAudit manual mode keeps a launched app open after readiness failure", async () => {
+  class FakeCdpSession {
+    connect() { return Promise.resolve(); }
+    send() { return Promise.resolve(); }
+    close() { return Promise.resolve(); }
+  }
+
+  const result = await runAudit(
+    {
+      source: "/Applications/Codex.app",
+      target: "/repo/work/Codex Plus.app",
+      sourceHome: "/repo/source-home",
+      devHome: "/repo/dev-home",
+      electronUserDataPath: "/repo/electron-user-data",
+      remoteDebuggingPort: 9234,
+      apply: false,
+      launch: true,
+      keepOpen: true,
+      manual: true,
+      includeNativeOpenProbes: false,
+    },
+    {
+      operations: {
+        auditPreflight() {
+          return Promise.resolve({ port: 9234, launch: true, reuseExisting: false });
+        },
+        buildAuditFixture() {
+          return Promise.resolve({ mode: "fixture", files: [] });
+        },
+        launchDevApp() {
+          return Promise.resolve({ pid: 123, command: "Codex", args: [] });
+        },
+        waitForRendererTarget() {
+          return Promise.resolve({
+            url: "app://-/index.html",
+            webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1",
+          });
+        },
+        CdpSession: FakeCdpSession,
+        waitForLiveRuntime() {
+          throw new Error("runtime did not become ready");
+        },
+        cleanupLaunchedAuditApp() {
+          throw new Error("manual failure must not cleanup the launched app");
+        },
+        checkKeepOpenAppStability() {
+          throw new Error("manual failure must not run post-probe stability checks");
+        },
+        auditIdentity() {
+          return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.failures[0].message, "runtime did not become ready");
+  assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: true, ok: true, pid: 123 });
 });
 
 function writeFile(root, relativePath, text = relativePath) {

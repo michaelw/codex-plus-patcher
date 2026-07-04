@@ -41,6 +41,7 @@ function parseArgs(argv) {
     launch: true,
     json: false,
     keepOpen: false,
+    manual: false,
     includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
@@ -70,6 +71,10 @@ function parseArgs(argv) {
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--manual") {
+      args.manual = true;
+      args.keepOpen = true;
+    }
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -1196,6 +1201,21 @@ function formatAuditJson(result) {
 
 function formatAuditResult(result, { quiet = false } = {}) {
   const expectedWarnings = result.expectedWarnings || [];
+  if (result.manual) {
+    if (quiet) return "Manual audit app launched. Plugin probes skipped.\n";
+    const lines = [
+      "Manual audit app launched.",
+      "Plugin probes skipped because --manual was set.",
+      `DevTools: ${result.devToolsUrl || `http://127.0.0.1:${result.target?.remoteDebuggingPort ?? DEFAULT_PORT}/json/list`}`,
+      `Target: ${result.target?.app || DEFAULT_TARGET}`,
+      `Dev home: ${result.devHome || DEFAULT_DEV_HOME}`,
+      `Electron user data: ${result.electronUserDataPath || DEFAULT_ELECTRON_USER_DATA}`,
+    ];
+    const pid = result.launchResult?.pid ?? result.target?.pid;
+    if (pid != null) lines.push(`PID: ${pid}`);
+    if (result.preflight?.suggestedCommand) lines.push(`Attach command: ${result.preflight.suggestedCommand}`);
+    return `${lines.join("\n")}\n`;
+  }
   if (quiet) {
     if (!result.ok) return `Plugin audit failed: ${result.failures.length} failures\n`;
     return expectedWarnings.length > 0
@@ -2719,6 +2739,66 @@ async function runAudit(args, {
         () => seedFixtureBrowserState(cdp, fixtureResult),
       );
     }
+    if (args.manual) {
+      const devToolsUrl = `http://127.0.0.1:${port}/json/list`;
+      result = {
+        ok: true,
+        manual: true,
+        probesSkipped: true,
+        failures: [],
+        expectedWarnings: [],
+        pluginResults: {},
+        target: {
+          app: path.resolve(args.target),
+          remoteDebuggingPort: port,
+          url: target?.url,
+          webSocketDebuggerUrl: target?.webSocketDebuggerUrl,
+          pid: launchResult?.pid,
+        },
+        devToolsUrl,
+        devHome: path.resolve(args.devHome),
+        electronUserDataPath: path.resolve(args.electronUserDataPath),
+        applyResult,
+        syncResult: syncResult && {
+          copied: syncResult.copied,
+          scrubbedGlobalState: syncResult.scrubbedGlobalState,
+          sqliteSnapshots: syncResult.sqliteSnapshots,
+          worktrees: syncResult.worktrees,
+          sessions: syncResult.sessions,
+        },
+        fixtureResult: fixtureResult && {
+          mode: fixtureResult.mode,
+          files: fixtureResult.files,
+          credentials: fixtureResult.credentials,
+          workRoot: fixtureResult.workRoot,
+          threads: fixtureResult.threads?.map((thread) => ({
+            id: thread.id,
+            title: thread.title,
+            cwd: thread.cwd,
+            projectId: thread.projectId,
+          })),
+          browserState: fixtureResult.browserState,
+          browserStateReadback: fixtureBrowserStateResult,
+        },
+        launchResult: launchResult && {
+          command: launchResult.command,
+          args: launchResult.args,
+          pid: launchResult.pid,
+          devBundle: launchResult.devBundle,
+          instanceIdentity: launchResult.instanceIdentity,
+        },
+        registeredPlugins: null,
+        startedPlugins: null,
+        runtimeStatus,
+        appShellStatus,
+        audit: identity,
+        nativeOpenProbes: {
+          included: false,
+        },
+        preflight,
+      };
+      return result;
+    }
     const live = await withAuditProgress(
       progress,
       "Running plugin probes",
@@ -2918,55 +2998,62 @@ async function runAudit(args, {
     return result;
   } finally {
     if (cdp) await cdp.close();
-    if (result && args.keepOpen && launchResult) {
-      let stability;
-      try {
-        stability = await checkStability(launchResult, {
-          electronUserDataPath: args.electronUserDataPath,
-        });
-      } catch (error) {
-        stability = {
-          checked: true,
-          ok: false,
-          pid: launchResult.pid ?? null,
-          alive: null,
-          crashDumps: [],
-          message: `Could not verify keep-open app stability: ${error.message || String(error)}`,
-        };
-      }
-      result.appStability = stability;
-      if (!stability.ok) {
-        appendFailure(result, {
-          plugin: "audit",
-          message: stability.message,
-          details: {
-            pid: stability.pid,
-            alive: stability.alive,
-            crashDumps: stability.crashDumps,
-          },
-        });
-      }
-    }
-    try {
+    if (result?.manual || (args.manual && launchResult)) {
       cleanupResult = launchResult
-        ? await withAuditProgress(
-            progress,
-            "Cleaning up launched audit app",
-            args.keepOpen ? "Kept audit app open" : "Cleaned up launched audit app",
-            () => cleanupApp(launchResult, { keepOpen: args.keepOpen }),
-          )
-        : await cleanupApp(launchResult, { keepOpen: false });
-    } catch (error) {
-      cleanupResult = {
-        attempted: Boolean(launchResult?.pid),
-        keptOpen: false,
-        ok: false,
-        pid: launchResult?.pid ?? null,
-        message: error.message || String(error),
-      };
-      progressFail(progress, "Cleaning up launched audit app");
+        ? { attempted: false, keptOpen: true, ok: true, pid: launchResult.pid ?? null }
+        : { attempted: false, keptOpen: false, ok: true, pid: null };
+      if (result) result.cleanupResult = cleanupResult;
+    } else {
+      if (result && args.keepOpen && launchResult) {
+        let stability;
+        try {
+          stability = await checkStability(launchResult, {
+            electronUserDataPath: args.electronUserDataPath,
+          });
+        } catch (error) {
+          stability = {
+            checked: true,
+            ok: false,
+            pid: launchResult.pid ?? null,
+            alive: null,
+            crashDumps: [],
+            message: `Could not verify keep-open app stability: ${error.message || String(error)}`,
+          };
+        }
+        result.appStability = stability;
+        if (!stability.ok) {
+          appendFailure(result, {
+            plugin: "audit",
+            message: stability.message,
+            details: {
+              pid: stability.pid,
+              alive: stability.alive,
+              crashDumps: stability.crashDumps,
+            },
+          });
+        }
+      }
+      try {
+        cleanupResult = launchResult
+          ? await withAuditProgress(
+              progress,
+              "Cleaning up launched audit app",
+              args.keepOpen ? "Kept audit app open" : "Cleaned up launched audit app",
+              () => cleanupApp(launchResult, { keepOpen: args.keepOpen }),
+            )
+          : await cleanupApp(launchResult, { keepOpen: false });
+      } catch (error) {
+        cleanupResult = {
+          attempted: Boolean(launchResult?.pid),
+          keptOpen: false,
+          ok: false,
+          pid: launchResult?.pid ?? null,
+          message: error.message || String(error),
+        };
+        progressFail(progress, "Cleaning up launched audit app");
+      }
+      if (result) result.cleanupResult = cleanupResult;
     }
-    if (result) result.cleanupResult = cleanupResult;
   }
 }
 
