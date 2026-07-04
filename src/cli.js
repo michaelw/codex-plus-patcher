@@ -47,6 +47,7 @@ function parseArgs(argv) {
     apply: true,
     launch: true,
     keepOpen: false,
+    manual: false,
     includeNativeOpenProbes: false,
     noProgress: false,
     quiet: false,
@@ -92,6 +93,10 @@ function parseArgs(argv) {
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
     else if (arg === "--keep-open") args.keepOpen = true;
+    else if (arg === "--manual") {
+      args.manual = true;
+      args.keepOpen = true;
+    }
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else if (arg === "--no-progress") args.noProgress = true;
@@ -113,7 +118,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
-  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--keep-open] [--include-native-open-probes] [--use-live-source-home]
+  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--manual] [--keep-open] [--include-native-open-probes] [--use-live-source-home]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -141,6 +146,7 @@ Options:
   --dry-run                Select and report the patch without copying/signing
   --no-apply               Reuse an existing audit target without applying patches
   --no-launch              Attach to an existing audit app instead of launching
+  --manual                 Launch a manual audit app and skip plugin probes
   --keep-open              Leave the audit-launched app open after probes finish
   --use-live-source-home   Use --source-home for audit-plugins instead of generated fixture state
   --include-native-open-probes
