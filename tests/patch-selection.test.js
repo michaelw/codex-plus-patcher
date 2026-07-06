@@ -15,7 +15,7 @@ const {
   selectPatch,
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
-const { codexPlusRuntimeAssets, runtimeFiles } = require("../src/runtime/assets");
+const { codexPlusRuntimeAssets, fzfRuntimeAssetPath, runtimeFiles } = require("../src/runtime/assets");
 
 function transformFile(patchSet, filePath, text, context) {
   return collectFileTransforms(patchSet)
@@ -307,6 +307,10 @@ test("runtime asset order keeps API, host, vendor, and plugin layers determinist
   assert.ok(indexOf("webview/assets/codex-plus/vendor/fzf.umd.js") < indexOf("webview/assets/codex-plus/plugins/projectSelectorShortcut.js"));
   assert.equal(asarPaths[indexOf(".vite/build/codex-plus-native-main.js")], ".vite/build/codex-plus-native-main.js");
   assert.equal(asarPaths[indexOf(".vite/build/codex-plus-worker.js")], ".vite/build/codex-plus-worker.js");
+});
+
+test("fzf vendor runtime asset resolves through the installed package", () => {
+  assert.equal(fzfRuntimeAssetPath(), require.resolve("fzf"));
 });
 
 test("runtime manifest carries versioned runtime config", () => {

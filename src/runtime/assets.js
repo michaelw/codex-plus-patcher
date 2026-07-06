@@ -43,6 +43,14 @@ const browserRuntimeFiles = [
   "plugins/mermaidFullscreen.js",
 ];
 
+function fzfRuntimeAssetPath() {
+  return require.resolve("fzf");
+}
+
+function runtimeAssetPath(filePath) {
+  return filePath.startsWith("vendor/") ? fzfRuntimeAssetPath() : path.join(runtimeRoot, filePath);
+}
+
 const nodeRuntimeFiles = [
   [".vite/build/codex-plus-aboutMetadata.js", "plugins/aboutMetadata.js"],
   [".vite/build/codex-plus-native-main.js", "host/nativeMain.js"],
@@ -52,7 +60,7 @@ const nodeRuntimeFiles = [
 
 const browserRuntimeAssets = browserRuntimeFiles.map((filePath) => [
   `webview/assets/codex-plus/${filePath}`,
-  filePath.startsWith("vendor/") ? "../../node_modules/fzf/dist/fzf.umd.js" : filePath,
+  filePath,
 ]);
 
 const runtimeFiles = [
@@ -67,7 +75,7 @@ function browserRuntimeManifest(config = {}) {
 
 function codexPlusRuntimeAssets(config = {}) {
   return runtimeFiles.map(([asarPath, localPath]) => {
-    const content = localPath == null ? browserRuntimeManifest(config) : fs.readFileSync(path.join(runtimeRoot, localPath), "utf8");
+    const content = localPath == null ? browserRuntimeManifest(config) : fs.readFileSync(runtimeAssetPath(localPath), "utf8");
     return [asarPath, content];
   });
 }
@@ -75,5 +83,6 @@ function codexPlusRuntimeAssets(config = {}) {
 module.exports = {
   browserRuntimeFiles,
   codexPlusRuntimeAssets,
+  fzfRuntimeAssetPath,
   runtimeFiles,
 };
