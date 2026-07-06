@@ -16,6 +16,7 @@
       threadId: context.threadId == null ? "" : String(context.threadId),
       branchName: context.branchName == null ? "" : String(context.branchName),
       source: context.source == null ? "" : String(context.source),
+      title: context.title == null ? "" : String(context.title),
     };
   }
 
@@ -38,6 +39,7 @@
         target.setAttribute("data-codex-plus-project-path", context.activeCwd);
         target.setAttribute("data-codex-plus-route-context-source", context.source || "");
         if (context.sourceProject?.label) target.setAttribute("data-codex-plus-project-label", context.sourceProject.label);
+        if (context.title) target.setAttribute("data-codex-plus-route-title", context.title);
         if (context.workspaceRoot) target.setAttribute("data-codex-plus-workspace-root", context.workspaceRoot);
         if (context.threadId) target.setAttribute("data-codex-plus-owner-thread-id", context.threadId);
       } else {
@@ -45,6 +47,7 @@
         target.removeAttribute?.("data-codex-plus-project-path");
         target.removeAttribute?.("data-codex-plus-route-context-source");
         target.removeAttribute?.("data-codex-plus-project-label");
+        target.removeAttribute?.("data-codex-plus-route-title");
         target.removeAttribute?.("data-codex-plus-workspace-root");
         target.removeAttribute?.("data-codex-plus-owner-thread-id");
       }
@@ -94,6 +97,7 @@
         label: context.sourceProject?.label || "",
         source: context.source || "",
         routeId: context.routeId,
+        title: context.title || "",
         workspaceRoot: context.workspaceRoot,
         gitRoot: context.gitRoot,
         threadId: context.threadId,
@@ -115,6 +119,7 @@
         threadId: context?.threadId,
         branchName: context?.branchName,
         source: context?.source,
+        title: context?.title,
       });
     },
   };

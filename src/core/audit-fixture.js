@@ -1,6 +1,6 @@
 const childProcess = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 
 const FIXTURE_NOW_SECONDS = Math.floor(Date.now() / 1000);
@@ -11,6 +11,37 @@ const FIXTURE_BROWSER_COLORS = {
 };
 const FIXTURE_GIT_SHA = "0123456789abcdef0123456789abcdef01234567";
 const CREDENTIAL_FILES = ["auth.json"];
+const VENDORED_AHARNESS_EXAMPLES = path.join(__dirname, "..", "runtime", "vendor", "aharness", "examples");
+const AHARNESS_DEMOS = [
+  ["Color funnel", "examples/color-funnel.fsm.ts", "Collect preferences and converge on a color"],
+  ["Ops clear demo", "examples/ops-clear-demo.fsm.ts", "Operational clearance workflow"],
+  ["Trivia rounds", "examples/trivia-rounds.fsm.ts", "Long multi-round owner-gated demo"],
+  ["Adventure", "examples/adventure.fsm.ts", "Interactive adventure choices"],
+  ["Await checkpoints", "examples/await-checkpoints.fsm.ts", "Demo workflow with owner gates"],
+  ["Pirate roast", "examples/pirate-roast.fsm.ts", "Persona and response style demo"],
+  ["Composed pipeline", "examples/composed-pipeline.fsm.ts", "Composed pipeline with fixture defaults"],
+  ["Approval policy", "examples/approval-policy.fsm.ts", "Approval policy walkthrough"],
+  ["Coding smoke", "examples/coding-smoke.fsm.ts", "Small coding task smoke test"],
+].map(([label, target, description]) => ({ label, target, description }));
+
+const RETRYABLE_REMOVE_CODES = new Set(["ENOTEMPTY", "EBUSY", "EPERM"]);
+
+function sleepSync(ms) {
+  const buffer = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(buffer), 0, 0, ms);
+}
+
+function removeTree(pathToRemove, { fsImpl = fs, retries = 5, retryDelayMs = 50 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      fsImpl.rmSync(pathToRemove, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!RETRYABLE_REMOVE_CODES.has(error?.code) || attempt === retries) throw error;
+      sleepSync(retryDelayMs * (attempt + 1));
+    }
+  }
+}
 
 function sqliteLiteral(value) {
   if (value == null) return "null";
@@ -25,6 +56,20 @@ function writeJson(filePath, value, fsImpl = fs) {
 function writeText(filePath, value, fsImpl = fs) {
   fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
   fsImpl.writeFileSync(filePath, value);
+}
+
+function copyDirectory(sourceDir, targetDir, fsImpl = fs) {
+  if (!fsImpl.existsSync(sourceDir)) throw new Error(`Missing fixture source directory: ${sourceDir}`);
+  fsImpl.mkdirSync(targetDir, { recursive: true });
+  for (const entry of fsImpl.readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = path.join(sourceDir, entry.name);
+    const target = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(source, target, fsImpl);
+    } else if (entry.isFile()) {
+      fsImpl.copyFileSync(source, target);
+    }
+  }
 }
 
 function git(args, cwd, execFileSync = childProcess.execFileSync) {
@@ -49,6 +94,7 @@ function createGitRepo(repoPath, { label, dirtyFile = "README.md", branches = []
 
 function fixtureLayout(rootDir) {
   const workRoot = path.join(rootDir, "fixture-workspaces");
+  const shortFixtureRoot = path.join("/tmp", `cpx-ah-${crypto.createHash("sha1").update(path.resolve(rootDir)).digest("hex").slice(0, 10)}`);
   const projectlessRoot = path.join(rootDir, "fixture-projectless-workspaces");
   const projectsRoot = path.join(workRoot, "projects");
   const codexWorktreesRoot = path.join(workRoot, "codex-worktrees");
@@ -56,6 +102,7 @@ function fixtureLayout(rootDir) {
   const beta = path.join(projectsRoot, "beta-service");
   const nestedProject = path.join(projectsRoot, "nested-suite");
   const nestedWorktree = path.join(codexWorktreesRoot, "nested-suite-worktree");
+  const aharnessProject = path.join(shortFixtureRoot, "aharness-examples");
   const missingProject = path.join(projectsRoot, "missing-project");
   const extraProjects = [
     "color-lab-01",
@@ -69,6 +116,7 @@ function fixtureLayout(rootDir) {
   ].map((name) => path.join(projectsRoot, name));
   return {
     workRoot,
+    shortFixtureRoot,
     projectlessRoot,
     projectsRoot,
     codexWorktreesRoot,
@@ -76,6 +124,7 @@ function fixtureLayout(rootDir) {
     beta,
     nestedProject,
     nestedWorktree,
+    aharnessProject,
     nestedProjectAlphaModule: path.join(nestedProject, "repos", "alpha-module"),
     nestedProjectBetaModule: path.join(nestedProject, "repos", "beta-module"),
     nestedAlphaModule: path.join(nestedWorktree, "repos", "alpha-module"),
@@ -117,13 +166,35 @@ function createNestedRepositoryInputs(rootPath, { alphaModule, betaModule, fsImp
   );
 }
 
+function createAharnessExamplesProject(projectPath, { fsImpl = fs, execFileSync = childProcess.execFileSync } = {}) {
+  const lines = [];
+  copyDirectory(VENDORED_AHARNESS_EXAMPLES, path.join(projectPath, "examples"), fsImpl);
+  for (const demo of AHARNESS_DEMOS) {
+    lines.push(
+      "[[aharness.state_machines]]",
+      `label = ${tomlBasicString(demo.label)}`,
+      `target = ${tomlBasicString(demo.target)}`,
+      `description = ${tomlBasicString(demo.description)}`,
+      "",
+    );
+  }
+  writeText(path.join(projectPath, ".codex", "plus.toml"), lines.join("\n"), fsImpl);
+  writeText(path.join(projectPath, ".gitignore"), ".aharness/\nnode_modules/\n", fsImpl);
+  writeText(path.join(projectPath, "README.md"), "# Aharness Examples\n\nSynthetic Codex Plus audit fixture.\n", fsImpl);
+  git(["add", "."], projectPath, execFileSync);
+  git(["commit", "-m", "Seed aharness examples fixture"], projectPath, execFileSync);
+}
+
 function createFixtureWorkspaces(rootDir, { fsImpl = fs, execFileSync = childProcess.execFileSync } = {}) {
   const layout = fixtureLayout(rootDir);
   fsImpl.rmSync(layout.workRoot, { recursive: true, force: true });
+  fsImpl.rmSync(layout.shortFixtureRoot, { recursive: true, force: true });
   createGitRepo(layout.alpha, { label: "Alpha Main", fsImpl, execFileSync });
   createGitRepo(layout.beta, { label: "Beta Service", fsImpl, execFileSync });
   createGitRepo(layout.nestedProject, { label: "Nested Suite Main", fsImpl, execFileSync });
   createGitRepo(layout.nestedWorktree, { label: "Nested Suite Worktree", fsImpl, execFileSync });
+  createGitRepo(layout.aharnessProject, { label: "Aharness Examples", fsImpl, execFileSync });
+  createAharnessExamplesProject(layout.aharnessProject, { fsImpl, execFileSync });
   for (const [index, project] of layout.extraProjects.entries()) {
     createGitRepo(project, { label: `Color Lab ${index + 1}`, fsImpl, execFileSync });
   }
@@ -579,7 +650,7 @@ function seedStateDatabase(dbPath, threads, { execFileSync = childProcess.execFi
 }
 
 function createGlobalState(layout, threads) {
-  const projectOrder = [layout.alpha, layout.nestedProject, layout.beta, layout.missingProject, ...layout.extraProjects];
+  const projectOrder = [layout.alpha, layout.nestedProject, layout.aharnessProject, layout.beta, layout.missingProject, ...layout.extraProjects];
   const assignments = {};
   const workspaceHints = {};
   const writableRoots = {};
@@ -644,6 +715,7 @@ function createGlobalState(layout, threads) {
         [layout.nestedWorktree]: "nested-suite-worktree",
         [layout.alpha]: "alpha-main",
         [layout.nestedProject]: "nested-suite",
+        [layout.aharnessProject]: "aharness-examples",
         [layout.beta]: "beta-service",
         [layout.missingProject]: "missing-project",
         ...Object.fromEntries(layout.extraProjects.map((project) => [project, path.basename(project)])),
@@ -678,6 +750,7 @@ function createGlobalState(layout, threads) {
       [layout.nestedWorktree]: "nested-suite-worktree",
       [layout.alpha]: "alpha-main",
       [layout.nestedProject]: "nested-suite",
+      [layout.aharnessProject]: "aharness-examples",
       [layout.beta]: "beta-service",
       [layout.missingProject]: "missing-project",
       ...Object.fromEntries(layout.extraProjects.map((project) => [project, path.basename(project)])),
@@ -695,6 +768,7 @@ function createFixtureConfig(layout) {
     layout.beta,
     layout.nestedProject,
     layout.nestedWorktree,
+    layout.aharnessProject,
     layout.nestedAlphaModule,
     layout.nestedBetaModule,
     ...layout.extraProjects,
@@ -709,6 +783,24 @@ function createFixtureConfig(layout) {
     "trust_level = \"trusted\"",
     "",
   ].join("\n")).join("\n")}`;
+}
+
+function createDomSurveyFixtureConfig(layout) {
+  return {
+    runtimePluginsDisabled: ["aharnessRuns"],
+    targetThreadTitle: "Fixture: nested repos before branch selection",
+    targetSidePanelTab: "Review",
+    expectedProjects: {
+      alpha: layout.alpha,
+      nestedProject: layout.nestedProject,
+      nestedWorktree: layout.nestedWorktree,
+      aharnessProject: layout.aharnessProject,
+    },
+    expectedAharnessStateMachines: AHARNESS_DEMOS.map((demo) => ({
+      label: demo.label,
+      target: demo.target,
+    })),
+  };
 }
 
 function writeSessionIndex(devHome, threads, fsImpl = fs) {
@@ -824,8 +916,8 @@ function buildAuditFixture({
   if (!devHome) throw new Error("devHome is required");
   const resolvedDevHome = path.resolve(devHome);
   const resolvedElectronUserDataPath = electronUserDataPath ? path.resolve(electronUserDataPath) : null;
-  fsImpl.rmSync(resolvedDevHome, { recursive: true, force: true });
-  if (resolvedElectronUserDataPath) fsImpl.rmSync(resolvedElectronUserDataPath, { recursive: true, force: true });
+  removeTree(resolvedDevHome, { fsImpl });
+  if (resolvedElectronUserDataPath) removeTree(resolvedElectronUserDataPath, { fsImpl });
   fsImpl.mkdirSync(resolvedDevHome, { recursive: true });
   if (resolvedElectronUserDataPath) fsImpl.mkdirSync(resolvedElectronUserDataPath, { recursive: true });
 
@@ -854,6 +946,7 @@ function buildAuditFixture({
   writeJson(path.join(resolvedDevHome, ".codex-global-state.json"), createGlobalState(layout, threads), fsImpl);
   writeSessionIndex(resolvedDevHome, threads, fsImpl);
   writeText(path.join(resolvedDevHome, "config.toml"), createFixtureConfig(layout), fsImpl);
+  writeJson(path.join(resolvedDevHome, "codex-plus-dom-survey-fixture.json"), createDomSurveyFixtureConfig(layout), fsImpl);
   if (!credentials.includes("auth.json")) writeText(path.join(resolvedDevHome, "auth.json"), "{}\n", fsImpl);
   writeText(path.join(resolvedDevHome, "installation_id"), "codex-plus-audit-fixture\n", fsImpl);
   writeJson(path.join(resolvedDevHome, "version.json"), { version: "fixture" }, fsImpl);
@@ -881,6 +974,7 @@ function buildAuditFixture({
     browserState: {
       userBubbleColors: FIXTURE_BROWSER_COLORS,
     },
+    domSurvey: createDomSurveyFixtureConfig(layout),
     baseline,
     warning: "Using generated Codex home fixture for audit.",
   };
@@ -926,6 +1020,7 @@ module.exports = {
   classifyDiscoveredHomeFiles,
   copyFixtureCredentials,
   createFixtureWorkspaces,
+  createDomSurveyFixtureConfig,
   createGlobalState,
   fixtureLayout,
   fixtureThreads,

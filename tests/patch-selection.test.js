@@ -12,10 +12,16 @@ const {
   collectAssetFiles,
   collectFileTransforms,
   collectInfoPlistStrings,
+  mergeRuntimeConfig,
   selectPatch,
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
-const { codexPlusRuntimeAssets, fzfRuntimeAssetPath, runtimeFiles } = require("../src/runtime/assets");
+const {
+  browserRuntimeFilesForConfig,
+  codexPlusRuntimeAssets,
+  fzfRuntimeAssetPath,
+  runtimeFiles,
+} = require("../src/runtime/assets");
 
 function transformFile(patchSet, filePath, text, context) {
   return collectFileTransforms(patchSet)
@@ -269,6 +275,8 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
     assert.ok(addedFiles.includes("webview/assets/codex-plus/api/about.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/api/review.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/api/native.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/routeContext.js"));
+    assert.ok(addedFiles.includes("webview/assets/codex-plus/api/chatRows.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/host/review.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/host/projectSelector.js"));
     assert.ok(addedFiles.includes("webview/assets/codex-plus/host/threadHeader.js"));
@@ -290,6 +298,38 @@ test("current patch queues ship the Codex Plus runtime plugin assets", () => {
   }
 });
 
+test("packaged aharness runtime comes from the Codex Plus aharness fork without source patching", () => {
+  const assetSource = fs.readFileSync(path.join(__dirname, "../src/runtime/assets.js"), "utf8");
+  assert.doesNotMatch(assetSource, /patchAharnessRuntimeAsset/);
+  assert.doesNotMatch(assetSource, /Unsupported @aharness\/core/);
+
+  const assets = new Map(codexPlusRuntimeAssets());
+  const packageJson = JSON.parse(String(assets.get(".vite/build/node_modules/@aharness/core/package.json") || "{}"));
+  assert.equal(packageJson.name, "@codex-plus/aharness-core");
+  assert.equal(packageJson.version, "0.1.3-cpx.1");
+  assert.equal(assets.has(".vite/build/node_modules/@aharness/core/src/runtime/liveRunEngine.ts"), false);
+  assert.equal(assets.has(".vite/build/node_modules/@aharness/core/test/codex-plus-delta.test.mjs"), false);
+  assert.equal(assets.has(".vite/build/node_modules/ws/wrapper.mjs"), true);
+  assert.equal(assets.has(".vite/build/node_modules/ws/lib/stream.js"), true);
+
+  const liveRunEngine = String(assets.get(".vite/build/node_modules/@aharness/core/dist/runtime/liveRunEngine.js") || "");
+
+  assert.match(liveRunEngine, /const built = composeActiveStateTurnInput\(\);\s*await client\.request\(METHOD\.turnStart, \{\s*threadId,\s*input: \[\.\.\.built\.input, \{ type: 'text', text \}\],\s*\}\);\s*built\.commit\(\);/);
+  assert.doesNotMatch(liveRunEngine, /input: \[\{ type: 'text', text \}\],/);
+});
+
+test("packaged aharness runtime registers path skills by catalog root", () => {
+  const assets = new Map(codexPlusRuntimeAssets());
+  const skillCatalog = String(assets.get(".vite/build/node_modules/@aharness/core/dist/runtime/skillCatalog.js") || "");
+
+  assert.match(skillCatalog, /import \{ existsSync, realpathSync \} from 'node:fs';/);
+  assert.match(skillCatalog, /roots\.add\(dirname\(dirname\(resolvedPath\)\)\);/);
+  assert.doesNotMatch(skillCatalog, /roots\.add\(dirname\(resolvedPath\)\);/);
+  assert.match(skillCatalog, /return realpathSync\(resolved\);/);
+  assert.match(skillCatalog, /matches\.length === 0 && existsSync\(requiredPath\)/);
+  assert.match(skillCatalog, /name: basename\(dirname\(requiredPath\)\)/);
+});
+
 test("runtime asset order keeps API, host, vendor, and plugin layers deterministic", () => {
   const asarPaths = runtimeFiles.map(([asarPath]) => asarPath);
   const indexOf = (filePath) => {
@@ -300,7 +340,10 @@ test("runtime asset order keeps API, host, vendor, and plugin layers determinist
 
   assert.ok(indexOf("webview/assets/codex-plus/runtime.js") < indexOf("webview/assets/codex-plus/runtime-manifest.js"));
   assert.ok(indexOf("webview/assets/codex-plus/runtime-manifest.js") < indexOf("webview/assets/codex-plus/api/index.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/index.js") < indexOf("webview/assets/codex-plus/api/routeContext.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/routeContext.js") < indexOf("webview/assets/codex-plus/api/composer.js"));
   assert.ok(indexOf("webview/assets/codex-plus/api/index.js") < indexOf("webview/assets/codex-plus/api/review.js"));
+  assert.ok(indexOf("webview/assets/codex-plus/api/chatRows.js") < indexOf("webview/assets/codex-plus/plugins/aharnessRuns.js"));
   assert.ok(indexOf("webview/assets/codex-plus/api/about.js") < indexOf("webview/assets/codex-plus/plugins/aboutMetadata.js"));
   assert.ok(indexOf("webview/assets/codex-plus/api/mermaid.js") < indexOf("webview/assets/codex-plus/host/review.js"));
   assert.ok(indexOf("webview/assets/codex-plus/host/threadHeader.js") < indexOf("webview/assets/codex-plus/plugins/nestedRepositories.js"));
@@ -326,6 +369,62 @@ test("runtime manifest carries versioned runtime config", () => {
 
   assert.equal(JSON.stringify(window.__CodexPlusRuntimeConfig), JSON.stringify({ mermaidCoreAsset: "mermaid.core-current.js" }));
   assert.equal(JSON.stringify(window.__CodexPlusRuntimeFiles), JSON.stringify(require("../src/runtime/assets").browserRuntimeFiles));
+});
+
+test("runtime manifest can omit disabled runtime plugins", () => {
+  const config = {
+    patchSetId: "codex-test",
+    runtimePluginsDisabled: ["aharnessRuns", "devTools"],
+  };
+  const manifest = new Map(codexPlusRuntimeAssets(config)).get("webview/assets/codex-plus/runtime-manifest.js");
+  const window = {};
+  const context = {
+    window,
+    globalThis: window,
+  };
+  vm.runInNewContext(manifest, context);
+
+  assert.deepEqual(Array.from(window.__CodexPlusRuntimeFiles), browserRuntimeFilesForConfig(config));
+  assert.equal(window.__CodexPlusRuntimeFiles.includes("plugins/aharnessRuns.js"), false);
+  assert.equal(window.__CodexPlusRuntimeFiles.includes("plugins/devTools.js"), false);
+  assert.equal(window.__CodexPlusRuntimeFiles.includes("plugins/projectColors.js"), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(window.__CodexPlusRuntimeConfig)), config);
+});
+
+test("runtime config override preserves patch metadata", () => {
+  const patchSet = {
+    id: "codex-test",
+    codexVersion: "1.2.3",
+    bundleVersion: "456",
+    asarSha256: "abc",
+    runtimeConfig: {
+      codexVersion: "1.2.3",
+      bundleVersion: "456",
+      patchSetId: "codex-test",
+      mermaidCoreAsset: "mermaid.core-test.js",
+    },
+    assetFiles: codexPlusRuntimeAssets({
+      codexVersion: "1.2.3",
+      bundleVersion: "456",
+      patchSetId: "codex-test",
+      mermaidCoreAsset: "mermaid.core-test.js",
+    }),
+    patches: [],
+  };
+
+  const merged = mergeRuntimeConfig(patchSet, {
+    runtimePluginsDisabled: ["aharnessRuns"],
+  });
+  const manifest = new Map(collectAssetFiles(merged)).get("webview/assets/codex-plus/runtime-manifest.js");
+  const window = {};
+  vm.runInNewContext(manifest, { window, globalThis: window });
+
+  assert.equal(window.__CodexPlusRuntimeConfig.codexVersion, "1.2.3");
+  assert.equal(window.__CodexPlusRuntimeConfig.bundleVersion, "456");
+  assert.equal(window.__CodexPlusRuntimeConfig.patchSetId, "codex-test");
+  assert.equal(window.__CodexPlusRuntimeConfig.mermaidCoreAsset, "mermaid.core-test.js");
+  assert.deepEqual(Array.from(window.__CodexPlusRuntimeConfig.runtimePluginsDisabled), ["aharnessRuns"]);
+  assert.equal(window.__CodexPlusRuntimeFiles.includes("plugins/aharnessRuns.js"), false);
 });
 
 test("current patch runtime config names the current Mermaid core asset", () => {
@@ -450,6 +549,11 @@ test("native bridge patch exposes the DevTools request for patch sets with a mai
   assert.match(nativeMainSource, /CODEX_PLUS_MENU_DIAGNOSTICS/);
   assert.match(nativeMainSource, /function openDevTools/);
   assert.match(nativeMainSource, /function openMermaidViewer/);
+  assert.doesNotMatch(nativeMainSource, /function createWorktree/);
+  assert.doesNotMatch(nativeMainSource, /case "codex\/worktree\/create"/);
+  assert.doesNotMatch(nativeMainSource, /native-worktree-adapter-unavailable/);
+  assert.doesNotMatch(nativeMainSource, /worktree", "add"/);
+  assert.doesNotMatch(nativeMainSource, /execFileSync\("git"/);
 });
 
 test("current patch queues expose project colors and project selector shortcut separately from bubble colors", () => {
@@ -695,6 +799,9 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
       getElementById() {
         return null;
       },
+      querySelector() {
+        return null;
+      },
     },
   };
 
@@ -723,6 +830,13 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
       patches: [{ find: "hello", replacement: { match: "hello", replace: "hi" } }],
       start(instance) {
         instance.modules.registerHostModule("sample", { marker: true });
+        instance.ui.settings.appearance.addRow({
+          id: "broken-row",
+          order: -1,
+          render: () => {
+            throw new Error("settings row exploded");
+          },
+        });
         instance.ui.settings.appearance.addRow({
           id: "sample-row",
           render: ({ jsx }) => jsx("row", { label: "Sample row" }, "sample-row"),
@@ -777,14 +891,45 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.equal(registeredMenus[0].run(), "ok");
   assert.equal(registeredMenus[0].options.menuItem.render(() => {}).type, "menu-item");
   const rows = api.ui.settings.appearance.renderRows({ deps: { jsx }, variant: "light" });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].type(rows[0].props).props.label, "Sample row");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].type(rows[0].props), null);
+  assert.equal(rows[1].type(rows[1].props).props.label, "Sample row");
   assert.deepEqual(plain(api.ui.sidebar.projectRowProps({ project: "x" })), {
     "data-sample-project": "",
     "data-sample-project-2": "",
     style: { color: "red", background: "blue" },
   });
   assert.deepEqual(plain(api.ui.sidebar.threadRowProps({ project: "x" })), { "data-sample-thread": "" });
+  assert.equal(typeof api.ui.sidebar.registerSection, "function");
+  assert.equal(typeof api.ui.sidebar.renderSection, "function");
+  assert.equal(typeof api.ui.routeContext.set, "function");
+  assert.equal(typeof api.ui.routeContext.active, "function");
+  api.ui.routeContext.set({
+    routeId: "virtual:sample",
+    sourceProject: { id: "sample", label: "Sample", cwd: "/tmp/source" },
+    activeCwd: "/tmp/worktree",
+    workspaceRoot: "/tmp/worktree",
+    gitRoot: "/tmp/source",
+    threadId: "owner-thread",
+    branchName: "branch",
+    source: "sample",
+    title: "Sample virtual route",
+  });
+  assert.deepEqual(plain(api.ui.routeContext.active()), {
+    routeId: "virtual:sample",
+    sourceProject: { id: "sample", label: "Sample", cwd: "/tmp/source" },
+    activeCwd: "/tmp/worktree",
+    workspaceRoot: "/tmp/worktree",
+    gitRoot: "/tmp/source",
+    threadId: "owner-thread",
+    branchName: "branch",
+    source: "sample",
+    title: "Sample virtual route",
+  });
+  assert.equal(api.ui.projectContext.active().cwd, "/tmp/worktree");
+  assert.equal(api.ui.projectContext.active().title, "Sample virtual route");
+  assert.equal(typeof api.ui.chatRows.render, "function");
+  assert.equal(typeof api.ui.chatRows.renderRow, "function");
   assert.deepEqual(plain(api.ui.message.userBubbleProps({ project: "x" })), { "data-sample-message": "" });
   assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), { "data-sample-composer": "" });
   assert.deepEqual(plain(api.ui.mermaid.diagramProps({ code: "graph TD;A-->B" })), { "data-sample-mermaid": "" });
@@ -1568,6 +1713,8 @@ test("title patch loads the Codex Plus runtime bootstrap", () => {
 test("project path header plugin formats, hides, and copies paths", () => {
   const originalNavigator = globalThis.navigator;
   const originalCodexPlus = globalThis.CodexPlus;
+  const originalDocument = globalThis.document;
+  const originalGetComputedStyle = globalThis.getComputedStyle;
   const copied = [];
   const diagnosticEvents = [];
   Object.defineProperty(globalThis, "navigator", {
@@ -1585,6 +1732,7 @@ test("project path header plugin formats, hides, and copies paths", () => {
       },
     };
     const longPath = "/tmp/codex-plus-audit/src/similarly-named-project/worktrees/generated-thread";
+    const aharnessPath = "/tmp/codex-plus-audit/projects/aharness-examples";
     const jsx = (type, props, key) => ({ type, props, key });
     const jsxs = jsx;
     const Tooltip = function Tooltip(props) { return props.children; };
@@ -1598,6 +1746,92 @@ test("project path header plugin formats, hides, and copies paths", () => {
       plugin.pathFromContext({ header: { projectName: { props: { group: { projectKind: "local", projectId: "  /tmp/project-id  " } } } } }),
       "/tmp/project-id",
     );
+    globalThis.CodexPlus.ui = {
+      virtualConversations: { activeRouteId: () => "cpx-aharness-run:vendored-test-12345678" },
+      projectContext: { active: () => ({ cwd: aharnessPath, label: "aharness-examples", source: "aharness", title: "Coding smoke · abc12345" }) },
+    };
+    assert.equal(plugin.activeVirtualProjectContext().cwd, aharnessPath);
+    assert.equal(plugin.activeVirtualProjectContext().title, "Coding smoke · abc12345");
+    assert.equal(plugin.pathFromContext({ cwd: "  /tmp/stale-thread  " }), aharnessPath);
+
+    class FakeElement {
+      constructor(tagName, text = "") {
+        this.tagName = tagName.toUpperCase();
+        this.children = [];
+        this.parentElement = null;
+        this.attributes = {};
+        this._textContent = text;
+        this.style = {};
+      }
+      get textContent() {
+        return this._textContent || this.children.map((child) => child.textContent).join("");
+      }
+      set textContent(value) {
+        this._textContent = String(value || "");
+        this.children = [];
+      }
+      appendChild(child) {
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+      }
+      setAttribute(name, value) {
+        this.attributes[name] = String(value);
+      }
+      getAttribute(name) {
+        return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
+      }
+      removeAttribute(name) {
+        delete this.attributes[name];
+      }
+      hasAttribute(name) {
+        return Object.prototype.hasOwnProperty.call(this.attributes, name);
+      }
+      getBoundingClientRect() {
+        return { width: 160, height: 24, left: 0, right: 160, top: 0, bottom: 24 };
+      }
+      querySelectorAll(selector) {
+        const selectors = selector.split(",").map((part) => part.trim());
+        const matches = [];
+        const visit = (node) => {
+          for (const child of node.children) {
+            if (selectors.some((candidate) => candidate === child.tagName.toLowerCase() || candidate === child.tagName)) matches.push(child);
+            visit(child);
+          }
+        };
+        visit(this);
+        return matches;
+      }
+    }
+    const header = new FakeElement("header");
+    const titleSpan = header.appendChild(new FakeElement("span", "Reply to greeting"));
+    const activeThreadRow = new FakeElement("div", "Reply to greeting");
+    activeThreadRow.setAttribute("data-app-action-sidebar-thread-active", "true");
+    activeThreadRow.setAttribute("data-app-action-sidebar-thread-title", "Reply to greeting");
+    globalThis.document = {
+      querySelectorAll(selector) {
+        if (selector === "header") return [header];
+        if (selector === "[data-codex-plus-virtual-header-title]") {
+          return titleSpan.hasAttribute("data-codex-plus-virtual-header-title") ? [titleSpan] : [];
+        }
+        return [];
+      },
+      querySelector(selector) {
+        if (selector === '[data-app-action-sidebar-thread-active="true"]') return activeThreadRow;
+        return null;
+      },
+    };
+    globalThis.getComputedStyle = () => ({ display: "block", visibility: "visible" });
+    assert.equal(plugin.ensureDomVirtualHeaderTitle(), true);
+    assert.equal(titleSpan.textContent, "Coding smoke · abc12345");
+    assert.equal(titleSpan.getAttribute("data-codex-plus-original-header-title"), "Reply to greeting");
+
+    globalThis.CodexPlus.ui = undefined;
+    assert.equal(plugin.ensureDomVirtualHeaderTitle(), false);
+    assert.equal(titleSpan.textContent, "Reply to greeting");
+    assert.equal(titleSpan.hasAttribute("data-codex-plus-original-header-title"), false);
+
+    globalThis.CodexPlus.ui = undefined;
     assert.equal(plugin.pathFromContext({ cwd: "   " }), "");
     assert.equal(plugin.pathFromContext({}), "");
 
@@ -1638,6 +1872,8 @@ test("project path header plugin formats, hides, and copies paths", () => {
       value: originalNavigator,
     });
     globalThis.CodexPlus = originalCodexPlus;
+    globalThis.document = originalDocument;
+    globalThis.getComputedStyle = originalGetComputedStyle;
   }
 });
 
@@ -2633,6 +2869,130 @@ test("app main patch applies project colors to project headers and grouped row o
   assert.match(blurPlugin, /data-app-action-sidebar-project-row/);
   assert.match(blurPlugin, /data-app-action-sidebar-thread-row/);
   assert.doesNotMatch(blurPlugin, /data-app-action-sidebar-scroll/);
+});
+
+test("thread side panel file and terminal roots prefer active virtual project context", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.81905-4598");
+  const reviewFile = findTransformPath(patchSet, "review");
+  const fakeReviewBundle = [
+    "function r6t(e){let t=(0,i6t.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,Hq.jsx)(dZt,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+    "function QW(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??sk(ck(e,_)??f),y=e.get(v.tabById$,_),b=$Rt(e),x=m??e.get(_m).formatMessage(VYt.openFileTabTitle),S=fm(t??void 0),C=t==null?x:CH({cwd:b,path:t});v.openTab(e,RYt,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{QW(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{QW(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}},onClose:w})})}",
+    "function Dk(e){switch(e.value.routeKind){case`home`:{let t=e.get(nO),n=e.get(rO);return{conversationId:e.value.clientThreadId,conversationTitle:null,cwd:t,hostId:n}}case`local-thread`:return{conversationId:e.value.clientThreadId,conversationTitle:e.get(qC,e.value.conversationId),cwd:e.get(nO),hostId:e.get(rO)};case`new-thread-panel`:case`chatgpt-thread`:case`client-local-thread`:case`remote-thread`:case`other`:return null}}",
+    "function vHt(){let e=(0,CHt.c)(33),t=jo(be),n=$e(GC.activeTab$),r=$e(CS)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, reviewFile, fakeReviewBundle);
+
+  assert.match(transformed, /CPXPC=globalThis\.CodexPlus\?\.ui\?\.projectContext\?\.active\?\.\(\)/);
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>QW\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>\(\$W\(\),QW\(t,e,n\)\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?\$Rt\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+  assert.match(transformed, /function Dk\(e\)\{let CPXPC=globalThis\.CodexPlus\?\.ui\?\.projectContext\?\.active\?\.\(\)/);
+  assert.match(transformed, /conversationId:globalThis\.CodexPlus\?\.ui\?\.virtualConversations\?\.activeRouteId\?\.\(\)\?\?`codex-plus-virtual`/);
+  assert.match(transformed, /cwd:CPXPC\.cwd/);
+});
+
+test("thread side panel native file opener is patched for 26.623.101652 file tab names", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.101652-4674");
+  const tabsFile = collectFileTransforms(patchSet).find(([candidate]) => candidate.endsWith("/app-initial~app-main~onboarding-page-CksqH37h.js"))?.[0];
+  assert.ok(tabsFile);
+  const fakeBundle = [
+    "function rF(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??Fi(cf(e,_)??f),y=e.get(v.tabById$,_),b=XGe(e),x=m??e.get(Bw).formatMessage(fZe.openFileTabTitle),S=Uo(t??void 0),C=t==null?x:qM({cwd:b,path:t});v.openTab(e,lZe,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{rF(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{rF(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}},onClose:w})})}",
+    "function IXe(e){let t=Ms(os),n=Y(no),r=Y(ure),i=Y(Ee)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, tabsFile, fakeBundle);
+
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>rF\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>rF\(t,e,n\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?XGe\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+});
+
+test("thread side panel native file opener is patched for 26.623.70822 file tab names", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.70822-4559");
+  const coreFile = collectFileTransforms(patchSet).find(([candidate]) => candidate.endsWith("/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~kg2pu5rs-N3llppXI.js"))?.[0];
+  assert.ok(coreFile);
+  const fakeBundle = [
+    "function Y9(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??lK(uK(e,_)??f),y=e.get(v.tabById$,_),b=T6e(e),x=m??e.get(yK).formatMessage(Kit.openFileTabTitle),S=Wt(t??void 0),C=t==null?x:q6({cwd:b,path:t});v.openTab(e,Uit,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{Y9(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)},initialLine:l,initialEndLine:a},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{Y9(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)},initialLine:l,initialEndLine:a},onClose:w})})}",
+    "function Q5e(){let e=(0,r7e.c)(33),t=O(hc),n=Ke(HO.activeTab$),r=Ke(HT)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, coreFile, fakeBundle);
+
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>Y9\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>Y9\(t,e,n\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?T6e\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+});
+
+test("thread side panel native file opener is patched for 26.623.61825 file tab names", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.61825-4548");
+  const coreFile = collectFileTransforms(patchSet).find(([candidate]) => candidate.endsWith("/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~hgx54pg3-D4ItPAoC.js"))?.[0];
+  assert.ok(coreFile);
+  const fakeBundle = [
+    "function YO(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??Tc(dc(e,_)??f),y=e.get(v.tabById$,_),b=$h(e),x=m??e.get(bo).formatMessage(ZO.openFileTabTitle),S=xt(t??void 0),C=t==null?x:Lh({cwd:b,path:t});v.openTab(e,qO,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{YO(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)},initialLine:l,initialEndLine:a},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{YO(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)},initialLine:l,initialEndLine:a},onClose:w})})}",
+    "function tb(){let e=(0,ob.c)(33),t=xe(Z),n=Y(tc.activeTab$),r=Y(sr)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, coreFile, fakeBundle);
+
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>YO\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>YO\(t,e,n\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?\$h\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+});
+
+test("thread side panel native file opener is patched for 26.623.42026 file tab names", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.42026-4514");
+  const tabsFile = collectFileTransforms(patchSet).find(([candidate]) => candidate.endsWith("/app-initial~app-main~onboarding-page-BUwCKIcU.js"))?.[0];
+  assert.ok(tabsFile);
+  const fakeBundle = [
+    "function EL(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??FT(IT(e,_)??f),y=e.get(v.tabById$,_),b=OHe(e),x=m??e.get(YT).formatMessage(nZe.openFileTabTitle),S=Im(t??void 0),C=t==null?x:EN({cwd:b,path:t});v.openTab(e,$Xe,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{EL(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)},initialLine:l,initialEndLine:a},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{EL(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)},initialLine:l,initialEndLine:a},onClose:w})})}",
+    "function QWe(){let e=(0,rGe.c)(33),t=B(Z),n=X(Cw.activeTab$),r=X(ZS)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, tabsFile, fakeBundle);
+
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>EL\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>EL\(t,e,n\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?OHe\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+});
+
+test("thread side panel native file opener is patched for 26.623.41415 file tab names", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.41415-4505");
+  const tabsFile = collectFileTransforms(patchSet).find(([candidate]) => candidate.endsWith("/app-initial~app-main~onboarding-page~profile-BoHgnEVB.js"))?.[0];
+  assert.ok(tabsFile);
+  const fakeBundle = [
+    "function gJ(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=p??(o==null?`file:${t??``}`:`file:${o}:${t??``}`),v=i??hj(Fct(e,_)??f),y=e.get(v.tabById$,_),b=Gln(e),x=m??e.get(Tj).formatMessage(Ryn.openFileTabTitle),S=mN(t??void 0),C=t==null?x:cK({cwd:b,path:t});v.openTab(e,Fyn,{props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,n,r)=>{gJ(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)},initialLine:l,initialEndLine:a},onMove:(e,n)=>({props:{cwd:b,path:t,hostId:g,tabId:_,workspaceRoot:h??null,onSelectFile:(e,r,i)=>{gJ(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)},initialLine:l,initialEndLine:a},onClose:w})})}",
+    "function Ufn(){let e=(0,Jfn.c)(33),t=Kn(Xd),n=Nn(HE.activeTab$),r=Nn(dw)}",
+  ].join("");
+
+  const transformed = transformFile(patchSet, tabsFile, fakeBundle);
+
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\?\.adapters\?\.threadSidePanel/);
+  assert.match(transformed, /CPXSP\.openFile=\(t,n=\{\}\)=>gJ\(e,t,n\)/);
+  assert.match(transformed, /CPXSP&&\(CPXSP\.openFile=\(e,n=\{\}\)=>gJ\(t,e,n\)\)/);
+  assert.match(transformed, /b=CPXPC\?\.cwd\?\?Gln\(e\)/);
+  assert.match(transformed, /workspaceRoot:CPXPC\?\.cwd\?\?h\?\?null/);
+});
+
+test("review mux uses active virtual project context before native thread review", () => {
+  const plugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/nestedRepositories.js"), "utf8");
+  assert.match(plugin, /function activeVirtualProjectContext\(\)/);
+  assert.match(plugin, /const context = CodexPlus\?\.ui\?\.projectContext\?\.active\?\.\(\)/);
+  assert.match(plugin, /const cwd = virtualContext\?\.cwd \?\? \(hasPathValue\(atomCwd, pathValue\) \? atomCwd : liveFallbackCwd\)/);
+  assert.match(plugin, /const conversationId = virtualContext\?\.route \?\?/);
+  assert.match(plugin, /!virtualContext && \(main == null \|\| \(all\.length <= 1/);
+  assert.match(plugin, /\(virtualContext \? all : repositories\)\.map/);
 });
 
 test("current project headers receive project color row attributes on the clickable row", () => {

@@ -112,11 +112,20 @@
   function activeVirtualProjectContext() {
     const route = globalObject?.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() ||
       decodeURIComponent(String(globalObject.location?.hash || "").replace(/^#/, ""));
-    const context = globalObject?.CodexPlus?.ui?.projectContext?.active?.();
+    const routeId = normalize(route);
+    if (!routeId) return null;
+    const routeContext = globalObject?.CodexPlus?.ui?.routeContext?.active?.();
+    const context = routeContext && (!routeContext.routeId || routeContext.routeId === routeId) ? {
+      cwd: routeContext.activeCwd,
+      label: routeContext.sourceProject?.label || "",
+      source: routeContext.source || "",
+      title: routeContext.title || "",
+    } : globalObject?.CodexPlus?.ui?.projectContext?.active?.();
     if (!context?.cwd) return null;
     return {
       cwd: String(context.cwd).trim(),
       label: normalize(context.label || ""),
+      title: normalize(context.title || ""),
     };
   }
 
@@ -147,6 +156,38 @@
     return headerTitleElementsForText(title)[0] || null;
   }
 
+  function restoreVirtualHeaderTitles() {
+    const document = globalObject.document;
+    if (!document?.querySelectorAll) return;
+    for (const element of Array.from(document.querySelectorAll("[data-codex-plus-virtual-header-title]") || [])) {
+      const original = element.getAttribute("data-codex-plus-original-header-title");
+      if (original != null) element.textContent = original;
+      element.removeAttribute("data-codex-plus-original-header-title");
+      element.removeAttribute("data-codex-plus-virtual-header-title");
+    }
+  }
+
+  function ensureDomVirtualHeaderTitle() {
+    const virtualContext = activeVirtualProjectContext();
+    const title = normalize(virtualContext?.title || "");
+    const document = globalObject.document;
+    if (!document?.querySelectorAll) return false;
+    const existing = Array.from(document.querySelectorAll("[data-codex-plus-virtual-header-title]") || [])[0];
+    if (!title) {
+      restoreVirtualHeaderTitles();
+      return false;
+    }
+    const titleElement = existing || findHeaderTitleElement();
+    if (!titleElement) return false;
+    if (!titleElement.hasAttribute("data-codex-plus-original-header-title")) {
+      titleElement.setAttribute("data-codex-plus-original-header-title", normalize(titleElement.textContent));
+    }
+    titleElement.setAttribute("data-codex-plus-virtual-header-title", "");
+    if (normalize(titleElement.textContent) !== title) titleElement.textContent = title;
+    diagnose("domFallback.render.title", { title });
+    return true;
+  }
+
   function placeHeaderChip(button, chip) {
     const parent = button?.parentElement || findHeaderTitleElement()?.parentElement;
     if (!parent || !chip) return false;
@@ -168,6 +209,7 @@
   function ensureDomProjectPathChip() {
     const document = globalObject.document;
     if (!document?.body) return false;
+    ensureDomVirtualHeaderTitle();
     const path = headerProjectPathFromDom();
     const button = findHeaderProjectButton();
     const parent = button?.parentElement;
@@ -238,6 +280,7 @@
           "data-codex-plus-projectless",
           "data-codex-plus-active-project-path",
           "data-codex-plus-project-label",
+          "data-codex-plus-route-title",
         ],
       });
       return observer;
@@ -311,6 +354,7 @@
     formatPathLabel,
     headerProjectPathFromDom,
     ensureDomProjectPathChip,
+    ensureDomVirtualHeaderTitle,
     middleTruncate,
     pathFromContext,
     activeVirtualProjectContext,

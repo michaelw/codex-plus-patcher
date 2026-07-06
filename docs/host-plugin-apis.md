@@ -22,14 +22,17 @@ CodexPlus.ui.routeContext.set({
   threadId: "",
   branchName: "main",
   source: "plugin-id",
+  title: "Plugin route title",
 });
 ```
 
 - `active()` returns a cloned snapshot or `null`.
 - `clear(routeId)` clears only the matching route when a route id is supplied.
 - `subscribe(listener)` observes context changes.
+- `title` is the route-local display title that host header bridges may show
+  while the virtual route is active.
 - `CodexPlus.ui.projectContext.active()` is the compatibility view for host
-  surfaces that only need `cwd`, `label`, and route metadata.
+  surfaces that only need `cwd`, `label`, `title`, and route metadata.
 
 Host bridges for headers, file tabs, terminal cwd, Review, and side panels must
 prefer this context when it exists.
