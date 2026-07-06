@@ -1002,7 +1002,7 @@ test("project selector shortcut command focuses and opens the mounted selector t
         return mountedTriggers;
       },
       addEventListener(type, listener, options) {
-        keydownListeners.push({ type, listener, options });
+        if (type === "keydown") keydownListeners.push({ type, listener, options });
       },
       removeEventListener(type, listener, options) {
         const index = keydownListeners.findIndex(
