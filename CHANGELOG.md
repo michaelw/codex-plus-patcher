@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.14.0...v0.15.0) (2026-07-06)
+
+
+### Features
+
+* add generic host plugin APIs ([9226f0c](https://github.com/michaelw/codex-plus-patcher/commit/9226f0cc320eaad40d8dd61339e35f8e7b73c9e4))
+* add manual audit launch mode ([769f33b](https://github.com/michaelw/codex-plus-patcher/commit/769f33b4492393600ee8c63f279a152a18ee6e19))
+
 ## [0.14.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.13.3...v0.14.0) (2026-07-03)
 
 
