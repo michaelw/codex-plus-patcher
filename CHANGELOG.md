@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.15.0...v0.15.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* resolve fzf runtime asset from installed package ([#98](https://github.com/michaelw/codex-plus-patcher/issues/98)) ([a4ff1d9](https://github.com/michaelw/codex-plus-patcher/commit/a4ff1d918e97fce86d1c88d3c9916583e6506820))
+
 ## [0.15.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.14.0...v0.15.0) (2026-07-06)
 
 
