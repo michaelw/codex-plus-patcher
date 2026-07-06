@@ -49,6 +49,8 @@ function parseArgs(argv) {
     keepOpen: false,
     manual: false,
     includeNativeOpenProbes: false,
+    auditPlugins: [],
+    disabledRuntimePlugins: [],
     noProgress: false,
     quiet: false,
     devInstanceId: DEFAULT_DEV_INSTANCE_ID,
@@ -99,6 +101,10 @@ function parseArgs(argv) {
     }
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
+    else if (arg === "--plugin") args.auditPlugins.push(next());
+    else if (arg === "--plugins") args.auditPlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
+    else if (arg === "--disable-plugin") args.disabledRuntimePlugins.push(next());
+    else if (arg === "--disable-plugins") args.disabledRuntimePlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--debug") args.debug = true;
@@ -118,7 +124,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
-  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--manual] [--keep-open] [--include-native-open-probes] [--use-live-source-home]
+  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--manual] [--keep-open] [--plugin <id>] [--disable-plugin <id>] [--include-native-open-probes] [--use-live-source-home]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -151,6 +157,10 @@ Options:
   --use-live-source-home   Use --source-home for audit-plugins instead of generated fixture state
   --include-native-open-probes
                            Also open DevTools and Mermaid viewer windows during audit probes
+  --plugin <id>            Probe only one runtime plugin during audit-plugins. Can be repeated
+  --plugins <id,id>        Probe only a comma-separated set of runtime plugins during audit-plugins
+  --disable-plugin <id>    Do not inject one runtime plugin during audit-plugins. Can be repeated
+  --disable-plugins <ids>  Do not inject a comma-separated set of runtime plugins during audit-plugins
   --no-progress            Suppress audit progress and print only the final summary
   --quiet                  Print minimal audit output
   --debug                  Print stack traces for CLI errors

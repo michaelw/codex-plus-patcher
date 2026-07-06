@@ -38,6 +38,7 @@ function buildCodexPlusPatchSet(config) {
   const threadContextFile = files.threadContext;
   const threadContextImportFile = threadContextFile?.split("/").pop();
   const threadSidePanelTabsFile = files.threadSidePanelTabs;
+  const threadSidePanelCoreFile = files.threadSidePanelCore;
   const userMessageAttachmentsFile = files.userMessageAttachments;
   const composerFile = files.composer;
   const localActiveWorkspaceRootDropdownFile = files.localActiveWorkspaceRootDropdown;
@@ -329,6 +330,8 @@ function patchWorker(text) {
 }
 
 function patchThreadSidePanelTabs(text) {
+  const originalText = text;
+  text = patchThreadSidePanelNativeProjectContext(text);
   if (text.includes("function r6t(e){let t=(0,i6t.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
     let patched = replaceOnce(
       text,
@@ -428,6 +431,8 @@ function patchThreadSidePanelTabs(text) {
       "review body mux anchor",
     );
   }
+  if (!text.includes("import{r as vi,t as yi}from\"./dropdown-CTBRoADH.js\";") && text !== originalText) return text;
+
   let patched = replaceOnce(
     text,
     "import{r as vi,t as yi}from\"./dropdown-CTBRoADH.js\";",
@@ -446,6 +451,246 @@ function patchThreadSidePanelTabs(text) {
     "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,$.jsx)(CPXRM,{mainReviewContent:(0,$.jsx)(Tf,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];let c;",
     "review body mux anchor",
   );
+}
+
+function patchThreadSidePanelNativeProjectContext(text) {
+  let patched = text;
+
+  if (patched.includes("function QW(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function QW(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function QW(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>QW(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=$Rt(e),x=m??e.get(_m).formatMessage(VYt.openFileTabTitle)",
+      "b=CPXPC?.cwd??$Rt(e),x=m??e.get(_m).formatMessage(VYt.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{QW(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{QW(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{QW(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{QW(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function Dk(e){switch(e.value.routeKind){case`home`:{let t=e.get(nO),n=e.get(rO);return{conversationId:e.value.clientThreadId,conversationTitle:null,cwd:t,hostId:n}}")) {
+    patched = replaceOnce(
+      patched,
+      "function Dk(e){switch(e.value.routeKind){case`home`:{let t=e.get(nO),n=e.get(rO);return{conversationId:e.value.clientThreadId,conversationTitle:null,cwd:t,hostId:n}}",
+      "function Dk(e){let CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.();if(CPXPC?.cwd)return{conversationId:globalThis.CodexPlus?.ui?.virtualConversations?.activeRouteId?.()??`codex-plus-virtual`,conversationTitle:CPXPC.label??null,cwd:CPXPC.cwd,hostId:e.get(rO)};switch(e.value.routeKind){case`home`:{let t=e.get(nO),n=e.get(rO);return{conversationId:e.value.clientThreadId,conversationTitle:null,cwd:t,hostId:n}}",
+      "terminal project context route anchor",
+    );
+  }
+
+  if (patched.includes("function vHt(){let e=(0,CHt.c)(33),t=jo(be),n=$e(GC.activeTab$),")) {
+    patched = replaceOnce(
+      patched,
+      "function vHt(){let e=(0,CHt.c)(33),t=jo(be),n=$e(GC.activeTab$),",
+      "function vHt(){let e=(0,CHt.c)(33),t=jo(be),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>($W(),QW(t,e,n)));let n=$e(GC.activeTab$),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function rF(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function rF(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function rF(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>rF(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=XGe(e),x=m??e.get(Bw).formatMessage(fZe.openFileTabTitle)",
+      "b=CPXPC?.cwd??XGe(e),x=m??e.get(Bw).formatMessage(fZe.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{rF(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{rF(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{rF(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{rF(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function Y9(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function Y9(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function Y9(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>Y9(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=T6e(e),x=m??e.get(yK).formatMessage(Kit.openFileTabTitle)",
+      "b=CPXPC?.cwd??T6e(e),x=m??e.get(yK).formatMessage(Kit.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{Y9(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{Y9(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{Y9(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{Y9(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function YO(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function YO(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function YO(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>YO(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=$h(e),x=m??e.get(bo).formatMessage(ZO.openFileTabTitle)",
+      "b=CPXPC?.cwd??$h(e),x=m??e.get(bo).formatMessage(ZO.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{YO(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{YO(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{YO(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{YO(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function EL(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function EL(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function EL(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>EL(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=OHe(e),x=m??e.get(YT).formatMessage(nZe.openFileTabTitle)",
+      "b=CPXPC?.cwd??OHe(e),x=m??e.get(YT).formatMessage(nZe.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{EL(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{EL(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{EL(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{EL(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function gJ(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,")) {
+    patched = replaceOnce(
+      patched,
+      "function gJ(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,",
+      "function gJ(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,CPXPC=globalThis.CodexPlus?.ui?.projectContext?.active?.(),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,g=(CPXSP&&(CPXSP.openFile=(t,n={})=>gJ(e,t,n)),o??`local`),",
+      "file side panel project context binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "b=Gln(e),x=m??e.get(Tj).formatMessage(Ryn.openFileTabTitle)",
+      "b=CPXPC?.cwd??Gln(e),x=m??e.get(Tj).formatMessage(Ryn.openFileTabTitle)",
+      "file side panel cwd anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,n,r)=>{gJ(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:h}),t??v.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,n,r)=>{gJ(e,n,{controller:v,hostId:g,isPreview:t==null?!1:r?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??v.closeTab(e,_)}",
+      "file side panel root anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "workspaceRoot:h??null,onSelectFile:(e,r,i)=>{gJ(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:h}),t??n.closeTab(e,_)}",
+      "workspaceRoot:CPXPC?.cwd??h??null,onSelectFile:(e,r,i)=>{gJ(e,r,{controller:n,hostId:g,isPreview:t==null?!1:i?.isPreview,workspaceRoot:CPXPC?.cwd??h}),t??n.closeTab(e,_)}",
+      "file side panel moved root anchor",
+    );
+  }
+
+  if (patched.includes("function LXe(e){let t=Ms(os),n=Y(no),")) {
+    patched = replaceOnce(
+      patched,
+      "function LXe(e){let t=Ms(os),n=Y(no),",
+      "function LXe(e){let t=Ms(os),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>rF(t,e,n));let n=Y(no),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function IXe(e){let t=Ms(os),n=Y(no),")) {
+    patched = replaceOnce(
+      patched,
+      "function IXe(e){let t=Ms(os),n=Y(no),",
+      "function IXe(e){let t=Ms(os),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>rF(t,e,n));let n=Y(no),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function Q5e(){let e=(0,r7e.c)(33),t=O(hc),n=Ke(HO.activeTab$),")) {
+    patched = replaceOnce(
+      patched,
+      "function Q5e(){let e=(0,r7e.c)(33),t=O(hc),n=Ke(HO.activeTab$),",
+      "function Q5e(){let e=(0,r7e.c)(33),t=O(hc),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>Y9(t,e,n));let n=Ke(HO.activeTab$),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function tb(){let e=(0,ob.c)(33),t=xe(Z),n=Y(tc.activeTab$),")) {
+    patched = replaceOnce(
+      patched,
+      "function tb(){let e=(0,ob.c)(33),t=xe(Z),n=Y(tc.activeTab$),",
+      "function tb(){let e=(0,ob.c)(33),t=xe(Z),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>YO(t,e,n));let n=Y(tc.activeTab$),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function QWe(){let e=(0,rGe.c)(33),t=B(Z),n=X(Cw.activeTab$),")) {
+    patched = replaceOnce(
+      patched,
+      "function QWe(){let e=(0,rGe.c)(33),t=B(Z),n=X(Cw.activeTab$),",
+      "function QWe(){let e=(0,rGe.c)(33),t=B(Z),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>EL(t,e,n));let n=X(Cw.activeTab$),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  if (patched.includes("function Ufn(){let e=(0,Jfn.c)(33),t=Kn(Xd),n=Nn(HE.activeTab$),")) {
+    patched = replaceOnce(
+      patched,
+      "function Ufn(){let e=(0,Jfn.c)(33),t=Kn(Xd),n=Nn(HE.activeTab$),",
+      "function Ufn(){let e=(0,Jfn.c)(33),t=Kn(Xd),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>gJ(t,e,n));let n=Nn(HE.activeTab$),",
+      "thread side panel native file opener shell anchor",
+    );
+  }
+
+  return patched;
 }
 function patchLocalThreadCatalogBootstrap(text) {
   const match = text.match(
@@ -2368,6 +2613,12 @@ return makePatchSet({
     codexVersion: config.codexVersion,
     bundleVersion: config.bundleVersion,
     asarSha256: config.asarSha256,
+    runtimeConfig: {
+      ...(config.runtimeConfig || {}),
+      bundleVersion: config.bundleVersion,
+      codexVersion: config.codexVersion,
+      patchSetId: config.id,
+    },
     assetFiles: codexPlusRuntimeAssets({
       ...(config.runtimeConfig || {}),
       bundleVersion: config.bundleVersion,
@@ -2396,6 +2647,10 @@ return makePatchSet({
       id: "multi-repository-review",
       fileTransforms: [[threadSidePanelTabsFile, patchThreadSidePanelTabs]],
     },
+    ...(threadSidePanelCoreFile && threadSidePanelCoreFile !== threadSidePanelTabsFile ? [{
+      id: "thread-side-panel-native-context",
+      fileTransforms: [[threadSidePanelCoreFile, patchThreadSidePanelNativeProjectContext]],
+    }] : []),
     {
       id: "diagnostic-error-boundary",
       fileTransforms: [

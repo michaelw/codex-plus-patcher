@@ -9,6 +9,8 @@ Plugins are packaged as built-in runtime assets today.
 
 For the layer rules that keep plugins, public APIs, host adapters, and patch
 hooks separate, see [Plugin Architecture](plugin-architecture.md).
+For route context, virtual conversations, sidebar sections, composer control,
+and file-tab APIs, see [Host Plugin APIs](host-plugin-apis.md).
 
 ## Boundary
 

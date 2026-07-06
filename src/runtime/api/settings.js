@@ -51,7 +51,12 @@
   }
 
   function AppearanceRowHost({ row, deps, variant }) {
-    return row.render?.({ ...deps, variant, row }) ?? null;
+    try {
+      return row.render?.({ ...deps, variant, row }) ?? null;
+    } catch (error) {
+      console.error(`[CodexPlus] settings row ${row?.id || "unknown"} failed`, error);
+      return null;
+    }
   }
 
   const appearance = {
