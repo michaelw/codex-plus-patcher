@@ -1,5 +1,7 @@
 (function (globalObject) {
   function pathFromContext(context) {
+    const virtualContext = activeVirtualProjectContext();
+    if (virtualContext?.cwd) return virtualContext.cwd;
     const headerProject = context?.header?.projectName?.props?.group;
     const value =
       context?.cwd ??
@@ -62,6 +64,8 @@
   }
 
   function activeProjectNameFromHeader() {
+    const virtualContext = activeVirtualProjectContext();
+    if (virtualContext?.label) return normalize(virtualContext.label);
     const buttons = headerProjectButtons();
     const button = buttons.find(visible) || buttons[0];
     const label = button?.getAttribute?.("aria-label") || "";
@@ -72,6 +76,8 @@
   function headerProjectPathFromDom() {
     const document = globalObject.document;
     if (!document) return "";
+    const virtualContext = activeVirtualProjectContext();
+    if (virtualContext?.cwd) return virtualContext.cwd;
     const projectlessPath = activeProjectlessThreadPathFromDom();
     if (projectlessPath) return projectlessPath;
     const projectName = activeProjectNameFromHeader();
@@ -103,14 +109,19 @@
     return normalize(active?.getAttribute?.("data-app-action-sidebar-thread-title") || active?.textContent);
   }
 
-  function findHeaderProjectButton() {
-    const buttons = headerProjectButtons();
-    return buttons.find(visible) || buttons[0] || null;
+  function activeVirtualProjectContext() {
+    const route = globalObject?.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() ||
+      decodeURIComponent(String(globalObject.location?.hash || "").replace(/^#/, ""));
+    const context = globalObject?.CodexPlus?.ui?.projectContext?.active?.();
+    if (!context?.cwd) return null;
+    return {
+      cwd: String(context.cwd).trim(),
+      label: normalize(context.label || ""),
+    };
   }
 
-  function findHeaderTitleElement() {
-    const title = activeThreadTitleFromDom();
-    if (!title) return null;
+  function headerTitleElementsForText(title) {
+    if (!title) return [];
     const headers = Array.from(globalObject.document?.querySelectorAll?.("header") || []);
     const candidates = [];
     for (const header of headers) {
@@ -123,7 +134,17 @@
       const leftArea = left.getBoundingClientRect().width * left.getBoundingClientRect().height;
       const rightArea = right.getBoundingClientRect().width * right.getBoundingClientRect().height;
       return leftArea - rightArea;
-    })[0] || null;
+    });
+  }
+
+  function findHeaderProjectButton() {
+    const buttons = headerProjectButtons();
+    return buttons.find(visible) || buttons[0] || null;
+  }
+
+  function findHeaderTitleElement() {
+    const title = activeThreadTitleFromDom();
+    return headerTitleElementsForText(title)[0] || null;
   }
 
   function placeHeaderChip(button, chip) {
@@ -215,6 +236,8 @@
           "data-app-action-sidebar-thread-active",
           "data-codex-plus-project-path",
           "data-codex-plus-projectless",
+          "data-codex-plus-active-project-path",
+          "data-codex-plus-project-label",
         ],
       });
       return observer;
@@ -290,6 +313,7 @@
     ensureDomProjectPathChip,
     middleTruncate,
     pathFromContext,
+    activeVirtualProjectContext,
   };
 
   if (typeof module !== "undefined" && module.exports) {

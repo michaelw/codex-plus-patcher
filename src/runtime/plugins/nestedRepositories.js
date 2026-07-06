@@ -14,6 +14,8 @@
   }
 
   function fallbackCwdFromProjectHeader() {
+    const virtualContext = activeVirtualProjectContext();
+    if (virtualContext?.cwd) return virtualContext.cwd;
     const projectButton = document.querySelector("button[aria-label^='Project:']");
     const label = projectButton?.getAttribute("aria-label")?.replace(/^Project:\s*/, "").trim();
     if (!label) return null;
@@ -41,6 +43,14 @@
   function hasPathValue(value, pathValue) {
     if (value == null) return false;
     return (typeof pathValue === "function" ? pathValue(value) : value) != null;
+  }
+
+  function activeVirtualProjectContext() {
+    const route =
+      CodexPlus?.ui?.virtualConversations?.activeRouteId?.() ||
+      decodeURIComponent(String(window.location?.hash || "").replace(/^#/, ""));
+    const context = CodexPlus?.ui?.projectContext?.active?.();
+    return context?.cwd ? { cwd: String(context.cwd), label: context.label || "", route: String(route) } : null;
   }
 
   function workerRequest(workerId, method, params, signal) {
@@ -512,13 +522,14 @@
     const { jsx, jsxs, React, useStore, useAtom, routeAtom, cwdAtom, hostIdAtom, hostConfigAtom, conversationIdAtom, gitRequest, pathValue, DefaultReview } = deps;
     const routeStore = useStore(routeAtom);
     const atomCwd = atomValue(useAtom(cwdAtom));
+    const virtualContext = activeVirtualProjectContext();
     const [fallbackCwd, setFallbackCwd] = React.useState(() => fallbackCwdFromProjectHeader());
     const liveFallbackCwd = fallbackCwd ?? fallbackCwdFromProjectHeader();
-    const cwd = hasPathValue(atomCwd, pathValue) ? atomCwd : liveFallbackCwd;
+    const cwd = virtualContext?.cwd ?? (hasPathValue(atomCwd, pathValue) ? atomCwd : liveFallbackCwd);
     const hostId = atomValue(useAtom(hostIdAtom));
     const hostConfig = atomValue(useAtom(hostConfigAtom));
     const conversationAtomValue = conversationIdAtom ? atomValue(useAtom(conversationIdAtom)) : null;
-    const conversationId = routeStore.value.routeKind === "local-thread" ? routeStore.value.conversationId : null;
+    const conversationId = virtualContext?.route ?? (routeStore.value.routeKind === "local-thread" ? routeStore.value.conversationId : null);
     const [targets, setTargets] = React.useState(null);
     const [collapsed, setCollapsedState] = React.useState(() => new Map());
     const [baseBranches, setBaseBranches] = React.useState(() => new Map());
@@ -583,7 +594,7 @@
     const main = targets?.main ?? (cwdPath == null ? null : { id: `main:${cwdPath}`, kind: "main", path: ".", label: "Main", cwd: cwdPath });
     const repositories = targets?.repositories ?? [];
     const all = [main, ...repositories].filter(Boolean);
-    if (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null)) return safeUpstreamReview;
+    if (!virtualContext && (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null))) return safeUpstreamReview;
 
     const session = sessionKey(hostId, conversationId ?? conversationAtomValue, cwdPath);
     const keyFor = (repo) => `${session}:${repoKey(repo)}`;
@@ -608,8 +619,12 @@
         jsx("div", { className: "px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-token-description-foreground", children: "Codex Plus repositories" }),
         Warnings({ warnings: targets?.warnings ?? [] }, deps),
         Debug({ debug: targets?.debug }, deps),
-        main ? MainGroup({ repo: main, collapsed: isCollapsed(main), onToggle: () => setCollapsed(main, !isCollapsed(main)), children: safeUpstreamReview }, deps) : safeUpstreamReview,
-        repositories.map((repo) =>
+        virtualContext
+          ? null
+          : main
+            ? MainGroup({ repo: main, collapsed: isCollapsed(main), onToggle: () => setCollapsed(main, !isCollapsed(main)), children: safeUpstreamReview }, deps)
+            : safeUpstreamReview,
+        (virtualContext ? all : repositories).map((repo) =>
           jsx(
             RepoPatchGroup,
             {

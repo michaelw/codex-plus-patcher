@@ -10,6 +10,7 @@ module.exports = buildCodexPlusPatchSet({
     electronCommandSource: ".vite/build/src-CoIhwwHr.js",
     appMain: "webview/assets/app-initial~app-main~remote-conversation-page~projects-index-page-B0ZxgNPu.js",
     appShell: "webview/assets/app-initial~app-main~automations-page-Da2pvR4p.js",
+    appProtocol: ".vite/build/workspace-root-drop-handler-4fzIumU3.js",
     errorBoundary: "webview/assets/app-initial~app-main~worktree-init-v2-page~appgen-settings-page~page~appgen-page~remote-con~di269h6j-CR8hKLtm.js",
     generalSettings: "webview/assets/general-settings-BMV5mko2.js",
     header: "webview/assets/header-Pxps5Pkw.js",

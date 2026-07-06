@@ -1,4 +1,4 @@
-function makePatchSet({ id, codexVersion, bundleVersion, asarSha256, assetFiles, patches }) {
+function makePatchSet({ id, codexVersion, bundleVersion, asarSha256, assetFiles, patches, runtimeConfig }) {
   return {
     id,
     codexVersion,
@@ -6,6 +6,7 @@ function makePatchSet({ id, codexVersion, bundleVersion, asarSha256, assetFiles,
     asarSha256,
     assetFiles,
     patches,
+    runtimeConfig,
   };
 }
 

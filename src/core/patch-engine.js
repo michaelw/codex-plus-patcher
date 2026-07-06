@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const { patchAsar, sha256File } = require("./asar");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
+const { codexPlusRuntimeAssets } = require("../runtime/assets");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
 const PATCHER_REPO_URL = "https://github.com/michaelw/codex-plus-patcher";
@@ -96,6 +97,29 @@ function collectAssetFiles(patchSet) {
   ];
 }
 
+function mergeRuntimeConfig(patchSet, runtimeConfig = {}) {
+  if (Object.keys(runtimeConfig).length === 0) return patchSet;
+  const mergedRuntimeConfig = {
+    ...(patchSet.runtimeConfig || {}),
+    ...runtimeConfig,
+  };
+  const codexPlusAssetPaths = new Set(codexPlusRuntimeAssets().map(([filePath]) => filePath));
+  const nextAssets = codexPlusRuntimeAssets(mergedRuntimeConfig);
+  const patchQueue = collectPatchQueue(patchSet).map((patch) => ({
+    ...patch,
+    assetFiles: (patch.assetFiles || []).filter(([filePath]) => !codexPlusAssetPaths.has(filePath)),
+  }));
+  return {
+    ...patchSet,
+    runtimeConfig: mergedRuntimeConfig,
+    assetFiles: [
+      ...(patchSet.assetFiles || []).filter(([filePath]) => !codexPlusAssetPaths.has(filePath)),
+      ...nextAssets,
+    ],
+    patches: Array.isArray(patchSet.patches) ? patchQueue : undefined,
+  };
+}
+
 function collectInfoPlistStrings(patchSet) {
   return Object.assign(
     {},
@@ -138,15 +162,17 @@ async function applyPatchSet({
   progressOffset = 0,
   progressTotal = 6,
   operations = {},
+  runtimeConfig = {},
 }) {
   const fsImpl = operations.fs || fs;
   const runCommand = operations.run || run;
   const patchAsarFile = operations.patchAsar || patchAsar;
   const replacePlistStringValue = operations.replacePlistString || replacePlistString;
   const setPlistBuddyStringValue = operations.setPlistBuddyValue || setPlistBuddyValue;
-  const patchQueue = collectPatchQueue(patchSet);
-  const fileTransforms = collectFileTransforms(patchSet);
-  const assetFiles = collectAssetFiles(patchSet);
+  const effectivePatchSet = mergeRuntimeConfig(patchSet, runtimeConfig);
+  const patchQueue = collectPatchQueue(effectivePatchSet);
+  const fileTransforms = collectFileTransforms(effectivePatchSet);
+  const assetFiles = collectAssetFiles(effectivePatchSet);
   if (dryRun) {
     return {
       sourceApp,
@@ -192,6 +218,8 @@ async function applyPatchSet({
     sourceApp,
     targetApp,
     patchSet: patchSet.id,
+    codexVersion: patchSet.codexVersion,
+    bundleVersion: patchSet.bundleVersion,
     patches: patchQueue.map((patch) => patch.id),
     patchedFiles: fileTransforms.map(([filePath]) => filePath),
     addedFiles: assetFiles.map(([filePath]) => filePath),
@@ -200,7 +228,7 @@ async function applyPatchSet({
   };
 }
 
-async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, progress, operations }) {
+async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, progress, operations, runtimeConfig }) {
   const applyProgress = dryRun ? undefined : progress;
   const identity = await withProgress(applyProgress, 1, 8, "Inspect source app", () => getAppIdentity(sourceApp));
   const patchSet = await withProgress(applyProgress, 2, 8, "Select patch set", () => selectPatch(patchSets, identity));
@@ -213,6 +241,7 @@ async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, 
     progressOffset: 2,
     progressTotal: 8,
     operations,
+    runtimeConfig,
   });
 }
 
@@ -225,6 +254,7 @@ module.exports = {
   collectPatchQueue,
   getPatcherGitSha,
   getAppIdentity,
+  mergeRuntimeConfig,
   patchCodexApp,
   selectPatch,
 };

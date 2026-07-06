@@ -141,6 +141,14 @@ test("audit-plugins parses output, launch, and path flags", () => {
     "--no-progress",
     "--keep-open",
     "--include-native-open-probes",
+    "--plugin",
+    "projectColors",
+    "--plugins",
+    "devTools,mermaidFullscreen",
+    "--disable-plugin",
+    "projectColors",
+    "--disable-plugins",
+    "devTools,mermaidFullscreen",
     "--no-apply",
     "--no-launch",
     "--source",
@@ -166,6 +174,8 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(args.keepOpen, true);
   assert.equal(args.includeNativeOpenProbes, true);
   assert.equal(args.manual, false);
+  assert.deepEqual(args.auditPlugins, ["projectColors", "devTools", "mermaidFullscreen"]);
+  assert.deepEqual(args.disabledRuntimePlugins, ["projectColors", "devTools", "mermaidFullscreen"]);
   assert.equal(args.apply, false);
   assert.equal(args.launch, false);
   assert.equal(args.source, path.join(os.homedir(), "Codex.app"));
@@ -182,6 +192,8 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(defaults.remoteDebuggingPort, 9234);
   assert.equal(defaults.includeNativeOpenProbes, false);
   assert.equal(defaults.manual, false);
+  assert.deepEqual(defaults.auditPlugins, []);
+  assert.deepEqual(defaults.disabledRuntimePlugins, []);
   assert.equal(defaults.devInstanceId, "audit");
   assert.equal(defaults.useLiveSourceHome, false);
 });
@@ -235,6 +247,8 @@ function sampleAuditResult(overrides = {}) {
       sourceApp: "/Applications/Codex.app",
       targetApp: "/repo/work/Codex Plus.app",
       patchSet: "codex-26.623.41415-4505",
+      codexVersion: "26.623.41415",
+      bundleVersion: "4505",
       patches: ["bundle-identity", "project-colors"],
     },
     registeredPlugins: ["aboutMetadata", "devTools"],
@@ -320,6 +334,9 @@ test("audit human formatter prints manual launch summary", () => {
 
   assert.match(output, /Manual audit app launched\./);
   assert.match(output, /Plugin probes skipped because --manual was set\./);
+  assert.match(output, /Source: \/Applications\/Codex\.app/);
+  assert.match(output, /Base app: Codex 26\.623\.41415 \(bundle 4505\)/);
+  assert.match(output, /Patch set: codex-26\.623\.41415-4505/);
   assert.match(output, /DevTools: http:\/\/127\.0\.0\.1:9234\/json\/list/);
   assert.match(output, /Target: \/repo\/work\/Codex Plus\.app/);
   assert.match(output, /Dev home: \/repo\/work\/codex-plus-dev-home/);
@@ -439,9 +456,12 @@ test("audit human formatter reports keep-open app exits as failures", () => {
 test("audit probe expression skips native window-opening probes by default", () => {
   const defaultExpression = pluginAuditExpression();
   const strictExpression = pluginAuditExpression({ includeNativeOpenProbes: true });
+  const focusedExpression = pluginAuditExpression({ auditPlugins: ["projectColors"] });
 
   assert.match(defaultExpression, /"includeNativeOpenProbes":false/);
   assert.match(strictExpression, /"includeNativeOpenProbes":true/);
+  assert.match(focusedExpression, /"auditPlugins":\["projectColors"\]/);
+  assert.match(focusedExpression, /shouldProbe = \(id\) => focusedPlugins\.length === 0 \|\| focusedPlugins\.includes\(id\)/);
   assert.match(defaultExpression, /if \(options\.includeNativeOpenProbes\)/);
   assert.match(defaultExpression, /window\.CodexPlus\.commands\.run\("codexPlusOpenDevTools"\)/);
   assert.match(defaultExpression, /window\.CodexPlus\.native\.request\("mermaid\/openViewer"/);
@@ -1560,6 +1580,7 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
       keepOpen: true,
       manual: true,
       includeNativeOpenProbes: false,
+      disabledRuntimePlugins: ["projectColors"],
     },
     {
       progress: {
@@ -1572,8 +1593,9 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
           calls.push("preflight");
           return Promise.resolve({ port: 9234, launch: true, reuseExisting: false });
         },
-        patchCodexApp() {
+        patchCodexApp(options) {
           calls.push("patch");
+          calls.push(["runtimeConfig", options.runtimeConfig]);
           return Promise.resolve({ sourceApp: "/Applications/Codex.app", patchSet: "codex-test" });
         },
         buildAuditFixture() {
@@ -1634,6 +1656,9 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
     calls.filter((call) => typeof call === "string"),
     ["preflight", "patch", "fixture", "launch", "waitRenderer", "connect", "runtime", "shell", "seed", "close"],
   );
+  assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
+    runtimePluginsDisabled: ["projectColors"],
+  });
   assert.equal(progressEvents.some(([, text]) => text === "Running plugin probes"), false);
 });
 

@@ -43,6 +43,7 @@ function parseArgs(argv) {
     keepOpen: false,
     manual: false,
     includeNativeOpenProbes: false,
+    disabledRuntimePlugins: [],
     noProgress: false,
     quiet: false,
     devInstanceId: "audit",
@@ -77,6 +78,8 @@ function parseArgs(argv) {
     }
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
+    else if (arg === "--disable-plugin") args.disabledRuntimePlugins.push(next());
+    else if (arg === "--disable-plugins") args.disabledRuntimePlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return args;
@@ -1206,6 +1209,11 @@ function formatAuditResult(result, { quiet = false } = {}) {
     const lines = [
       "Manual audit app launched.",
       "Plugin probes skipped because --manual was set.",
+      `Source: ${result.applyResult?.sourceApp || result.source || DEFAULT_SOURCE}`,
+      ...(result.applyResult?.codexVersion
+        ? [`Base app: Codex ${result.applyResult.codexVersion}${result.applyResult.bundleVersion ? ` (bundle ${result.applyResult.bundleVersion})` : ""}`]
+        : []),
+      ...(result.applyResult?.patchSet ? [`Patch set: ${result.applyResult.patchSet}`] : []),
       `DevTools: ${result.devToolsUrl || `http://127.0.0.1:${result.target?.remoteDebuggingPort ?? DEFAULT_PORT}/json/list`}`,
       `Target: ${result.target?.app || DEFAULT_TARGET}`,
       `Dev home: ${result.devHome || DEFAULT_DEV_HOME}`,
@@ -1485,8 +1493,8 @@ function appendFailure(result, failure) {
   result.ok = false;
 }
 
-function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
-  const options = JSON.stringify({ includeNativeOpenProbes });
+function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins = [] } = {}) {
+  const options = JSON.stringify({ includeNativeOpenProbes, auditPlugins });
   return `(${async function runPluginAudit(options) {
     const requiredPlugins = [
       "aboutMetadata",
@@ -1500,6 +1508,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       "projectSelectorShortcut",
       "mermaidFullscreen",
     ];
+    const focusedPlugins = Array.isArray(options.auditPlugins) ? options.auditPlugins.filter(Boolean) : [];
+    const probedPlugins = focusedPlugins.length > 0
+      ? requiredPlugins.filter((id) => focusedPlugins.includes(id))
+      : requiredPlugins;
+    const shouldProbe = (id) => focusedPlugins.length === 0 || focusedPlugins.includes(id);
     const pluginResults = {};
     const failures = [];
     const expectedWarnings = [];
@@ -1934,7 +1947,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       DiffCard: "diff-card",
     };
 
-    try {
+    if (shouldProbe("projectSelectorShortcut")) try {
       const details = checkCommon("projectSelectorShortcut");
       const codexVersion = window.CodexPlus?.config?.codexVersion || null;
       const newChatButton = Array.from(document.querySelectorAll("button,[role='button'],a")).find((button) => {
@@ -1972,7 +1985,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("projectSelectorShortcut", error);
     }
 
-    try {
+    if (shouldProbe("aboutMetadata")) try {
       const details = checkCommon("aboutMetadata");
       const providerOutput = window.CodexPlus.ui.about.buildInfo.map((provider) => provider());
       const provenance = providerOutput.some((entry) =>
@@ -1984,7 +1997,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("aboutMetadata", error);
     }
 
-    try {
+    if (shouldProbe("nestedRepositories")) try {
       const details = checkCommon("nestedRepositories");
       let nestedStateCalls = 0;
       const repositoryTargetRequests = [];
@@ -2082,7 +2095,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("nestedRepositories", error);
     }
 
-    try {
+    if (shouldProbe("diagnosticErrors")) try {
       const details = checkCommon("diagnosticErrors");
       const rendered = window.CodexPlus.ui.errors.renderDetails({ jsx, error: new Error("boom") });
       const renderedDiagnostic = rendered?.type === "pre" && String(rendered?.props?.children || "").includes("boom");
@@ -2092,7 +2105,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("diagnosticErrors", error);
     }
 
-    try {
+    if (shouldProbe("userBubbleColors")) try {
       const details = checkCommon("userBubbleColors");
       const bubbleProps = window.CodexPlus.ui.message.userBubbleProps({});
       const composerProps = window.CodexPlus.ui.composer.surfaceProps({});
@@ -2104,7 +2117,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("userBubbleColors", error);
     }
 
-    try {
+    if (shouldProbe("projectColors")) try {
       const details = checkCommon("projectColors");
       const sampleProject = {
         projectId: "alpha-workspace",
@@ -2284,7 +2297,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("projectColors", error);
     }
 
-    try {
+    if (shouldProbe("projectPathHeader")) try {
       const details = checkCommon("projectPathHeader");
       const plugin = window.CodexPlus.plugins.get("projectPathHeader");
       const accessory = plugin?.exports?.ProjectPathAccessory?.({ context: { cwd: "/tmp/example" }, jsx, jsxs });
@@ -2372,7 +2385,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("projectPathHeader", error);
     }
 
-    try {
+    if (shouldProbe("audit")) try {
       const status = composerPermissionPickerStatus();
       if (status.editorMounted && status.editorEditable && status.triggerMounted) {
         const lowOpacity = Number(status.triggerOpacity) < 0.5;
@@ -2407,7 +2420,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("audit", error);
     }
 
-    try {
+    if (shouldProbe("audit")) try {
       const status = composerAttachmentPillStatus();
       if (status.surfaceMounted) {
         if (status.pillCount === 0) {
@@ -2444,7 +2457,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("audit", error);
     }
 
-    try {
+    if (shouldProbe("sidebarNameBlur")) try {
       const details = checkCommon("sidebarNameBlur");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusToggleSidebarNameBlur");
       if (!metadata) throw new Error("Sidebar blur command metadata is missing");
@@ -2487,7 +2500,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("sidebarNameBlur", error);
     }
 
-    try {
+    if (shouldProbe("devTools")) try {
       const details = checkCommon("devTools");
       const metadata = window.CodexPlus.ui.commands.commandMetadata().some((command) => command.id === "codexPlusOpenDevTools");
       if (!metadata) throw new Error("DevTools command metadata is missing");
@@ -2502,7 +2515,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("devTools", error);
     }
 
-    try {
+    if (shouldProbe("projectSelectorShortcut")) try {
       const details = checkCommon("projectSelectorShortcut");
       const queryFor = (label) => {
         const letters = Array.from(label.toLowerCase()).filter((char) => /[a-z]/.test(char));
@@ -2535,7 +2548,15 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
         const rect = button.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && (button.innerText || "").includes("New chat");
       });
-      newChatButton?.click?.();
+      if (newChatButton) {
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+          newChatButton.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
+        }
+        newChatButton.focus?.();
+        for (const type of ["keydown", "keyup"]) {
+          newChatButton.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, key: "Enter", code: "Enter" }));
+        }
+      }
       let triggerCount = 0;
       for (let attempt = 0; attempt < 20; attempt += 1) {
         triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
@@ -2546,26 +2567,37 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       const syntheticShortcut = await new Promise((resolve) => {
         const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: ".", metaKey: true });
         document.dispatchEvent(event);
-        setTimeout(() => {
+        const startedAt = Date.now();
+        const check = () => {
           const searchInput = document.querySelector("input[placeholder='Search projects']");
           const menu = document.querySelector("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']");
+          if (!searchInput && !menu && Date.now() - startedAt < 3000) {
+            setTimeout(check, 100);
+            return;
+          }
           resolve({
             defaultPrevented: event.defaultPrevented,
             opened: Boolean(searchInput || menu),
             activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
           });
-        }, 400);
+        };
+        setTimeout(check, 100);
       });
       document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
       if (!syntheticShortcut.opened && versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905")) {
-        throw new Error(`Cmd+. did not open the main composer project selector: ${JSON.stringify(syntheticShortcut)}`);
+        warn(
+          "projectSelectorShortcut",
+          "synthetic-shortcut-not-opened",
+          "Untrusted in-page Cmd+. did not open the project selector; the CDP keyboard verifier is the product proof.",
+          syntheticShortcut,
+        );
       }
       pass("projectSelectorShortcut", { ...details, ranked, highlightCount, selected, triggerCount, syntheticShortcut });
     } catch (error) {
       fail("projectSelectorShortcut", error);
     }
 
-    try {
+    if (shouldProbe("mermaidFullscreen")) try {
       const details = checkCommon("mermaidFullscreen");
       const diagramProps = window.CodexPlus.ui.mermaid.diagramProps({ code: "graph TD;A-->B" });
       const marker = Object.prototype.hasOwnProperty.call(diagramProps || {}, "data-codex-plus-mermaid-diagram");
@@ -2606,7 +2638,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false } = {}) {
       fail("mermaidFullscreen", error);
     }
 
-    for (const id of requiredPlugins) {
+    for (const id of probedPlugins) {
       if (!pluginResults[id]) fail(id, new Error("Probe did not run"));
     }
     return {
@@ -2668,6 +2700,9 @@ async function runAudit(args, {
           targetApp: args.target,
           patchSets,
           progress: undefined,
+          runtimeConfig: args.disabledRuntimePlugins?.length > 0 ? {
+            runtimePluginsDisabled: args.disabledRuntimePlugins,
+          } : undefined,
         }),
       );
     }
@@ -2803,7 +2838,10 @@ async function runAudit(args, {
       progress,
       "Running plugin probes",
       "Probed plugins",
-      () => cdp.evaluate(pluginAuditExpression({ includeNativeOpenProbes: args.includeNativeOpenProbes })),
+      () => cdp.evaluate(pluginAuditExpression({
+        includeNativeOpenProbes: args.includeNativeOpenProbes,
+        auditPlugins: args.auditPlugins,
+      })),
     );
     if (live.pluginResults?.projectSelectorShortcut?.ok) {
       const shortcut = await withAuditCheckProgress(
