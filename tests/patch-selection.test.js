@@ -40,6 +40,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
 
   const transformNames = {
     "app-main": "patchAppMainProjectColors",
+    "app-protocol": "patchAppProtocolRoutes",
     "app-shell": "patchAppShell",
     composer: "patchComposerBubbleColors",
     "electron-menu-shortcuts": "patchElectronMenuShortcuts",
@@ -63,6 +64,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
 function logicalTransformName(fileNamePrefix) {
   return {
     "app-main": "patchAppMainProjectColors",
+    "app-protocol": "patchAppProtocolRoutes",
     "app-shell": "patchAppShell",
     composer: "patchComposerBubbleColors",
     "electron-menu-shortcuts": "patchElectronMenuShortcuts",
@@ -2505,6 +2507,67 @@ test("appearance settings patch adds user bubble colors and project colors only"
   assert.match(bubblePlugin, /const STORAGE_KEY = "codex-plus:user-message-bubble-colors"/);
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /render: \(deps\) => renderColorRow/);
+});
+
+test("app protocol patch serves the app shell for settings deep routes", async () => {
+  const fakeProtocolBundle = [
+    "const o=require('path');",
+    "const t={Es:e=>e,Cs:o.isAbsolute,Ds:e=>e};",
+    "const he=`index.html`,ge=`/@fs`,pe=`-`,me=`fs`;",
+    "function Me(e){return e.split(`/`).some(e=>e===`..`||/^\\.\\.[. ]+$/.test(e))}",
+    "function je(e){if(!e.startsWith(`app://`))return null;let t=e.slice(6),n=t.indexOf(`/`);return(n>=0?t.slice(n):`/`).split(`?`)[0]?.split(`#`)[0]??null}",
+    "function Ne(){return null}",
+    "function xe(e,t){let n=new URL(`app://-/index.html`);return e&&n.searchParams.set(`initialRoute`,e),t?.mcpAppSandboxDevtools===!0&&n.searchParams.set(`mcpAppSandboxDevtools`,`1`),n.toString()}",
+    "function Se(e,n){let r=je(e);if(!r)return null;try{if(Me(t.Es(decodeURIComponent(r))))return null}catch{return null}let i=new URL(e);if(i.protocol!==`app:`)return null;if(i.pathname.startsWith(ge))return i.host===me?Ne(i.pathname):null;if(i.host&&i.host!==pe)return null;let a=t.Es(i.pathname?i.pathname:`/`),s=a.startsWith(`/`)?a.slice(1):a,c=o.posix.normalize(s);if(c===`.`||c===``)return(0,o.join)(n,he);if(c.startsWith(`..`)||c.includes(`/..`))return null;let l=(0,o.join)(n,...c.split(`/`)),u=(0,o.relative)(n,l);return u.startsWith(`..`)||(0,o.isAbsolute)(u)?null:l}",
+    "function we(e){Oe(),r.protocol.handle(`app`,async t=>{let n=Se(t.url,e);return n?Pe(n)?Fe(t,n):process.platform===`win32`?r.net.fetch((0,b.pathToFileURL)(n).toString()):Te(n):new Response(null,{status:404,statusText:`Not Found`})})}",
+    "module.exports={Se,we};",
+  ].join("");
+
+  for (const patchSet of patchSets.filter((patchSet) =>
+    collectFileTransforms(patchSet).some(([, transform]) => transform.name === "patchAppProtocolRoutes")
+  )) {
+    const transform = findTransform(patchSet, "app-protocol");
+    const transformed = transform(fakeProtocolBundle);
+    const module = { exports: {} };
+    const handled = [];
+    const redirects = [];
+    const sandbox = {
+      module,
+      require,
+      URL,
+      Response: {
+        redirect(url) {
+          redirects.push(url);
+          return { redirect: url };
+        },
+      },
+      Oe() {},
+      Pe() { return false; },
+      Fe() {},
+      Te(filePath) { return { filePath }; },
+      process,
+      r: {
+        net: { fetch: (url) => ({ fetch: url }) },
+        protocol: { handle: (_scheme, handler) => handled.push(handler) },
+      },
+      b: { pathToFileURL: (value) => ({ toString: () => `file://${value}` }) },
+    };
+    vm.runInNewContext(transformed, sandbox, { filename: `${patchSet.id}-protocol.js` });
+
+    module.exports.we("/Applications/Codex.app/Contents/Resources/webview");
+    assert.equal(handled.length, 1, `${patchSet.id} registered one app protocol handler`);
+    assert.deepEqual(
+      await handled[0]({ url: "app://-/settings/general-settings" }),
+      { redirect: "app://-/index.html?initialRoute=%2Fsettings%2Fgeneral-settings" },
+      `${patchSet.id} redirects settings deep route through initialRoute`,
+    );
+    assert.deepEqual(redirects, ["app://-/index.html?initialRoute=%2Fsettings%2Fgeneral-settings"]);
+    assert.equal(
+      (await handled[0]({ url: "app://-/assets/general-settings-Dyo5TGID.js" })).filePath,
+      path.join("/Applications/Codex.app/Contents/Resources/webview", "assets", "general-settings-Dyo5TGID.js"),
+      `${patchSet.id} keeps asset routes addressable`,
+    );
+  }
 });
 
 test("app main patch applies project colors to project headers and grouped row options", () => {

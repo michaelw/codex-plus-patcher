@@ -29,6 +29,7 @@ function buildCodexPlusPatchSet(config) {
   const electronCommandSourceFile = files.electronCommandSource;
   const appMainFile = files.appMain;
   const appShellFile = files.appShell;
+  const appProtocolFile = files.appProtocol;
   const errorBoundaryFile = files.errorBoundary;
   const generalSettingsFile = files.generalSettings;
   const headerFile = files.header;
@@ -2215,6 +2216,22 @@ function patchPreloadNativeBridge(text) {
   );
 }
 
+function patchAppProtocolRoutes(text) {
+  const withWindowsFetch =
+    "function we(e){Oe(),r.protocol.handle(`app`,async t=>{let n=Se(t.url,e);return n?Pe(n)?Fe(t,n):process.platform===`win32`?r.net.fetch((0,b.pathToFileURL)(n).toString()):Te(n):new Response(null,{status:404,statusText:`Not Found`})})}";
+  const withWindowsFetchRedirect =
+    "function we(e){Oe(),r.protocol.handle(`app`,async t=>{let i=je(t.url),a=i&&i!==`/`&&!i.includes(`.`)&&!Me(i)?xe(i):null;if(a)return Response.redirect(a);let n=Se(t.url,e);return n?Pe(n)?Fe(t,n):process.platform===`win32`?r.net.fetch((0,b.pathToFileURL)(n).toString()):Te(n):new Response(null,{status:404,statusText:`Not Found`})})}";
+  if (text.includes(withWindowsFetch)) {
+    return replaceOnce(text, withWindowsFetch, withWindowsFetchRedirect, "app protocol deep route initialRoute redirect anchor");
+  }
+  return replaceOnce(
+    text,
+    "function we(e){Oe(),r.protocol.handle(`app`,async t=>{let n=Se(t.url,e);return n?Pe(n)?Fe(t,n):Te(n):new Response(null,{status:404,statusText:`Not Found`})})}",
+    "function we(e){Oe(),r.protocol.handle(`app`,async t=>{let i=je(t.url),a=i&&i!==`/`&&!i.includes(`.`)&&!Me(i)?xe(i):null;if(a)return Response.redirect(a);let n=Se(t.url,e);return n?Pe(n)?Fe(t,n):Te(n):new Response(null,{status:404,statusText:`Not Found`})})}",
+    "app protocol deep route initialRoute redirect anchor",
+  );
+}
+
 function patchMainNativeBridge(text) {
   if (text.includes("function _4(e){let{") && text.includes("U2(l,k),z2(k);let A=!1;")) {
     let patched = replaceOnce(
@@ -2386,6 +2403,10 @@ return makePatchSet({
         [errorBoundaryFile, patchErrorBoundary],
       ],
     },
+    ...(appProtocolFile ? [{
+      id: "app-protocol-deep-route-fallback",
+      fileTransforms: [[appProtocolFile, patchAppProtocolRoutes]],
+    }] : []),
     {
       id: "user-message-bubble-colors",
       fileTransforms: [
