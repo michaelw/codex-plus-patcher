@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.15.1...v0.16.0) (2026-07-07)
+
+
+### Features
+
+* add native aharness runs plugin ([#97](https://github.com/michaelw/codex-plus-patcher/issues/97)) ([ec458ba](https://github.com/michaelw/codex-plus-patcher/commit/ec458ba1f5c0f9e4266017c42c5c54742d8793fd))
+* support Codex 26.623.141536 ([#101](https://github.com/michaelw/codex-plus-patcher/issues/101)) ([9c1006e](https://github.com/michaelw/codex-plus-patcher/commit/9c1006ea9a5274e5ef59433ef9d96e983c9ac157))
+
 ## [0.15.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.15.0...v0.15.1) (2026-07-06)
 
 
