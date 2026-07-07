@@ -51,6 +51,7 @@ function findTransformPath(patchSet, fileNamePrefix) {
     composer: "patchComposerBubbleColors",
     "electron-menu-shortcuts": "patchElectronMenuShortcuts",
     "error-boundary": "patchErrorBoundary",
+    "general-settings": "patchGeneralSettingsUserBubbleColors",
     "keyboard-shortcuts-search-input": "patchKeyboardShortcutsSearchInput",
     "home-project-dropdown": "patchHomeProjectDropdownProjectSelectorShortcut",
     "local-active-workspace-root-dropdown": "patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
@@ -177,6 +178,7 @@ function projectSelectorShortcutReplacements() {
 
 function versionedNames(patchSet) {
   if (
+    patchSet.id === "codex-26.623.141536-4753" ||
     patchSet.id === "codex-26.623.101652-4674" ||
     patchSet.id === "codex-26.623.81905-4598" ||
     patchSet.id === "codex-26.623.70822-4559"
@@ -231,14 +233,14 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported Codex source identity is registered first", () => {
   const identity = {
-    version: "26.623.101652",
-    bundleVersion: "4674",
-    asarSha256: "11a0d184c3e340cfb7088974cdfb2126ee328c8e00341ba884c978ed70aa06fc",
+    version: "26.623.141536",
+    bundleVersion: "4753",
+    asarSha256: "9169abf7427f8ceb2dab527f489a76f6e419e2602faa9b3b8a1b4e2c526fc537",
   };
 
   const patchSet = selectPatch(patchSets, identity);
   assert.equal(patchSet, patchSets[0]);
-  assert.equal(patchSet.id, "codex-26.623.101652-4674");
+  assert.equal(patchSet.id, "codex-26.623.141536-4753");
 });
 
 test("collects named patch queue transforms and plist changes", () => {
@@ -1608,6 +1610,9 @@ test("run command patch bridges the native project selector shortcut to the runt
   const fakeRegisterRunCommandBundle = [
     "function kP(){let e=(0,AP.c)(4),t=R(S),n;e[0]===t?n=e[1]:(n=()=>{ia(t,!t.get(pa))},e[0]=t,e[1]=n);let r=n;tc(`toggleSidebar`,r);let i;e[2]===t?i=e[3]:(i=[t],e[2]=t,e[3]=i),Cn(`toggle-sidebar`,r,i)}",
   ].join("");
+  const fakeCurrentRegisterRunCommandBundle = [
+    "function jM(){let e=(0,MM.c)(4),t=J(W),n;e[0]===t?n=e[1]:(n=()=>{Ree(t,!t.get(to))},e[0]=t,e[1]=n);let r=n;uy(`toggleSidebar`,r);let i;e[2]===t?i=e[3]:(i=[t],e[2]=t,e[3]=i),Vt(`toggle-sidebar`,r,i)}",
+  ].join("");
   const fakeHotkeyRunCommandBundle = [
     "new Map([[`newThread`,J0t],[`quickChat`,Q0t],[`openSkills`,s2t],[`openFolder`,c2t],[`toggleSidebar`,l2t],[`toggleBottomPanel`,u2t]])",
   ].join("");
@@ -1626,6 +1631,10 @@ test("run command patch bridges the native project selector shortcut to the runt
     const latestTransformed = transform(fakeRegisterRunCommandBundle);
     assert.match(latestTransformed, /for\(let e of \[`codexPlus\.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`\]\)tc\(e,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\)\)/);
     assert.match(latestTransformed, /for\(let e of window\.CodexPlus\?\.commands\?\.all\?\.\(\)\?\?\[\]\)tc\(e\.id,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\.id\)\)/);
+
+    const currentTransformed = transform(fakeCurrentRegisterRunCommandBundle);
+    assert.match(currentTransformed, /for\(let e of \[`codexPlus\.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`\]\)uy\(e,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\)\)/);
+    assert.match(currentTransformed, /for\(let e of window\.CodexPlus\?\.commands\?\.all\?\.\(\)\?\?\[\]\)uy\(e\.id,\(\)=>window\.CodexPlus\?\.commands\?\.run\?\.\(e\.id\)\)/);
 
     const hotkeyTransformed = transform(fakeHotkeyRunCommandBundle);
     assert.match(hotkeyTransformed, /\[`openFolder`,c2t\],\.\.\.\[`codexPlus\.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`\]\.map/);
@@ -1977,6 +1986,27 @@ test("header patch renders project path accessories from thread context", () => 
       assert.doesNotMatch(transformedLocalConversation, /t\[32\]=O/);
       continue;
     }
+    if (patchSet.id === "codex-26.623.141536-4753") {
+      const transform = findTransform(patchSet, "review");
+      const transformed = transform([
+        "import{n as e,r as t,s as n,t as r}from\"./rolldown-runtime-Czos8NxU.js\";",
+        "function YPt(e){let t=(0,XPt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+        "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,yK.jsx)(ZDt,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      ].join(""));
+
+      assert.match(transformed, /import\{t as CPXBranchPickerDropdownContent\}from"\.\/git-branch-switcher-DRHNJnp9\.js"/);
+      assert.match(transformed, /CodexPlusHost\.adapters\.review/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[yK,typeof BPt!==`undefined`\?BPt:null,Hn,X,Tu,OE,kE,AE,null,Ti,Ot,ZDt,null,null,null,null,null,CPXBranchPickerDropdownContent,null,TE,pht\]\)/);
+      assert.match(
+        transformed,
+        /s=\(0,yK\.jsx\)\(CPXRM,\{mainReviewContent:\(0,yK\.jsx\)\(ZDt,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
+      );
+      assert.doesNotMatch(transformed, /plugins\?\.get\(`nestedRepositories`\)\?\.exports/);
+      assert.doesNotMatch(transformed, /function CPXBranchPicker/);
+      assert.doesNotMatch(transformed, /function CPXRepoPatchGroup/);
+      assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
+      continue;
+    }
     if (patchSet.id === "codex-26.623.101652-4674") {
       const transform = findTransform(patchSet, "header");
       const transformed = transform([
@@ -2070,7 +2100,7 @@ test("header patch renders project path accessories from thread context", () => 
       assert.doesNotMatch(transformedLocalConversation, /CPX_headerContext=\{cwd:p/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.101652-4674" || patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
+    if ((patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674") || patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       const transform = findTransform(patchSet, "header");
       const transformed = transform([
         "function Jn(e){let t=(0,$n.c)(66),{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o}=e,s=Fe(),c=a??Xn,l=s.pathname===`/`,u=Yn,",
@@ -2276,7 +2306,7 @@ test("mermaid shell patch delegates fullscreen viewer to the runtime plugin", ()
   assert.match(currentTransformed, /function CPXMermaidDiagramProps\(e\)\{return window\.CodexPlus\?\.ui\?\.mermaid\?\.diagramProps\?\.\(e\)\}/);
   assert.match(currentTransformed, /\.\.\.CPXMermaidDiagramProps\(\{code:a\}\),className:C/);
 
-  const patch101652 = patchSets.find((patchSet) => patchSet.id === "codex-26.623.101652-4674");
+  const patch101652 = patchSets.find((patchSet) => (patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674"));
   const transform101652 = collectFileTransforms(patch101652).find(
     ([_filePath, transform]) => transform.name === "patchMermaidDiagramShell",
   )?.[1];
@@ -2466,6 +2496,20 @@ test("diagnostic error patches delegate detail rendering to the runtime plugin",
   assert.doesNotMatch(commonPatches, /max-h-80 max-w-full/);
 });
 
+test("141536 app shell diagnostic patch handles reload-only fallback", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.141536-4753");
+  const transform = findTransform(patchSet, "app-shell");
+  const fakeBundle = [
+    "function Eie(){let e=(0,oA.c)(3),t,n;",
+    "children:[t,n,(0,sA.jsx)(lx,{onClick:Die,children:(0,sA.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join("");
+
+  const transformed = transform(fakeBundle);
+
+  assert.match(transformed, /var CPXDiagnosticDetails=function/);
+  assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:sA\.jsx,error:null\}\)/);
+});
+
 test("review patch mounts repository mux before main branch selection", () => {
   const fakeBundle = [
     'import{r as vi,t as yi}from"./dropdown-CTBRoADH.js";',
@@ -2551,6 +2595,26 @@ test("review patch mounts repository mux before main branch selection", () => {
       assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
       continue;
     }
+    if (patchSet.id === "codex-26.623.141536-4753") {
+      const transform = findTransform(patchSet, "review");
+      const transformed = transform([
+        "import{n as e,r as t,s as n,t as r}from\"./rolldown-runtime-Czos8NxU.js\";",
+        "function YPt(e){let t=(0,XPt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+        "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,yK.jsx)(ZDt,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      ].join(""));
+
+      assert.match(transformed, /CodexPlusHost\.adapters\.review/);
+      assert.match(transformed, /CPXRM=e=>CPXR\.renderBodyFromHost\(e,\[yK,typeof BPt!==`undefined`\?BPt:null,Hn,X,Tu,OE,kE,AE,null,Ti,Ot,ZDt,null,null,null,null,null,CPXBranchPickerDropdownContent,null,TE,pht\]\)/);
+      assert.match(
+        transformed,
+        /s=\(0,yK\.jsx\)\(CPXRM,\{mainReviewContent:\(0,yK\.jsx\)\(ZDt,\{diffMode:a,setTabState:r,tabState:i\}\),diffMode:a,setTabState:r,tabState:i\}\)/,
+      );
+      assert.doesNotMatch(transformed, /plugins\?\.get\(`nestedRepositories`\)\?\.exports/);
+      assert.doesNotMatch(transformed, /function CPXBranchPicker/);
+      assert.doesNotMatch(transformed, /function CPXRepoPatchGroup/);
+      assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
+      continue;
+    }
     if (patchSet.id === "codex-26.623.101652-4674") {
       const transform = findTransform(patchSet, "review");
       const transformed = transform([
@@ -2570,7 +2634,7 @@ test("review patch mounts repository mux before main branch selection", () => {
       assert.doesNotMatch(transformed, /function CPXRepoDiffBody/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.101652-4674" || patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
+    if ((patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674") || patchSet.id === "codex-26.623.81905-4598" || patchSet.id === "codex-26.623.61825-4548") {
       const transform = findTransform(patchSet, "review");
       const transformed = transform([
         "function rI(e){let t=(0,iI.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
@@ -2747,6 +2811,24 @@ test("appearance settings patch adds user bubble colors and project colors only"
   assert.match(bubblePlugin, /const STORAGE_KEY = "codex-plus:user-message-bubble-colors"/);
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /render: \(deps\) => renderColorRow/);
+});
+
+test("141536 appearance settings patch handles current theme row shape", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "codex-26.623.141536-4753");
+  assert.ok(patchSet, "141536 patch set exists");
+  const settingsFile = findTransformPath(patchSet, "general-settings");
+  const fakeSettingsBundle = [
+    "chromeThemeCodeFont:{id:`settings.general.appearance.chromeTheme.codeFontFamily.short`,defaultMessage:`Code font`,description:`Short label for the code font input`},pointerCursors:",
+    "function Ir({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+    "let r=F(d),i=H(),a=i.formatMessage(J.chromeThemeAccent),o=i.formatMessage(J.chromeThemeBackground),s=i.formatMessage(J.chromeThemeForeground),c=i.formatMessage(J.chromeThemeContrast),l=i.formatMessage(J.chromeThemeTranslucentSidebar),",
+    "children:[E.map(e=>(0,Y.jsx)(z,{control:(0,Y.jsx)(Vr,{ariaLabel:e.ariaLabel,value:b[e.role],onChange:t=>{O(e.role,t)}}),label:e.label,variant:`nested`},e.role)),D.map",
+  ].join("");
+
+  const transformed = transformFile(patchSet, settingsFile, fakeSettingsBundle);
+
+  assert.match(transformed, /ui\?\.settings\?\.appearance\?\.renderRows/);
+  assert.match(transformed, /SettingRow:z/);
+  assert.match(transformed, /\.\.\.CPXAppearanceRows\(n\),D\.map/);
 });
 
 test("app protocol patch serves the app shell for settings deep routes", async () => {
@@ -3456,7 +3538,7 @@ test("keyboard shortcut search metadata falls back to command declaration titles
 
   for (const patchSet of patchSets) {
     const transform = findTransform(patchSet, "keyboard-shortcuts-search-input");
-    const fakeBundle = patchSet.id === "codex-26.623.101652-4674"
+    const fakeBundle = (patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674")
       ? fake101652KeyboardShortcutsSearchBundle
       : fakeKeyboardShortcutsSearchBundle;
 
@@ -3465,7 +3547,7 @@ test("keyboard shortcut search metadata falls back to command declaration titles
     const transformed = transform(fakeBundle);
 
     assert.doesNotMatch(transformed, /codexPlus\.command\.toggleSidebarNameBlur/);
-    if (patchSet.id === "codex-26.623.101652-4674") {
+    if ((patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674")) {
       assert.match(transformed, /t\.formatMessage\(oY\[e\.titleIntlId\]\)/);
       assert.match(transformed, /e\.title\?\?e\.electron\?\.menuTitle\?\?t\.formatMessage\(sY\[e\.electron\.menuTitleIntlId\]\)/);
     } else {
@@ -3550,6 +3632,12 @@ test("user message patch applies variant-specific bubble colors with default fal
           "return(0,XB.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
           "he=H?(0,tV.jsx)(`div`,{className:`w-full p-px`,children:(0,tV.jsx)(vRe,{cwd:x??null,hostId:S,initialMessage:V.trim(),onCancel:()=>{oe(null)},onDraftChange:e=>{oe(e)},onSubmit:ce})}):te?(0,tV.jsx)(`div`,{\"data-user-message-bubble\":!0,role:R?`button`:void 0,",
         ].join("")
+      : patchSet.id === "codex-26.623.141536-4753"
+        ? [
+          "function Uqt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+          "return(0,NZ.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+          "me=B?(0,FZ.jsx)(`div`,{className:`w-full p-px`,children:(0,FZ.jsx)(Uqt,{cwd:x??null,hostId:S,initialMessage:z.trim(),onCancel:()=>{ie(null)},onDraftChange:e=>{ie(e)},onSubmit:oe})}):ee?(0,FZ.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,tabIndex:0,className:$(e,`text-left focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none`,I&&`cursor-interaction`),",
+        ].join("")
       : patchSet.id === "codex-26.623.101652-4674"
         ? [
           "function Wxn({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
@@ -3604,7 +3692,7 @@ test("user message patch applies variant-specific bubble colors with default fal
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.101652-4674") {
+    if ((patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674")) {
       assert.match(transformed, /"data-user-message-bubble":!0,\.\.\.CPXBubbleProps\(\{project:\{cwd:x,hostId:S\}\}\),role:I\?`button`:void 0/);
       assert.match(transformed, /"data-codex-plus-user-entry":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground\/5`/);
       assert.doesNotMatch(transformed, /CPX_localThreadKey/);
@@ -3699,7 +3787,7 @@ test("composer patch applies the user entry marker and shared color variables", 
           "Qc=(0,nJ.jsx)(Vm,{active:Go.ui?.active===!0&&Go.ui.activation===`synthetic`,onOpen:()=>{fc.prepare(),Tn.toggleContextSuggestions()}});return",
           "):(0,nJ.jsx)(Qq,{className:k,externalFooterVariant:O,hasDropTargetPortal:Uc,blockReason:Hr,isDragActive:io,isSubmitting:wt,layout:qc,onDragEnter:wc,onDragOver:Ec,onDragLeave:Tc,onDrop:Dc,showShiftOverlay:so,",
         ].join("")
-      : patchSet.id === "codex-26.623.101652-4674"
+      : (patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674")
         ? [
           "function vP(e){let t=(0,MP.c)(13),{children:n,className:r,externalFooterVariant:i,inert:a,isDragActive:o,layout:s,onDragEnter:c,onDragLeave:l,onDragOver:u,onDrop:d}=e,f=i===void 0?`default`:i,p=o===void 0?!1:o,m=s===void 0?`multiline`:s,h=f===`home`&&`z-10`,g=m===`single-line`?`overflow-visible rounded-full`:gP.multilineSurface,_=p&&`bg-token-dropdown-background/50`,v;t[0]!==r||t[1]!==h||t[2]!==g||t[3]!==_?(v=Y(`composer-surface-chrome relative flex flex-col bg-token-input-background/90 backdrop-blur-lg electron:dark:bg-token-dropdown-background`,h,g,_,r),t[0]=r,t[1]=h,t[2]=g,t[3]=_,t[4]=v):v=t[4];let y;return t[5]!==n||t[6]!==a||t[7]!==c||t[8]!==l||t[9]!==u||t[10]!==d||t[11]!==v?(y=(0,NP.jsx)(us.div,{inert:a,className:v,onDragEnter:c,onDragOver:u,onDragLeave:l,onDrop:d,children:n}),t[5]=n,t[6]=a,t[7]=c,t[8]=l,t[9]=u,t[10]=d,t[11]=v,t[12]=y):y=t[12],y}",
           "(0,kG.jsx)(TG,{className:O,externalFooterVariant:D,hasDropTargetPortal:Jc,",
@@ -3782,7 +3870,7 @@ test("composer patch applies the user entry marker and shared color variables", 
       assert.doesNotMatch(transformed, /CPX_threadProjectId/);
       continue;
     }
-    if (patchSet.id === "codex-26.623.101652-4674") {
+    if ((patchSet.id === "codex-26.623.141536-4753" || patchSet.id === "codex-26.623.101652-4674")) {
       assert.match(transformed, /function vP\(e\)\{let t=\(0,MP\.c\)\(13\)/);
       assert.match(transformed, /codexPlusProps:CPX_surfaceProps\}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
       assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:v/);

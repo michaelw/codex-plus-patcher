@@ -1445,6 +1445,89 @@ test("sidebar sections do not mount into settings pages without the native sideb
   assert.equal(body.children.includes(staleHarness), false);
 });
 
+test("aharness plugin stays idle in settings initialRoute windows", async () => {
+  const nativeRequests = [];
+  const timers = [];
+  const plugins = [];
+  const window = {
+    location: { href: "app://-/index.html?initialRoute=%2Fsettings%2Fgeneral-settings", search: "?initialRoute=%2Fsettings%2Fgeneral-settings", hash: "" },
+    history: { state: null, replaceState() {} },
+    localStorage: { getItem() { return null; }, setItem() {} },
+    setInterval(callback, delay) {
+      timers.push({ callback, delay });
+      return timers.length;
+    },
+    clearInterval() {},
+    CodexPlus: {
+      native: {
+        request(method, params) {
+          nativeRequests.push({ method, params });
+          return Promise.resolve(undefined);
+        },
+      },
+      ui: {
+        virtualConversations: {
+          registerProvider() {},
+          subscribe() { return () => {}; },
+          activeRouteId() { return ""; },
+        },
+        sidebar: {
+          registerSection() {},
+        },
+        projectContext: {
+          active() { return null; },
+        },
+      },
+      nativeMenus: {
+        registerItem() {},
+      },
+      commands: {
+        all() { return []; },
+      },
+      registerPlugin(plugin) {
+        plugins.push(plugin);
+        plugin.start?.(this);
+      },
+      definePlugin(plugin) {
+        return plugin;
+      },
+    },
+  };
+  const context = {
+    window,
+    globalThis: window,
+    document: {
+      body: {
+        setAttribute() {},
+        removeAttribute() {},
+        querySelector() { return null; },
+        querySelectorAll() { return []; },
+      },
+      head: { appendChild() {} },
+      createElement() {
+        return { setAttribute() {}, appendChild() {}, style: {} };
+      },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      addEventListener() {},
+      documentElement: { style: { setProperty() {}, removeProperty() {} } },
+    },
+    URLSearchParams,
+    Node: { ELEMENT_NODE: 1 },
+  };
+
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aharnessRuns.js"), "utf8"),
+    context,
+    { filename: "plugins/aharnessRuns.js" },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(plugins.length, 1);
+  assert.deepEqual(nativeRequests, []);
+  assert.deepEqual(timers, []);
+});
+
 test("aharness artifact UI uses thread side panel instead of a fixed body overlay", () => {
   const sidePanelApi = fs.readFileSync(path.join(__dirname, "../src/runtime/api/sidePanel.js"), "utf8");
   const threadSidePanelApi = fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8");

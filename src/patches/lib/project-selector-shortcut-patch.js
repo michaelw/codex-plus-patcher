@@ -169,6 +169,50 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
       "project selector shortcut final dropdown trigger anchor",
     );
   }
+  if (text.includes("function Ze(e){let t=(0,Qe.c)(44),") && text.includes("function gt({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function Ze(e){let t=(0,Qe.c)(44),",
+      `${projectSelectorSearchHook()}function Ze(e){let t=(0,Qe.c)(44),`,
+      "project selector fuzzy search adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=v.trim().toLowerCase();x=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "x=CPXP.fuzzyFilter(r,v);",
+      "project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "T=(0,X.jsx)(ne,{value:v,onChange:s,placeholder:c,className:`mb-1`})",
+      "T=(0,X.jsx)(ne,{value:v,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,x,o,v),placeholder:c,className:`mb-1`})",
+      "project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,X.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,X.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,v,X.jsx)})",
+      "project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function gt({activeProjectIdOverride:e,",
+      `${projectSelectorTriggerHook("$")}function gt({activeProjectIdOverride:e,`,
+      "project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "triggerButton:v??Qe(),contentWidth:`menu`",
+      "triggerButton:CPXPST(v??Qe(),d),contentWidth:`menu`",
+      "project selector empty trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:v??(d===`hero`?$e():d===`home`?Qe():J()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(v??(d===`hero`?$e():d===`home`?Qe():J()),d),contentWidth:`workspace`",
+      "project selector shortcut final dropdown trigger anchor",
+    );
+  }
   let patched = replaceOnce(
     text,
     "Ne=r();function Pe(e){let t=(0,Ne.c)(42),",
@@ -505,6 +549,14 @@ function patchRunCommandProjectSelectorShortcut(text) {
       text,
       "tc(`toggleSidebar`,r);",
       `tc(\`toggleSidebar\`,r);${registerStaticRuntimeCommands("tc")};`,
+      "codex plus runtime command dispatch anchor",
+    );
+  }
+  if (text.includes("uy(`toggleSidebar`,r);")) {
+    return replaceOnce(
+      text,
+      "uy(`toggleSidebar`,r);",
+      `uy(\`toggleSidebar\`,r);${registerStaticRuntimeCommands("uy")};`,
       "codex plus runtime command dispatch anchor",
     );
   }
