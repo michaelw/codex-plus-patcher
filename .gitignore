@@ -7,3 +7,4 @@ outputs/
 
 # Local release-mode cache.
 .codex-plus-cache/
+.aharness/

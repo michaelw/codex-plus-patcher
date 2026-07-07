@@ -64,7 +64,10 @@ function fileIntegrity(buffer) {
 function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   const archive = readAsar(asarPath);
   const assetFiles = transformContext.assetFiles || [];
-  for (const [filePath] of assetFiles) ensureFileEntry(archive.header, filePath);
+  for (const [filePath, , options] of assetFiles) {
+    const node = ensureFileEntry(archive.header, filePath);
+    if (options?.unpacked) node.unpacked = true;
+  }
 
   const entries = walkFiles(archive.header);
   const contents = new Map();
@@ -82,15 +85,28 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
     contents.set(filePath, Buffer.from(patched, "utf8"));
   }
 
-  for (const [filePath, content] of assetFiles) {
+  const unpackedFiles = [];
+  for (const [filePath, content, options] of assetFiles) {
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(String(content), "utf8");
+    if (options?.unpacked) {
+      unpackedFiles.push([filePath, buffer, options]);
+      continue;
+    }
     if (!contents.has(filePath)) throw new Error(`Could not add ${filePath} to app.asar`);
-    contents.set(filePath, Buffer.isBuffer(content) ? content : Buffer.from(String(content), "utf8"));
+    contents.set(filePath, buffer);
   }
 
   let dataOffset = 0;
   const dataBuffers = [];
   for (const [filePath, node] of entries) {
-    if (node.unpacked) continue;
+    if (node.unpacked) {
+      const unpacked = unpackedFiles.find(([candidate]) => candidate === filePath);
+      if (unpacked) {
+        node.size = unpacked[1].length;
+        node.integrity = fileIntegrity(unpacked[1]);
+      }
+      continue;
+    }
     const content = contents.get(filePath);
     node.size = content.length;
     node.offset = String(dataOffset);
@@ -108,6 +124,12 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   header.writeUInt32LE(json.length, 12);
 
   fs.writeFileSync(asarPath, Buffer.concat([header, json, padding, ...dataBuffers]));
+  for (const [filePath, content, options] of unpackedFiles) {
+    const unpackedPath = `${asarPath}.unpacked/${filePath}`;
+    fs.mkdirSync(require("node:path").dirname(unpackedPath), { recursive: true });
+    fs.writeFileSync(unpackedPath, content);
+    if (Number.isInteger(options?.mode)) fs.chmodSync(unpackedPath, options.mode);
+  }
   return sha256File(asarPath);
 }
 

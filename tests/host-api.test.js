@@ -213,6 +213,7 @@ test("route context exposes stable set, active, clear, and project compatibility
     gitRoot: "/repo",
     branchName: "feature",
     source: "test",
+    title: "Virtual task",
   });
 
   assert.equal(result.ok, true);
@@ -222,6 +223,7 @@ test("route context exposes stable set, active, clear, and project compatibility
     label: "Repo",
     source: "test",
     routeId: "virtual:one",
+    title: "Virtual task",
     workspaceRoot: "/repo/work",
     gitRoot: "/repo",
     threadId: "",

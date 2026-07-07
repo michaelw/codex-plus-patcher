@@ -3,10 +3,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
+const aharnessService = require("./aharnessService.js");
 
-function create({ electron }) {
+function create({ electron, aharnessRuntimeLoader } = {}) {
   let nativeMenuItems = [];
   let refreshApplicationMenu = null;
+  const aharness = aharnessService.create({ runtimeLoader: aharnessRuntimeLoader });
 
   function menuSnapshot(menu) {
     return menu?.items?.map((item) => ({
@@ -43,6 +45,18 @@ function create({ electron }) {
     }
   }
 
+  function runRendererCommand(commandId) {
+    try {
+      const event = focusedEvent();
+      const webContents = event?.sender;
+      if (typeof webContents?.executeJavaScript !== "function") return { ok: false };
+      webContents.executeJavaScript(`window.CodexPlus?.commands?.run(${JSON.stringify(String(commandId))})`).catch(() => {});
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   function focusedEvent() {
     const window = electron.BrowserWindow.getFocusedWindow();
     return window && !window.isDestroyed() ? { sender: window.webContents } : null;
@@ -52,6 +66,12 @@ function create({ electron }) {
     switch (request?.method) {
       case "devtools/open":
         return openDevTools(focusedEvent());
+      case "renderer/command":
+        return runRendererCommand(request.params?.id);
+      case "aharness/run/list":
+      case "aharness/commands/list":
+      case "aharness/project/config":
+        return aharness.request(request.method, request.params);
       default:
         return { ok: false };
     }
@@ -130,6 +150,18 @@ function create({ electron }) {
     return electron.ipcMain.handle("codex_plus:native-request", async (event, request) => {
       if (!isTrustedIpcEvent(event)) return { ok: false };
       switch (request?.method) {
+        case "aharness/commands/list":
+        case "aharness/packages/install":
+        case "aharness/packages/uninstall":
+        case "aharness/verify":
+        case "aharness/project/config":
+        case "aharness/run/start":
+        case "aharness/run/list":
+        case "aharness/run/read":
+        case "aharness/run/reply":
+        case "aharness/run/cancel":
+        case "aharness/run/artifact/read":
+          return aharness.request(request.method, request.params);
         case "native-menu/register-item":
           return registerNativeMenuItem(request.params);
         case "devtools/open":
@@ -147,6 +179,7 @@ function create({ electron }) {
   }
 
   return {
+    aharness,
     logMenuDiagnostics,
     registerNativeRequest,
     setRefreshApplicationMenu,

@@ -2638,6 +2638,586 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       fail("mermaidFullscreen", error);
     }
 
+    if (shouldProbe("aharnessRuns")) try {
+      const details = checkCommon("aharnessRuns");
+      const waitForAharness = async (selector, timeoutMs = 20000) => {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+          const element = document.querySelector(selector);
+          if (element && visible(element)) return element;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return document.querySelector(selector);
+      };
+      const press = (element) => {
+        if (!element) return false;
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+          element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
+        }
+        return true;
+      };
+      const commandIds = window.CodexPlus.ui.commands.commandMetadata().map((command) => command.id);
+      const hasOpenCommand = commandIds.includes("codexPlusAharnessOpenRuns");
+      const hasRunCommand = commandIds.includes("codexPlusAharnessRunWorkflow");
+      const menuItems = typeof window.CodexPlus.commands.menuItems === "function"
+        ? window.CodexPlus.commands.menuItems("panels")
+        : [];
+      const hasMenuItem = menuItems.some((item) => item.id === "codexPlusAharnessOpenRuns");
+      const listResult = await window.CodexPlus.native.request("aharness/commands/list", {});
+      if (!hasOpenCommand || !hasRunCommand) throw new Error(`Aharness command metadata missing: ${JSON.stringify({ hasOpenCommand, hasRunCommand })}`);
+      if (!hasMenuItem) throw new Error("Aharness native menu item is missing");
+      if (!listResult?.ok || !Array.isArray(listResult.commands)) throw new Error(`Aharness command list failed: ${JSON.stringify(listResult)}`);
+      const fsmRows = await waitForAharness("#codex-plus-aharness-sidebar [data-codex-plus-aharness-fsm-row]");
+      if (!fsmRows) throw new Error("Harness Runs FSM rows are missing");
+      const sidebarTextBeforeRun = normalize(document.querySelector("#codex-plus-aharness-sidebar")?.textContent || "");
+      if (!sidebarTextBeforeRun.includes("aharness-examples")) throw new Error(`Harness Runs did not include configured aharness project: ${sidebarTextBeforeRun}`);
+      for (const label of ["Color funnel", "Ops clear demo", "Trivia rounds", "Adventure", "Await checkpoints", "Pirate roast", "Composed pipeline", "Approval policy", "Coding smoke"]) {
+        if (!sidebarTextBeforeRun.includes(label)) throw new Error(`Harness Runs did not include FSM ${label}: ${sidebarTextBeforeRun}`);
+      }
+      if (sidebarTextBeforeRun.includes("alpha-main")) throw new Error(`Harness Runs included unconfigured alpha-main project: ${sidebarTextBeforeRun}`);
+      const directText = (element) => Array.from(element?.childNodes || [])
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent || "")
+        .join("")
+        .trim();
+      const visibleOwnText = (text) => Array.from(document.querySelectorAll("h1,h2,h3,p,div,span"))
+        .find((element) => directText(element) === text && visible(element));
+      const harnessSidebar = document.querySelector("#codex-plus-aharness-sidebar");
+      const pinnedHeading = visibleOwnText("Pinned");
+      const projectsHeading = visibleOwnText("Projects");
+      if (!harnessSidebar) throw new Error("Harness Runs sidebar section is missing");
+      if (pinnedHeading && projectsHeading) {
+        const harnessRect = harnessSidebar.getBoundingClientRect();
+        const pinnedRect = pinnedHeading.getBoundingClientRect();
+        const projectsRect = projectsHeading.getBoundingClientRect();
+        if (Math.abs(harnessRect.left - pinnedRect.left) > 24 || Math.abs(harnessRect.left - projectsRect.left) > 24) {
+          throw new Error(`Harness Runs sidebar section is in a separate column: ${JSON.stringify({ harnessLeft: harnessRect.left, pinnedLeft: pinnedRect.left, projectsLeft: projectsRect.left })}`);
+        }
+        if (harnessRect.top <= pinnedRect.top || harnessRect.top >= projectsRect.top) {
+          throw new Error(`Harness Runs sidebar section is not between Pinned and Projects: ${JSON.stringify({ harnessTop: harnessRect.top, pinnedTop: pinnedRect.top, projectsTop: projectsRect.top })}`);
+        }
+      }
+      const waitForHarnessProjectColor = async (timeoutMs = 10000) => {
+        const startedAt = Date.now();
+        let last = null;
+        while (Date.now() - startedAt < timeoutMs) {
+          const harnessProjectRow = document.querySelector("#codex-plus-aharness-sidebar [data-codex-plus-aharness-project-row]");
+          const nativeAharnessProjectRow = document.querySelector('[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label="aharness-examples"]');
+          if (harnessProjectRow && nativeAharnessProjectRow) {
+            const harnessProjectStyle = getComputedStyle(harnessProjectRow);
+            const nativeProjectStyle = getComputedStyle(nativeAharnessProjectRow);
+            last = {
+              harnessProjectRow,
+              nativeAharnessProjectRow,
+              harnessProjectStyle,
+              nativeProjectStyle,
+              harnessAccent: harnessProjectStyle.getPropertyValue("--codex-plus-project-accent").trim(),
+              nativeAccent: nativeProjectStyle.getPropertyValue("--codex-plus-project-accent").trim(),
+              harnessBackground: harnessProjectStyle.backgroundColor,
+              nativeBackground: nativeProjectStyle.backgroundColor,
+            };
+            if (
+              last.harnessAccent &&
+              last.harnessAccent === last.nativeAccent &&
+              last.harnessBackground === last.nativeBackground
+            ) return last;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return last;
+      };
+      const colorMatch = await waitForHarnessProjectColor();
+      const harnessProjectRow = colorMatch?.harnessProjectRow;
+      const nativeAharnessProjectRow = colorMatch?.nativeAharnessProjectRow;
+      if (!harnessProjectRow || !nativeAharnessProjectRow) throw new Error("Could not compare aharness project row coloring with the native project row");
+      const aharnessProjectCwd = harnessProjectRow.closest("[data-codex-plus-aharness-project]")?.getAttribute("data-codex-plus-aharness-project");
+      if (!aharnessProjectCwd) throw new Error("Harness project group is missing its project path");
+      const verifyResult = await window.CodexPlus.native.request("aharness/verify", {
+        target: "examples/color-funnel.fsm.ts",
+        cwd: aharnessProjectCwd,
+      });
+      if (!verifyResult?.ok || !verifyResult.result?.ok) throw new Error(`Aharness verify failed: ${JSON.stringify(verifyResult)}`);
+      const harnessProjectStyle = colorMatch.harnessProjectStyle;
+      const nativeProjectStyle = colorMatch.nativeProjectStyle;
+      const harnessAccent = colorMatch.harnessAccent;
+      const nativeAccent = colorMatch.nativeAccent;
+      if (!harnessProjectRow.hasAttribute("data-codex-plus-project-sidebar-color")) throw new Error("Harness project row is missing project sidebar color attributes");
+      if (!harnessAccent || harnessAccent !== nativeAccent) throw new Error(`Harness project row accent does not match native project row: ${harnessAccent} vs ${nativeAccent}`);
+      if (colorMatch.harnessBackground !== colorMatch.nativeBackground) {
+        throw new Error(`Harness project row background does not match native project row: ${colorMatch.harnessBackground} vs ${colorMatch.nativeBackground}`);
+      }
+      const colorRow = document.querySelector('#codex-plus-aharness-sidebar [data-codex-plus-aharness-fsm-row="examples/color-funnel.fsm.ts"]');
+      if (!colorRow) throw new Error("Color funnel FSM row is missing");
+      const harnessProjectChildren = colorRow.closest(".cpx-sidebar-model-children");
+      const harnessProjectChildrenStyle = getComputedStyle(harnessProjectChildren || document.body);
+      const harnessProjectChildrenBorder = harnessProjectChildrenStyle.borderLeftWidth;
+      const harnessProjectChildrenAccent = harnessProjectChildrenStyle.getPropertyValue("--codex-plus-project-accent").trim();
+      if (!harnessProjectChildren || Number.parseFloat(harnessProjectChildrenBorder || "0") < 4 || harnessProjectChildrenAccent !== harnessAccent) {
+        throw new Error(`Harness project children do not continue the left accent strip: ${JSON.stringify({
+          className: harnessProjectChildren?.className || "",
+          borderLeftWidth: harnessProjectChildrenBorder,
+          childAccent: harnessProjectChildrenAccent,
+          harnessAccent,
+        })}`);
+      }
+      const colorTitle = colorRow.querySelector(".cpx-sidebar-model-text strong");
+      const colorDescription = colorRow.querySelector(".cpx-sidebar-model-text small");
+      if (!colorTitle || !colorDescription) throw new Error("Color funnel FSM title or description marker is missing");
+      const titleLeft = Math.round(colorTitle.getBoundingClientRect().left);
+      const descriptionLeft = Math.round(colorDescription.getBoundingClientRect().left);
+      if (Math.abs(titleLeft - descriptionLeft) > 1) {
+        throw new Error(`Aharness FSM description is not aligned with title: ${descriptionLeft} vs ${titleLeft}`);
+      }
+      const previousSidebarBlur = document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred");
+      document.documentElement.setAttribute("data-codex-plus-sidebar-names-blurred", "true");
+      const blurredHarnessFilter = getComputedStyle(colorRow).filter;
+      if (previousSidebarBlur == null) document.documentElement.removeAttribute("data-codex-plus-sidebar-names-blurred");
+      else document.documentElement.setAttribute("data-codex-plus-sidebar-names-blurred", previousSidebarBlur);
+      if (!String(blurredHarnessFilter || "").includes("blur")) {
+        throw new Error(`Sidebar blur does not apply to aharness rows: ${blurredHarnessFilter}`);
+      }
+      const createButton = colorRow.querySelector(".cpx-sidebar-model-create");
+      if (!createButton) throw new Error("Color funnel FSM create button is missing");
+      if (normalize(createButton.textContent || "").includes("Create")) throw new Error("Aharness FSM create affordance still uses text instead of the create icon");
+      if (!createButton.querySelector("svg")) throw new Error("Aharness FSM create affordance did not render the create icon");
+      const createButtonStyle = getComputedStyle(createButton);
+      const createBorderWidths = [
+        createButtonStyle.borderTopWidth,
+        createButtonStyle.borderRightWidth,
+        createButtonStyle.borderBottomWidth,
+        createButtonStyle.borderLeftWidth,
+      ].map((value) => Number.parseFloat(value || "0"));
+      if (createBorderWidths.some((value) => Number.isFinite(value) && value > 0)) {
+        throw new Error(`Aharness FSM create icon still has a button border: ${createButtonStyle.border}`);
+      }
+      press(createButton);
+      const runRow = await waitForAharness("#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]");
+      if (!runRow) throw new Error("Harness Runs nested run row did not appear");
+      const runRowBullet = runRow.querySelector(".cpx-sidebar-model-bullet");
+      if (runRowBullet && visible(runRowBullet)) throw new Error("Aharness run row still shows a generic sidebar bullet");
+      const runningSpinner = runRow.querySelector(".cpx-sidebar-status-spinner");
+      if (!runningSpinner) throw new Error("Active aharness run row did not use the running spinner");
+      const runRowComputed = getComputedStyle(runRow);
+      if (runRow.getAttribute("data-app-action-sidebar-thread-active") !== "true") throw new Error("Selected aharness run row is missing the active thread marker");
+      if (runRow.getAttribute("data-codex-plus-aharness-run-active") !== "true") throw new Error("Selected aharness run row is missing the aharness active marker");
+      if (!String(runRowComputed.boxShadow || "").includes("inset") || !String(runRowComputed.boxShadow || "").includes("6px")) {
+        throw new Error(`Selected aharness run row does not use the active-thread left accent: ${runRowComputed.boxShadow}`);
+      }
+      if (Number.parseFloat(runRowComputed.borderTopLeftRadius || "0") > 0 || Number.parseFloat(runRowComputed.borderBottomLeftRadius || "0") > 0) {
+        throw new Error(`Selected aharness run row still has rounded left corners: ${runRowComputed.borderTopLeftRadius}/${runRowComputed.borderBottomLeftRadius}`);
+      }
+      const runRowMain = runRow.querySelector(".cpx-sidebar-model-main");
+      const runRowMainPaddingLeft = Number.parseFloat(getComputedStyle(runRowMain || runRow).paddingLeft || "0");
+      if (!Number.isFinite(runRowMainPaddingLeft) || runRowMainPaddingLeft < 16) {
+        throw new Error(`Selected aharness run row text is too close to the left accent: ${runRowMainPaddingLeft}px`);
+      }
+      const route = await waitForAharness("[data-codex-plus-aharness-route]");
+      if (!route) throw new Error("Aharness virtual conversation route did not render");
+      if (visibleOwnText("What should we build?")) throw new Error("Aharness virtual route left the native home prompt visible behind the run view");
+      const chat = route.querySelector(".cpx-ah-chat");
+      const chatFontSize = Number.parseFloat(getComputedStyle(chat || route).fontSize || "0");
+      if (!Number.isFinite(chatFontSize) || chatFontSize > 14.5) {
+        throw new Error(`Aharness transcript font size does not match native chat scale: ${chatFontSize}px`);
+      }
+      if (document.querySelector("#codex-plus-side-panel-root")) throw new Error("Aharness installed the old fixed body side panel root");
+      const activeProjectPath = document.body.getAttribute("data-codex-plus-active-project-path") ||
+        document.querySelector("main")?.getAttribute("data-codex-plus-active-project-path") ||
+        "";
+      if (!activeProjectPath.includes("aharness-examples")) throw new Error(`Aharness route did not set the active base directory: ${activeProjectPath}`);
+      const visibleForeignFileTabs = Array.from(document.querySelectorAll("[data-app-shell-tabs] [data-tab-id^='file:local:']"))
+        .filter((element) => visible(element))
+        .map((element) => element.getAttribute("data-tab-id"))
+        .filter((tabId) => tabId && !tabId.includes("aharness-examples"));
+      if (visibleForeignFileTabs.length > 0) throw new Error(`Aharness route left foreign file tabs visible: ${visibleForeignFileTabs.join(", ")}`);
+      const routeText = normalize(route.textContent || "");
+      if (!routeText.includes("Color funnel")) throw new Error(`Aharness route header did not use FSM label: ${routeText}`);
+      const virtualProjectContext = window.CodexPlus?.ui?.projectContext?.active?.();
+      if (!virtualProjectContext?.cwd?.includes("aharness-examples") || virtualProjectContext?.label !== "aharness-examples") {
+        throw new Error(`Aharness virtual route did not expose the aharness project context: ${JSON.stringify(virtualProjectContext)}`);
+      }
+      const visiblePathChips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter((chip) => visible(chip));
+      const stalePathChip = visiblePathChips.find((chip) => chip.getAttribute("title") && !chip.getAttribute("title").includes("aharness-examples"));
+      if (stalePathChip) throw new Error(`Aharness virtual route left a stale native header path chip visible: ${stalePathChip.getAttribute("title")}`);
+      const routeBackground = getComputedStyle(route).backgroundColor;
+      const rootBackground = getComputedStyle(document.querySelector("#codex-plus-virtual-conversation-root")).backgroundColor;
+      if (routeBackground !== "rgba(0, 0, 0, 0)" || rootBackground !== "rgba(0, 0, 0, 0)") {
+        throw new Error(`Aharness route should inherit the native background, got route=${routeBackground} root=${rootBackground}`);
+      }
+      const rowText = normalize(runRow.textContent || "");
+      if (rowText.includes("examples/color-funnel.fsm.ts") || rowText.includes("Color funnel")) {
+        throw new Error(`Aharness run row repeated the FSM label or target path: ${rowText}`);
+      }
+      const normalHeader = document.querySelector("header, [data-testid*='header'], [class*='header']");
+      if (normalHeader && !visible(normalHeader)) throw new Error("Normal Codex header became hidden during aharness route");
+      const actionDock = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock]");
+      if (!actionDock) throw new Error("Aharness bottom action dock did not render");
+      if (document.querySelector("[data-ah-cancel]") || normalize(document.body.textContent || "").includes("Cancel run")) {
+        throw new Error("Aharness rendered the old dedicated Cancel run control");
+      }
+      const waitingComposer = await waitForAharness("[data-codex-plus-user-entry][data-codex-plus-composer-claimed][data-codex-plus-composer-mode='waiting']", 10000);
+      if (!waitingComposer) throw new Error("Aharness running state did not claim the native composer in waiting mode");
+      const waitingPlaceholder = normalize(
+        waitingComposer.querySelector("textarea")?.getAttribute("placeholder") ||
+        getComputedStyle(waitingComposer.querySelector("[data-placeholder]"), "::after")?.content?.replace(/^["']|["']$/g, "") ||
+        waitingComposer.querySelector("[data-placeholder]")?.getAttribute("data-placeholder") ||
+        waitingComposer.textContent ||
+        "",
+      );
+      if (!/Aharness is working/i.test(waitingPlaceholder)) {
+        throw new Error(`Aharness waiting composer did not show a waiting cue: ${waitingPlaceholder}`);
+      }
+      const stopControl = waitingComposer.querySelector("[data-codex-plus-composer-stop-control]");
+      if (!stopControl) throw new Error("Aharness waiting composer did not expose the native stop control");
+      const visibleComposerButtons = Array.from(waitingComposer.querySelectorAll("button")).filter((button) => visible(button));
+      const visibleComposerText = normalize(waitingComposer.textContent || "");
+      if (!visibleComposerText.includes("Ask for approval")) {
+        throw new Error(`Aharness waiting composer hid the native policy control: ${visibleComposerText}`);
+      }
+      if (!/5\\.5|Medium|High|Low|Auto/i.test(visibleComposerText)) {
+        throw new Error(`Aharness waiting composer hid the native model/effort control: ${visibleComposerText}`);
+      }
+      if (!visible(stopControl)) throw new Error("Aharness waiting composer stop control is present but not visible");
+      if (visibleComposerButtons.length < 3) {
+        throw new Error(`Aharness waiting composer collapsed native controls: ${JSON.stringify(visibleComposerButtons.map((button) => normalize(button.textContent || button.getAttribute("aria-label") || "")))}`);
+      }
+      const chatRect = chat?.getBoundingClientRect?.();
+      const composerRect = waitingComposer.getBoundingClientRect();
+      if (chatRect && composerRect.width > 0) {
+        const chatCenter = chatRect.left + chatRect.width / 2;
+        const composerCenter = composerRect.left + composerRect.width / 2;
+        if (Math.abs(chatCenter - composerCenter) > 18) {
+          throw new Error(`Aharness composer is not centered relative to the chat view: ${JSON.stringify({ chatCenter, composerCenter, chatRect, composerRect })}`);
+        }
+        if (chatRect.width >= 420 && composerRect.width > chatRect.width - 36) {
+          throw new Error(`Aharness composer has no horizontal gutter inside the chat view: ${JSON.stringify({ chatWidth: chatRect.width, composerWidth: composerRect.width })}`);
+        }
+      }
+      const firstInteractionCard = actionDock.querySelector("[data-codex-plus-interaction-card]");
+      if (firstInteractionCard && visible(firstInteractionCard)) {
+        const cardBottom = firstInteractionCard.getBoundingClientRect().bottom;
+        const composerTop = waitingComposer.getBoundingClientRect().top;
+        if (cardBottom > composerTop - 4) {
+          throw new Error(`Aharness interaction card overlaps the native composer: ${JSON.stringify({ cardBottom, composerTop })}`);
+        }
+      }
+      const replyVisibleOwnerChoice = async (preferredLabel, timeoutMs = 20000) => {
+        const startedAt = Date.now();
+        let card = null;
+        let buttons = [];
+        let button = null;
+        while (Date.now() - startedAt < timeoutMs) {
+          card = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", Math.min(1000, timeoutMs));
+          buttons = Array.from(card?.querySelectorAll("button") || []).filter((candidate) => visible(candidate));
+          button = buttons.find((candidate) => normalize(candidate.textContent || "") === preferredLabel) || null;
+          if (button) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        if (!card) throw new Error("Aharness interaction card did not render inline");
+        if (!button) throw new Error(`Aharness interaction card did not expose choice ${preferredLabel}: ${buttons.map((candidate) => normalize(candidate.textContent || "")).join(", ")}`);
+        const activeRunId = window.CodexPlus.ui.virtualConversations.activeRouteId()?.replace(/^cpx-aharness-run:/, "");
+        const activeRunBeforeReply = activeRunId ? await window.CodexPlus.native.request("aharness/run/read", { runId: activeRunId }) : null;
+        const pendingChoice = activeRunBeforeReply?.run?.pending?.find?.((pendingCard) => pendingCard.kind === "owner-choice");
+        if (!activeRunId || !pendingChoice) throw new Error(`Aharness active owner choice was not available through the native API: ${JSON.stringify(activeRunBeforeReply)}`);
+        const replyResult = await window.CodexPlus.native.request("aharness/run/reply", {
+          runId: activeRunId,
+          payload: {
+            kind: "owner-choice",
+            state: pendingChoice.state,
+            visitCount: pendingChoice.visitCount,
+            label: button.textContent.trim(),
+          },
+        });
+        if (!replyResult?.ok) throw new Error(`Aharness owner choice reply failed: ${JSON.stringify(replyResult)}`);
+        return { activeRunId, label: button.textContent.trim() };
+      };
+      const createFsmRun = async (target) => {
+        const row = document.querySelector(`#codex-plus-aharness-sidebar [data-codex-plus-aharness-fsm-row="${target}"]`);
+        if (!row) throw new Error(`Aharness FSM row is missing for ${target}`);
+        const button = row.querySelector(".cpx-sidebar-model-create");
+        if (!button) throw new Error(`Aharness FSM create button is missing for ${target}`);
+        const previousRoute = window.CodexPlus.ui.virtualConversations.activeRouteId?.() || "";
+        press(button);
+        const startedAt = Date.now();
+        let activeRunId = "";
+        while (Date.now() - startedAt < 20000) {
+          const route = window.CodexPlus.ui.virtualConversations.activeRouteId?.() || "";
+          if (route.startsWith("cpx-aharness-run:") && route !== previousRoute) {
+            activeRunId = route.replace(/^cpx-aharness-run:/, "");
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        const routeElement = await waitForAharness(`[data-codex-plus-aharness-route="${activeRunId}"]`, 20000);
+        if (!routeElement || !activeRunId) throw new Error(`Aharness route did not open for ${target}`);
+        return { row, routeElement, activeRunId };
+      };
+      await replyVisibleOwnerChoice("red");
+      const progressRow = await waitForAharness(
+        "[data-codex-plus-aharness-route] [data-codex-plus-aharness-anchor]:not(.cpx-ah-row-user)",
+        20000,
+      );
+      if (!progressRow) throw new Error("Aharness public transcript rows did not render after owner choice");
+      const progressed = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", 60000);
+      if (!progressed) throw new Error("Aharness interaction reply did not leave a live card for the next state");
+      const userBubble = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-user-bubble]", 10000);
+      if (!userBubble) throw new Error("Aharness owner reply did not render as a user bubble");
+      const scroller = document.querySelector("[data-codex-plus-aharness-route] [data-codex-plus-aharness-scroll]");
+      if (!scroller) throw new Error("Aharness scroller did not render");
+      scroller.scrollTop = 0;
+      const activeRoute = window.CodexPlus.ui.virtualConversations.activeRouteId();
+      window.CodexPlus.ui.virtualConversations.refresh();
+      const refreshedScroller = document.querySelector("[data-codex-plus-aharness-route] [data-codex-plus-aharness-scroll]");
+      if (refreshedScroller && refreshedScroller.scrollTop > 10) throw new Error("Aharness refresh forced scroll to the bottom while user was scrolled up");
+      await replyVisibleOwnerChoice("Yes", 60000);
+      const terminal = await waitForAharness("[data-codex-plus-aharness-route] .cpx-ah-terminal", 20000);
+      if (!terminal || !normalize(terminal.textContent).includes("Completed")) throw new Error("Aharness long run did not complete");
+      const completedRunRow = document.querySelector("#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]");
+      if (!completedRunRow) throw new Error("Completed aharness run row disappeared");
+      if (completedRunRow.querySelector(".cpx-sidebar-status-spinner")) throw new Error("Completed aharness run row still shows the running spinner");
+      const completedRunText = normalize(completedRunRow.textContent || "");
+      if (/\bcompleted\b/i.test(completedRunText)) throw new Error(`Completed aharness run row still renders a completed label: ${completedRunText}`);
+      const artifact = await waitForAharness("[data-codex-plus-aharness-route] .cpx-ah-artifact", 10000);
+      if (!artifact) throw new Error("Aharness long run artifact did not render");
+      const artifactButton = artifact.querySelector("[data-codex-plus-aharness-artifact-open]");
+      if (!artifactButton) throw new Error("Aharness artifact open button did not render");
+      const nativeFileAlerts = [];
+      const previousAlert = window.alert;
+      window.alert = (message) => {
+        nativeFileAlerts.push(String(message || ""));
+      };
+      const nativeFileTabsBeforeArtifact = Array.from(document.querySelectorAll("[data-app-shell-tabs] [role='tab']"))
+        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
+      let artifactTab = null;
+      let artifactTabId = "";
+      let artifactFileContent = null;
+      try {
+        press(artifactButton);
+        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:local:'][data-tab-id*='result.md']", 10000);
+        if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
+          throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
+        }
+        if (!artifactTab) throw new Error("Aharness artifact did not open as a native file tab");
+        artifactTabId = artifactTab.getAttribute("data-tab-id") || artifactTab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || "";
+        if (!artifactTabId.startsWith("file:local:") || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
+          throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
+        }
+        artifactFileContent = await waitForAharness("[data-app-shell-tabs] [role='tabpanel'][data-tab-id^='file:local:'][data-tab-id*='result.md']", 10000);
+        if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
+          throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
+        }
+        if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
+          throw new Error("Aharness artifact file tab did not render artifact contents");
+        }
+      } finally {
+        window.alert = previousAlert;
+      }
+      const routeAfterArtifact = await waitForAharness("[data-codex-plus-aharness-route]", 10000);
+      if (!routeAfterArtifact) throw new Error("Aharness artifact open displaced the virtual chat route");
+      const activeAfterArtifact = window.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() || "";
+      if (!activeAfterArtifact.startsWith("cpx-aharness-run:")) {
+        throw new Error(`Aharness artifact open cleared the active virtual route: ${activeAfterArtifact}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3600));
+      const settledRouteAfterArtifact = document.querySelector("[data-codex-plus-aharness-route]");
+      const settledActiveAfterArtifact = window.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() || "";
+      if (!settledRouteAfterArtifact || !settledActiveAfterArtifact.startsWith("cpx-aharness-run:")) {
+        throw new Error(`Aharness artifact open did not keep the virtual chat route mounted after the File tab settled: ${settledActiveAfterArtifact}`);
+      }
+      if (artifactFileContent.querySelector("[data-codex-plus-thread-file-panel]")) throw new Error("Aharness artifact used Codex Plus file-panel DOM instead of the upstream File tab");
+      const nativeFileTabsAfterArtifact = Array.from(document.querySelectorAll("[data-app-shell-tabs] [role='tab']"))
+        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
+      if (nativeFileTabsBeforeArtifact.length > 0 && !nativeFileTabsBeforeArtifact.every((tabId) => nativeFileTabsAfterArtifact.includes(tabId))) {
+        throw new Error("Aharness artifact tab hid an existing native file tab");
+      }
+      if (document.querySelector("[data-codex-plus-thread-side-panel-root]")) throw new Error("Aharness artifact opened in a plugin-owned side panel overlay");
+      if (document.querySelector("#codex-plus-side-panel-root")) throw new Error("Aharness artifact opened in a fixed body overlay");
+      const codingRun = await createFsmRun("examples/coding-smoke.fsm.ts");
+      const codingCard = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", 150000);
+      if (!codingCard) {
+        const codingRunId = codingRun?.runId || codingRun?.result?.runId || document.querySelector("[data-codex-plus-aharness-route]")?.getAttribute("data-codex-plus-aharness-route") || "";
+        const read = codingRunId ? await window.CodexPlus?.native?.request?.("aharness/run/read", { runId: codingRunId }) : null;
+        throw new Error(`Coding smoke did not reach the owner approval card: ${JSON.stringify({
+          runId: codingRunId,
+          status: read?.result?.run?.status,
+          state: read?.result?.run?.currentState?.path,
+          pending: read?.result?.run?.pending?.map?.((card) => card.kind),
+          tail: normalize(document.querySelector("[data-codex-plus-aharness-route]")?.textContent || "").slice(-500),
+        })}`);
+      }
+      const codingWaitingComposer = await waitForAharness("[data-codex-plus-user-entry][data-codex-plus-composer-claimed][data-codex-plus-composer-mode='waiting']", 10000);
+      if (!codingWaitingComposer) throw new Error("Coding smoke did not keep the native composer visible in waiting mode before owner input");
+      if (!codingWaitingComposer.querySelector("[data-codex-plus-composer-stop-control]")) {
+        throw new Error("Coding smoke waiting composer did not expose the stop affordance");
+      }
+      const codingRoute = document.querySelector("[data-codex-plus-aharness-route]");
+      const codingText = normalize(codingRoute?.textContent || "");
+      if (codingText.includes("Valid exits:")) throw new Error("Coding smoke rendered the framework Valid exits schema block");
+      const statePrompts = Array.from(codingRoute.querySelectorAll(".cpx-ah-row-state_prompt"))
+        .map((element) => normalize(element.textContent || ""))
+        .filter(Boolean);
+      if (new Set(statePrompts).size !== statePrompts.length) throw new Error(`Coding smoke rendered duplicate state prompts: ${statePrompts.join(" | ")}`);
+      const firstStatePrompt = codingRoute.querySelector(".cpx-ah-row-state_prompt");
+      const statePromptStyle = firstStatePrompt ? getComputedStyle(firstStatePrompt) : null;
+      if (!firstStatePrompt || Number.parseFloat(statePromptStyle.borderTopLeftRadius || "0") < 12 || statePromptStyle.backgroundColor === "rgba(0, 0, 0, 0)") {
+        throw new Error(`Coding smoke state prompt is not rendered as a subdued bubble: ${JSON.stringify({ radius: statePromptStyle?.borderTopLeftRadius, background: statePromptStyle?.backgroundColor })}`);
+      }
+      const messageBodies = Array.from(codingRoute.querySelectorAll(".cpx-ah-row-message .cpx-ah-row-body"))
+        .map((element) => normalize(element.textContent || ""))
+        .filter(Boolean);
+      const tokenLikeRows = messageBodies.filter((text) => text.length <= 4 && !/[.!?]$/.test(text));
+      if (tokenLikeRows.length > 3) throw new Error(`Coding smoke still renders token-like message rows: ${tokenLikeRows.slice(0, 12).join(" | ")}`);
+      const duplicateMessages = messageBodies.filter((text, index) => messageBodies.indexOf(text) !== index);
+      if (duplicateMessages.length > 0) throw new Error(`Coding smoke rendered duplicate message rows: ${duplicateMessages.slice(0, 3).join(" | ")}`);
+      const toolGroup = await waitForAharness("[data-codex-plus-aharness-route] .cpx-ah-tool-group", 30000);
+      if (!toolGroup) throw new Error("Coding smoke did not render a public tool row");
+      const toolText = normalize(toolGroup.textContent || "");
+      if (!/Ran \d+ command|Running command/i.test(toolText) || !/bash|npm|pnpm|cat|sed|rg|test|completed|failed/i.test(toolText)) {
+        throw new Error(`Coding smoke tool row lacks useful details: ${toolText}`);
+      }
+      const runningToolGroup = document.querySelector("[data-codex-plus-aharness-route] .cpx-ah-tool-group-running");
+      if (runningToolGroup) {
+        const runningLabel = runningToolGroup.querySelector("summary span");
+        const runningSummary = runningToolGroup.querySelector("summary strong");
+        if (!/^Running commands?$/.test(normalize(runningLabel?.textContent || ""))) {
+          throw new Error(`Running tool group label is wrong: ${normalize(runningLabel?.textContent || "")}`);
+        }
+        if (!normalize(runningSummary?.textContent || "") || /Ran \d+ command/i.test(normalize(runningSummary?.textContent || ""))) {
+          throw new Error(`Running tool group summary still looks completed: ${normalize(runningSummary?.textContent || "")}`);
+        }
+        if (!runningToolGroup.querySelector(".cpx-ah-tool-tail")) throw new Error("Running tool group did not show a live output tail");
+      }
+      if (toolGroup.open) throw new Error("Coding smoke tool group should be folded by default");
+      press(toolGroup.querySelector("summary"));
+      if (!toolGroup.open) throw new Error("Coding smoke tool group did not become visible after expansion");
+      const toolCommand = toolGroup.querySelector(".cpx-ah-tool-command");
+      if (!toolCommand) throw new Error("Coding smoke expanded tool group did not reveal command rows");
+      if (toolCommand.open) throw new Error("Coding smoke command output should be folded by default");
+      const toolOutputPre = toolCommand.querySelector("pre");
+      if (toolOutputPre && (toolOutputPre.getClientRects().length > 0 || toolOutputPre.offsetHeight > 0)) {
+        throw new Error("Coding smoke folded command output is visible before expansion");
+      }
+      press(toolCommand.querySelector("summary"));
+      const openedOutputPre = toolCommand.querySelector("pre");
+      const noOutput = toolCommand.querySelector(".cpx-ah-tool-no-output");
+      if (openedOutputPre && (openedOutputPre.getClientRects().length === 0 || openedOutputPre.offsetHeight === 0)) throw new Error("Coding smoke command output did not become visible after expansion");
+      if (!openedOutputPre && !noOutput) throw new Error("Coding smoke command row did not expose output or an explicit no-output label");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      window.CodexPlus.ui.virtualConversations.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const reopenedToolGroup = document.querySelector(`[data-codex-plus-aharness-tool-group="${toolGroup.getAttribute("data-codex-plus-aharness-tool-group")}"]`);
+      if (!reopenedToolGroup?.open) throw new Error("Coding smoke tool group fold did not stay open after refresh");
+      const reopenedToolCommand = document.querySelector(`[data-codex-plus-aharness-tool-command="${toolCommand.getAttribute("data-codex-plus-aharness-tool-command")}"]`);
+      if (!reopenedToolCommand?.open) throw new Error("Coding smoke command output fold did not stay open after refresh");
+      const commandRows = Array.from(document.querySelectorAll("[data-codex-plus-aharness-route] .cpx-ah-tool-command"));
+      const unlabeledEmptyTool = commandRows.find((row) => !row.querySelector("pre") && !normalize(row.textContent || "").includes("No output captured."));
+      if (unlabeledEmptyTool) throw new Error(`Coding smoke empty-output tool row was not explicit: ${normalize(unlabeledEmptyTool.textContent || "")}`);
+      const noisyReasoning = Array.from(document.querySelectorAll("[data-codex-plus-aharness-route] .cpx-ah-row-reasoning"))
+        .map((row) => normalize(row.textContent || ""))
+        .filter((text) => text === "reasoning" || text === "REASONING reasoning");
+      if (noisyReasoning.length > 0) throw new Error(`Coding smoke rendered placeholder reasoning rows: ${noisyReasoning.join(" | ")}`);
+      const lifecycleNoise = Array.from(document.querySelectorAll("[data-codex-plus-aharness-route] .cpx-ah-row"))
+        .map((row) => normalize(row.textContent || ""))
+        .find((text) => /^run started$/i.test(text) || /^run_lifecycle run started$/i.test(text));
+      if (lifecycleNoise) throw new Error(`Coding smoke rendered lifecycle noise in the transcript: ${lifecycleNoise}`);
+      const requestChanges = await replyVisibleOwnerChoice("Request changes", 10000);
+      const openStateStartedAt = Date.now();
+      let openRun = null;
+      while (Date.now() - openStateStartedAt < 30000) {
+        const read = await window.CodexPlus.native.request("aharness/run/read", { runId: requestChanges.activeRunId });
+        if (read?.run?.currentState?.open === true) {
+          openRun = read.run;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!openRun) throw new Error("Coding smoke Request changes did not enter an open state");
+      await waitForAharness("[data-codex-plus-user-entry][data-codex-plus-composer-claimed][data-codex-plus-composer-mode='input']", 10000);
+      const composerForm = document.querySelector("[data-codex-plus-user-entry]");
+      if (!composerForm || !composerForm.hasAttribute("data-codex-plus-composer-claimed")) throw new Error("Coding smoke open state did not claim the native composer");
+      if (composerForm.getAttribute("data-codex-plus-composer-mode") !== "input") throw new Error("Coding smoke open state did not switch the native composer to input mode");
+      const composerText = "Please include the exact test command before implementation.";
+      const textarea = composerForm.querySelector("textarea");
+      const editable = composerForm.querySelector("[contenteditable='true'], .ProseMirror");
+      if (textarea) {
+        textarea.value = composerText;
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      } else if (editable) {
+        editable.textContent = composerText;
+        editable.innerText = composerText;
+        editable.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: composerText }));
+      } else {
+        throw new Error("Coding smoke native composer did not expose a text input");
+      }
+      composerForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      const feedbackStartedAt = Date.now();
+      let feedbackBubble = null;
+      while (Date.now() - feedbackStartedAt < 20000) {
+        feedbackBubble = Array.from(document.querySelectorAll("[data-codex-plus-aharness-route] [data-codex-plus-user-bubble]"))
+          .find((bubble) => normalize(bubble.textContent || "").includes("Please include the exact test command")) || null;
+        if (feedbackBubble) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!feedbackBubble) {
+        throw new Error("Coding smoke native composer feedback was not rendered as an owner bubble");
+      }
+      const codingScroller = document.querySelector("[data-codex-plus-aharness-route] [data-codex-plus-aharness-scroll]");
+      if (!codingScroller) throw new Error("Coding smoke scroller did not render");
+      codingScroller.scrollTop = codingScroller.scrollHeight;
+      codingScroller.scrollTop = 0;
+      const codingFirstRowText = normalize(codingRoute.querySelector(".cpx-ah-chat-stream .cpx-ah-row, .cpx-ah-chat-stream .cpx-ah-state-divider")?.textContent || "");
+      if (!codingFirstRowText) throw new Error("Coding smoke first public row was not reachable in the DOM");
+      const cancelProbe = await createFsmRun("examples/await-checkpoints.fsm.ts");
+      const cancelComposer = await waitForAharness("[data-codex-plus-user-entry][data-codex-plus-composer-claimed][data-codex-plus-composer-mode='waiting']", 10000);
+      if (!cancelComposer) throw new Error("Aharness cancel probe did not claim the native composer in waiting mode");
+      const cancelStop = cancelComposer.querySelector("[data-codex-plus-composer-stop-control]");
+      if (!cancelStop) throw new Error("Aharness cancel probe did not expose the native stop control");
+      press(cancelStop);
+      const cancelStartedAt = Date.now();
+      let cancelledRun = null;
+      while (Date.now() - cancelStartedAt < 20000) {
+        const read = await window.CodexPlus.native.request("aharness/run/read", { runId: cancelProbe.activeRunId });
+        if (read?.run?.status === "cancelled") {
+          cancelledRun = read.run;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      if (!cancelledRun) throw new Error("Aharness native composer stop control did not cancel the run");
+      const normalProject = document.querySelector('[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label="alpha-main"]');
+      if (normalProject) {
+        press(normalProject);
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+        const staleRoute = document.querySelector("[data-codex-plus-aharness-route]");
+        if (staleRoute && visible(staleRoute)) throw new Error("Aharness virtual route stayed visible after selecting a normal project");
+        if (window.CodexPlus.ui.virtualConversations.activeRouteId()) throw new Error("Aharness virtual route stayed active after selecting a normal project");
+        if (decodeURIComponent(String(window.location.hash || "").replace(/^#/, "")).startsWith("cpx-aharness-run:")) {
+          throw new Error(`Aharness virtual route hash stayed active after selecting a normal project: ${window.location.hash}`);
+        }
+      }
+      pass("aharnessRuns", {
+        ...details,
+        hasOpenCommand,
+        hasRunCommand,
+        hasMenuItem,
+        commandCount: listResult.commands.length,
+        verifiedDemo: true,
+        longRunCompleted: true,
+        scrollPositionPreserved: true,
+        userBubbleRendered: true,
+        bottomActionDockRendered: true,
+        sidebarProjectRows: document.querySelectorAll("#codex-plus-aharness-sidebar [data-codex-plus-aharness-project-row]").length,
+        sidebarFsmRows: document.querySelectorAll("#codex-plus-aharness-sidebar [data-codex-plus-aharness-fsm-row]").length,
+        sidebarRunRows: document.querySelectorAll("#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]").length,
+        virtualRouteRendered: true,
+        transcriptRowsRendered: true,
+        artifactPanelRendered: true,
+        interactionReplyClicked: true,
+        codingSmokeTranscriptChecked: true,
+      });
+    } catch (error) {
+      fail("aharnessRuns", error);
+    }
+
     for (const id of probedPlugins) {
       if (!pluginResults[id]) fail(id, new Error("Probe did not run"));
     }

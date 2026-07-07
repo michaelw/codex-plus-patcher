@@ -21,6 +21,24 @@ path = 'vendor/other'
   assert.deepEqual(parsed.ignoredLines, []);
 });
 
+test("parsePlusToml reads aharness state machines", () => {
+  const parsed = parsePlusToml(`
+[[aharness.state_machines]]
+label = "Await checkpoints"
+target = "await-checkpoints"
+description = "Demo workflow"
+
+[[aharness.state_machines]]
+target = "./flows/release.fsm.ts"
+`);
+
+  assert.equal(parsed.tables.aharnessStateMachines, 2);
+  assert.deepEqual(parsed.aharnessStateMachines, [
+    { label: "Await checkpoints", target: "await-checkpoints", description: "Demo workflow" },
+    { label: "./flows/release.fsm.ts", target: "./flows/release.fsm.ts", description: undefined },
+  ]);
+});
+
 test("parsePlusToml ignores tables without a path and records unsupported lines", () => {
   const parsed = parsePlusToml(`
 title = "ignored"

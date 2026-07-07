@@ -38,6 +38,7 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     assert.equal(fs.existsSync(path.join(devHome, "state_5.sqlite")), true);
     assert.equal(fs.existsSync(path.join(devHome, "sqlite", "codex-dev.db")), true);
     assert.equal(fs.existsSync(path.join(devHome, ".codex-global-state.json")), true);
+    assert.equal(fs.existsSync(path.join(devHome, "codex-plus-dom-survey-fixture.json")), true);
     assert.equal(fs.existsSync(path.join(devHome, "session_index.jsonl")), true);
     assert.equal(sqliteValue(path.join(devHome, "state_5.sqlite"), "select count(*) from threads;"), "10");
     assert.equal(
@@ -58,6 +59,45 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     assert.doesNotMatch(serialized, new RegExp(os.homedir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(serialized, /Fixture: main repo path header/);
     assert.equal(fixture.workspaces.extraProjects.length, 8);
+    const domSurvey = JSON.parse(fs.readFileSync(path.join(devHome, "codex-plus-dom-survey-fixture.json"), "utf8"));
+    assert.deepEqual(domSurvey.runtimePluginsDisabled, ["aharnessRuns"]);
+    assert.equal(domSurvey.targetThreadTitle, "Fixture: nested repos before branch selection");
+    assert.equal(domSurvey.targetSidePanelTab, "Review");
+    assert.equal(domSurvey.expectedProjects.aharnessProject, fixture.workspaces.aharnessProject);
+    assert.equal(domSurvey.expectedAharnessStateMachines.length, 9);
+  });
+});
+
+test("audit fixture retries transient dev-home removal failures", () => {
+  withTempDir((tmpDir) => {
+    const devHome = path.join(tmpDir, "codex-home");
+    const electronUserDataPath = path.join(tmpDir, "electron-user-data");
+    fs.mkdirSync(devHome, { recursive: true });
+    fs.writeFileSync(path.join(devHome, "stale.txt"), "stale");
+    let failedDevHomeRemoval = false;
+    const fsImpl = {
+      ...fs,
+      rmSync(target, options) {
+        if (!failedDevHomeRemoval && path.resolve(target) === path.resolve(devHome)) {
+          failedDevHomeRemoval = true;
+          const error = new Error("Directory not empty");
+          error.code = "ENOTEMPTY";
+          throw error;
+        }
+        return fs.rmSync(target, options);
+      },
+    };
+
+    const fixture = buildAuditFixture({
+      devHome,
+      electronUserDataPath,
+      rootDir: tmpDir,
+      fsImpl,
+    });
+
+    assert.equal(failedDevHomeRemoval, true);
+    assert.equal(fs.existsSync(path.join(fixture.devHome, "state_5.sqlite")), true);
+    assert.equal(fs.existsSync(path.join(devHome, "stale.txt")), false);
   });
 });
 
@@ -144,6 +184,53 @@ test("audit fixture creates nested repository inputs for review probes", () => {
 
     assert.equal(fs.existsSync(path.join(fixture.workspaces.nestedWorktree, ".gitmodules")), true);
     assert.equal(fs.existsSync(path.join(fixture.workspaces.nestedWorktree, ".codex", "plus.toml")), true);
+    const nestedPlusToml = fs.readFileSync(path.join(fixture.workspaces.nestedWorktree, ".codex", "plus.toml"), "utf8");
+    assert.doesNotMatch(nestedPlusToml, /\[\[aharness\.state_machines\]\]/);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, ".codex", "plus.toml")), true);
+    assert.equal(fs.readFileSync(path.join(fixture.workspaces.aharnessProject, ".gitignore"), "utf8"), ".aharness/\nnode_modules/\n");
+    const plusToml = fs.readFileSync(path.join(fixture.workspaces.aharnessProject, ".codex", "plus.toml"), "utf8");
+    for (const target of [
+      "examples/color-funnel.fsm.ts",
+      "examples/ops-clear-demo.fsm.ts",
+      "examples/trivia-rounds.fsm.ts",
+      "examples/adventure.fsm.ts",
+      "examples/await-checkpoints.fsm.ts",
+      "examples/pirate-roast.fsm.ts",
+      "examples/composed-pipeline.fsm.ts",
+      "examples/approval-policy.fsm.ts",
+      "examples/coding-smoke.fsm.ts",
+    ]) {
+      assert.match(plusToml, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, target)), true);
+    }
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/coding-smoke/fixture/package.json")), true);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/coding-smoke/fixture/src/math.ts")), true);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/coding-smoke/fixture/test/math.test.ts")), true);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/coding-smoke/fixture/vitest.config.ts")), true);
+    const codingSmokeMath = fs.readFileSync(path.join(fixture.workspaces.aharnessProject, "examples/coding-smoke/fixture/src/math.ts"), "utf8");
+    assert.match(codingSmokeMath, /a - b/);
+    const adventureSource = fs.readFileSync(path.join(fixture.workspaces.aharnessProject, "examples/adventure.fsm.ts"), "utf8");
+    assert.match(adventureSource, /createFsm/);
+    assert.match(adventureSource, /forestChoice/);
+    assert.match(adventureSource, /caveChoice/);
+    assert.match(adventureSource, /riverChoice/);
+    assert.doesNotMatch(adventureSource, /Synthetic fixture/);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/composed-pipeline-child.fsm.ts")), true);
+    assert.equal(fs.existsSync(path.join(fixture.workspaces.aharnessProject, "examples/skills/pirate-mode/SKILL.md")), true);
+    assert.equal(
+      childProcess.execFileSync("git", ["status", "--short"], {
+        cwd: fixture.workspaces.aharnessProject,
+        encoding: "utf8",
+      }),
+      "",
+    );
+    assert.match(
+      childProcess.execFileSync("git", ["ls-files", "examples/coding-smoke/fixture/src/math.ts"], {
+        cwd: fixture.workspaces.aharnessProject,
+        encoding: "utf8",
+      }),
+      /examples\/coding-smoke\/fixture\/src\/math\.ts/,
+    );
     assert.equal(fs.existsSync(path.join(fixture.workspaces.nestedAlphaModule, ".git")), true);
     assert.equal(fs.existsSync(path.join(fixture.workspaces.nestedBetaModule, ".git")), true);
     assert.match(
