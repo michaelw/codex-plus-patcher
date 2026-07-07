@@ -171,27 +171,53 @@ npm run regression:sources
 ```
 
 The runner scans the main checkout's ignored `work/sources/*/Codex.app`,
-matches each source against the registered patch sets, applies supported
-versions to isolated targets under `work/regression/sources/<version>/`, and
-runs the live plugin audit sequentially. Narrow the run with a case-insensitive
-filter or limit the run to the newest cached sources:
+matches each source against the registered patch sets, sorts supported versions
+newest-first, applies them to isolated targets under the current worktree's
+`work/regression/sources/<version>/`, and runs the live plugin audit
+sequentially. Narrow the run with a case-insensitive filter or limit the run to
+the newest cached sources. The `--newest N` limit is applied after newest-first
+sorting:
 
 ```sh
 npm run regression:sources -- --filter 61825
 npm run regression:sources -- --newest 2
 ```
 
-Use `--auto-clean` to remove each generated regression directory after its
-audit finishes, or run cleanup only:
+For new version ports, first prove the newest cached source with compact
+progress output:
+
+```sh
+npm run regression:sources -- --newest 1 --jsonl
+```
+
+Then inspect the default visual contract under
+`work/regression/contracts/<timestamp>/<version>/`. Each contract includes
+`contract.json`, `audit-summary.json`, and screenshots for the shell/sidebar,
+Review, command-palette dispatch, and Settings. After the newest source passes,
+run the full sweep:
 
 ```sh
 npm run regression:sources -- --auto-clean
+```
+
+Use `--auto-clean` to remove each generated app/home/user-data regression
+directory after its audit finishes, or run cleanup only:
+
+```sh
 npm run regression:sources -- --clean
 npm run regression:sources -- --clean --filter 61825
 ```
 
 Cleanup only removes generated output under `work/regression/sources/`; it must
-not remove the original app cache under `work/sources/`.
+not remove the original app cache under `work/sources/`, and it preserves
+visual contracts under `work/regression/contracts/`.
+
+Visual contracts are enabled by default for both plugin audits and source
+regressions. Single plugin audits write contracts under
+`work/audit-plugins/<timestamp>-<version>/`; source regressions write contracts
+under `work/regression/contracts/<timestamp>/<version>/`. Pass
+`--no-visual-contract` only when screenshots/readbacks are deliberately not
+needed.
 
 Plugin audits and source regressions create a generated Codex home fixture by
 default. The fixture seeds synthetic projects, threads, project assignments,
@@ -216,8 +242,11 @@ regressions that have broken in real ports:
   beyond the first few palette entries.
 - Pinned threads inherit the color of their project.
 - Project chats have stable colors based on their project identity.
-- `regression:sources --json` includes each failing audit probe's detailed
-  fields, not only the summarized plugin failure message.
+- Use `--jsonl` for compact live progress during long audits or regression
+  sweeps.
+- Use `regression:sources --json` for post-failure inspection; it includes each
+  failing audit probe's detailed fields, not only the summarized plugin failure
+  message.
 
 ## Release And Package Checks
 

@@ -23,6 +23,14 @@ const DEFAULT_SOURCE = "/Applications/Codex.app";
 const DEFAULT_TARGET = path.resolve("work/Codex Plus.app");
 const DEFAULT_PORT = 9234;
 
+function safeTimestamp(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+function defaultAuditArtifactDir({ cwd = process.cwd(), version = "unknown", now = new Date() } = {}) {
+  return path.join(cwd, "work", "audit-plugins", `${safeTimestamp(now)}-${version}`);
+}
+
 function expandPath(input) {
   if (input === "~") return os.homedir();
   if (input.startsWith("~/")) return path.join(os.homedir(), input.slice(2));
@@ -40,11 +48,14 @@ function parseArgs(argv) {
     apply: true,
     launch: true,
     json: false,
+    jsonl: false,
     keepOpen: false,
     manual: false,
     includeNativeOpenProbes: false,
     disabledRuntimePlugins: [],
     noProgress: false,
+    visualContract: true,
+    artifactDir: null,
     quiet: false,
     devInstanceId: "audit",
     useLiveSourceHome: false,
@@ -69,6 +80,9 @@ function parseArgs(argv) {
     else if (arg === "--no-apply") args.apply = false;
     else if (arg === "--no-launch") args.launch = false;
     else if (arg === "--json" || arg === "--format=json") args.json = true;
+    else if (arg === "--jsonl" || arg === "--format=jsonl") args.jsonl = true;
+    else if (arg === "--artifact-dir") args.artifactDir = path.resolve(expandPath(next()));
+    else if (arg === "--no-visual-contract") args.visualContract = false;
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--no-progress") args.noProgress = true;
     else if (arg === "--keep-open") args.keepOpen = true;
@@ -82,6 +96,7 @@ function parseArgs(argv) {
     else if (arg === "--disable-plugins") args.disabledRuntimePlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
     else throw new Error(`Unknown argument: ${arg}`);
   }
+  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -1196,6 +1211,83 @@ function formatAuditJson(result) {
   return `${JSON.stringify(result, null, 2)}\n`;
 }
 
+function compactAuditSummary(result) {
+  return {
+    ok: Boolean(result?.ok),
+    failures: result?.failures || [],
+    expectedWarnings: result?.expectedWarnings || [],
+    source: result?.applyResult?.sourceApp || result?.source || DEFAULT_SOURCE,
+    target: result?.target?.app || DEFAULT_TARGET,
+    patchSet: result?.applyResult?.patchSet || null,
+    codexVersion: result?.applyResult?.codexVersion || null,
+    bundleVersion: result?.applyResult?.bundleVersion || null,
+    runtimeStatus: result?.runtimeStatus || null,
+    appShellStatus: result?.appShellStatus || null,
+    cleanupResult: result?.cleanupResult || null,
+    plugins: Object.fromEntries(Object.entries(result?.pluginResults || {}).map(([name, value]) => [
+      name,
+      {
+        ok: value?.ok ?? null,
+        warning: value?.warning || null,
+        message: value?.message || null,
+      },
+    ])),
+  };
+}
+
+function writeJsonFile(filePath, value, { fsImpl = fs } = {}) {
+  fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
+  fsImpl.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function jsonlRecord(type, payload = {}, { now = () => new Date() } = {}) {
+  return {
+    type,
+    time: now().toISOString(),
+    ...payload,
+  };
+}
+
+function writeJsonl(stream, record) {
+  stream.write(`${JSON.stringify(record)}\n`);
+}
+
+function createJsonlProgress({ stream = process.stdout, now = () => new Date(), context = {} } = {}) {
+  const emit = (status, message, extra = {}) => writeJsonl(stream, jsonlRecord("progress", {
+    status,
+    message,
+    ...context,
+    ...extra,
+  }, { now }));
+  return {
+    start(message, extra) {
+      emit("start", message, extra);
+    },
+    succeed(message, extra) {
+      emit("pass", message, extra);
+    },
+    fail(message, extra) {
+      emit("fail", message, extra);
+    },
+    event(type, payload = {}) {
+      writeJsonl(stream, jsonlRecord(type, {
+        ...context,
+        ...payload,
+      }, { now }));
+    },
+    child(childContext = {}) {
+      return createJsonlProgress({
+        stream,
+        now,
+        context: {
+          ...context,
+          ...childContext,
+        },
+      });
+    },
+  };
+}
+
 function formatAuditResult(result, { quiet = false } = {}) {
   const expectedWarnings = result.expectedWarnings || [];
   if (result.manual) {
@@ -1288,6 +1380,7 @@ function formatAuditResult(result, { quiet = false } = {}) {
     `Probed ${probeCount} plugins`,
     `Warnings: ${expectedWarnings.length} expected`,
     `Native open probes: ${result.nativeOpenProbes?.included ? "included" : "skipped"}`,
+    `Visual contract: ${result.visualContract?.artifactDir || "disabled"}`,
     `Cleanup: ${cleanupText}`,
     "",
     "All plugin probes passed.",
@@ -1314,6 +1407,7 @@ async function createAuditProgress(args, {
   importOra = (specifier) => import(specifier),
   now = () => new Date(),
 } = {}) {
+  if (args.jsonl) return createJsonlProgress({ stream, now });
   if (!shouldShowAuditProgress(args, stream)) return null;
   if (stream.isTTY) {
     const { default: ora } = await importOra("ora");
@@ -1349,6 +1443,115 @@ async function createAuditProgress(args, {
       stream.write(`[${timestamp(now())}] FAIL ${text}\n`);
     },
   };
+}
+
+async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
+  fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
+  const result = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  fsImpl.writeFileSync(filePath, Buffer.from(result.data || "", "base64"));
+  return filePath;
+}
+
+async function visualReadback(cdp) {
+  return cdp.evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
+    const textIncludes = (text) => normalize(document.body?.innerText || document.body?.textContent || "").includes(text);
+    return {
+      url: location.href,
+      title: document.title,
+      shell: {
+        startupLoaderVisible: Boolean(document.querySelector("[data-testid='startup-loader']")),
+        bodyTextSample: normalize(document.body?.innerText || document.body?.textContent || "").slice(0, 500),
+      },
+      sidebar: {
+        pinnedVisible: textIncludes("Pinned"),
+        harnessRunsVisible: textIncludes("Harness Runs"),
+        projectsVisible: textIncludes("Projects"),
+        threadRows: visibleElements("[data-app-action-sidebar-thread-row]").length,
+        projectRows: visibleElements("[data-app-action-sidebar-project-row]").length,
+        blurred: document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+      },
+      review: {
+        tabVisible: visibleElements("button, [role='tab'], [role='button']").some((element) => normalize(element.textContent) === "Review"),
+        repoHeaderVisible: textIncludes("Codex Plus repositories"),
+        diffCardCount: visibleElements(".codex-review-diff-card").length,
+        rawDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
+      },
+      commandPalette: {
+        sidebarBlurred: document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+      },
+      settings: {
+        generalVisible: textIncludes("General"),
+        backToAppVisible: textIncludes("Back to app"),
+        blank: normalize(document.body?.innerText || document.body?.textContent || "").length === 0,
+      },
+    };
+  })()`);
+}
+
+async function openSettingsForVisualContract(cdp, { wait = delay } = {}) {
+  await cdp.send("Page.navigate", { url: "app://-/settings/general-settings" });
+  await wait(2000);
+}
+
+async function captureVisualContract(cdp, {
+  artifactDir,
+  result,
+  reviewPanel = null,
+  commandPalette = null,
+  fsImpl = fs,
+  wait = delay,
+} = {}) {
+  if (!artifactDir) throw new Error("visual contract artifactDir is required");
+  fsImpl.mkdirSync(artifactDir, { recursive: true });
+  const screenshots = {};
+  screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
+  const shell = await visualReadback(cdp);
+  screenshots.review = await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
+  const review = await visualReadback(cdp);
+  screenshots.sidebarCommand = await capturePng(cdp, path.join(artifactDir, "sidebar-command.png"), { fsImpl });
+  const command = await visualReadback(cdp);
+  await openSettingsForVisualContract(cdp, { wait });
+  screenshots.settings = await capturePng(cdp, path.join(artifactDir, "settings.png"), { fsImpl });
+  const settings = await visualReadback(cdp);
+  const contract = {
+    ok: true,
+    createdAt: new Date().toISOString(),
+    artifactDir,
+    screenshots,
+    source: result?.applyResult?.sourceApp || result?.source || DEFAULT_SOURCE,
+    target: result?.target?.app || DEFAULT_TARGET,
+    patchSet: result?.applyResult?.patchSet || null,
+    codexVersion: result?.applyResult?.codexVersion || null,
+    bundleVersion: result?.applyResult?.bundleVersion || null,
+    shell,
+    review: {
+      ...review.review,
+      probe: reviewPanel,
+    },
+    commandPalette: {
+      ...command.commandPalette,
+      probe: commandPalette,
+    },
+    settings: settings.settings,
+  };
+  if (contract.settings.blank || !contract.settings.generalVisible) {
+    contract.ok = false;
+    contract.message = "Settings visual contract did not render General settings";
+  }
+  writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
+  writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });
+  return contract;
 }
 
 function progressStart(progress, text) {
@@ -3244,6 +3447,7 @@ async function runAudit(args, {
   const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
   const verifyReviewPanel = operations.verifyReviewPanelRender || verifyReviewPanelRender;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
+  const captureContract = operations.captureVisualContract || captureVisualContract;
   const checkStability = operations.checkKeepOpenAppStability || checkKeepOpenAppStability;
   const preflightAudit = operations.auditPreflight || auditPreflight;
   const readIdentity = operations.auditIdentity || auditIdentity;
@@ -3260,6 +3464,7 @@ async function runAudit(args, {
   let runtimeStatus = null;
   let appShellStatus = null;
   let cleanupResult = null;
+  let visualContractResult = null;
   let result = null;
   try {
     preflight = await preflightAudit(args, { findPort });
@@ -3406,6 +3611,28 @@ async function runAudit(args, {
         },
         preflight,
       };
+      if (args.visualContract === true) {
+        const artifactDir = args.artifactDir || defaultAuditArtifactDir({
+          version: applyResult?.codexVersion || "unknown",
+        });
+        visualContractResult = await withAuditProgress(
+          progress,
+          "Capturing visual contract",
+          "Captured visual contract",
+          () => captureContract(cdp, {
+            artifactDir,
+            result,
+          }),
+        );
+        result.visualContract = visualContractResult;
+        if (!visualContractResult.ok) {
+          appendFailure(result, {
+            plugin: "audit",
+            message: visualContractResult.message || "Visual contract failed",
+            details: { artifactDir },
+          });
+        }
+      }
       return result;
     }
     const live = await withAuditProgress(
@@ -3548,6 +3775,30 @@ async function runAudit(args, {
       mermaidViewerRender,
       preflight,
     };
+    if (args.visualContract === true) {
+      const artifactDir = args.artifactDir || defaultAuditArtifactDir({
+        version: applyResult?.codexVersion || "unknown",
+      });
+      visualContractResult = await withAuditProgress(
+        progress,
+        "Capturing visual contract",
+        "Captured visual contract",
+        () => captureContract(cdp, {
+          artifactDir,
+          result,
+          reviewPanel: live.pluginResults?.nestedRepositories?.reviewPanel || null,
+          commandPalette: live.pluginResults?.sidebarNameBlur?.commandPalette || null,
+        }),
+      );
+      result.visualContract = visualContractResult;
+      if (!visualContractResult.ok) {
+        appendFailure(result, {
+          plugin: "audit",
+          message: visualContractResult.message || "Visual contract failed",
+          details: { artifactDir },
+        });
+      }
+    }
     return result;
   } catch (error) {
     result = {
@@ -3607,6 +3858,7 @@ async function runAudit(args, {
       },
       preflight,
     };
+    if (visualContractResult) result.visualContract = visualContractResult;
     return result;
   } finally {
     if (cdp) await cdp.close();
@@ -3671,9 +3923,22 @@ async function runAudit(args, {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const progress = await createAuditProgress(args);
+  const progress = args.jsonl ? createJsonlProgress() : await createAuditProgress(args);
   const result = await runAudit(args, { progress });
-  process.stdout.write(args.json ? formatAuditJson(result) : formatAuditResult(result, args));
+  if (args.json) process.stdout.write(formatAuditJson(result));
+  else if (args.jsonl) {
+    writeJsonl(process.stdout, jsonlRecord("summary", {
+      ok: result.ok,
+      failures: result.failures || [],
+      expectedWarnings: result.expectedWarnings || [],
+      visualContract: result.visualContract ? {
+        ok: result.visualContract.ok,
+        artifactDir: result.visualContract.artifactDir,
+      } : null,
+    }));
+  } else {
+    process.stdout.write(formatAuditResult(result, args));
+  }
   if (!result.ok) process.exitCode = 1;
 }
 
@@ -3690,16 +3955,20 @@ module.exports = {
   auditPreflight,
   cleanupLaunchedAuditApp,
   checkKeepOpenAppStability,
+  captureVisualContract,
   createAuditProgress,
+  createJsonlProgress,
   DEFAULT_PORT,
   DEFAULT_SOURCE,
   DEFAULT_TARGET,
+  defaultAuditArtifactDir,
   failedPatches,
   failedPlugins,
   findFreePort,
   findRendererTargetOnPort,
   formatAuditJson,
   formatAuditResult,
+  jsonlRecord,
   listRunningAuditApps,
   listCrashpadPendingDumps,
   parseArgs,
@@ -3713,5 +3982,6 @@ module.exports = {
   verifyProjectSelectorShortcutKey,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
+  writeJsonl,
   waitForRendererTarget,
 };

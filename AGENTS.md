@@ -23,8 +23,12 @@ This repo ships patch source only. Never commit `Codex.app`, generated
 - Use `npm run release:intake` before manually downloading mirror assets for a
   new Codex port. Store original apps only under the main checkout's ignored
   `work/sources/` tree.
-- Use `npm run regression:sources` to audit cached original apps under
-  `work/sources/` against the current patch code.
+- For version ports, run `npm run regression:sources -- --newest 1 --jsonl`
+  first, inspect the default visual contract under
+  `work/regression/contracts/<timestamp>/<version>/`, then run
+  `npm run regression:sources -- --auto-clean` for the full cached-source
+  sweep. Source apps stay under the main checkout's `work/sources/`; generated
+  regression output and contracts stay under the current worktree's `work/`.
 - Automated plugin audits use generated Codex home fixtures by default. Use
   `--use-live-source-home` or `--source-home <path>` only for manual live-state
   debugging, not as the normal regression path.
