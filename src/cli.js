@@ -6,9 +6,12 @@ const {
   createAuditProgress,
   DEFAULT_PORT: DEFAULT_AUDIT_PORT,
   DEFAULT_TARGET: DEFAULT_AUDIT_TARGET,
+  createJsonlProgress,
   formatAuditJson,
   formatAuditResult,
+  jsonlRecord,
   runAudit,
+  writeJsonl,
 } = require("./core/plugin-audit");
 const { readAsar, walkFiles } = require("./core/asar");
 const {
@@ -43,6 +46,7 @@ function parseArgs(argv) {
     releaseTag: "latest",
     dryRun: false,
     json: false,
+    jsonl: false,
     debug: false,
     apply: true,
     launch: true,
@@ -52,6 +56,8 @@ function parseArgs(argv) {
     auditPlugins: [],
     disabledRuntimePlugins: [],
     noProgress: false,
+    visualContract: true,
+    artifactDir: null,
     quiet: false,
     devInstanceId: DEFAULT_DEV_INSTANCE_ID,
     useLiveSourceHome: false,
@@ -101,6 +107,8 @@ function parseArgs(argv) {
     }
     else if (arg === "--use-live-source-home") args.useLiveSourceHome = true;
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
+    else if (arg === "--artifact-dir") args.artifactDir = path.resolve(expandPath(next()));
+    else if (arg === "--no-visual-contract") args.visualContract = false;
     else if (arg === "--plugin") args.auditPlugins.push(next());
     else if (arg === "--plugins") args.auditPlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
     else if (arg === "--disable-plugin") args.disabledRuntimePlugins.push(next());
@@ -109,14 +117,17 @@ function parseArgs(argv) {
     else if (arg === "--quiet") args.quiet = true;
     else if (arg === "--debug") args.debug = true;
     else if (arg === "--json" || arg === "--format=json") args.json = true;
+    else if (arg === "--jsonl" || arg === "--format=jsonl") args.jsonl = true;
     else if (arg === "--format") {
       const format = next();
-      if (format !== "json") throw new Error(`Unknown format: ${format}`);
-      args.json = true;
+      if (format === "json") args.json = true;
+      else if (format === "jsonl") args.jsonl = true;
+      else throw new Error(`Unknown format: ${format}`);
     }
     else if (arg === "--help" || arg === "-h") args.command = "help";
     else throw new Error(`Unknown argument: ${arg}`);
   }
+  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -124,7 +135,7 @@ function helpText() {
   return `Usage:
   codex-plus-patcher
   codex-plus-patcher apply [options]
-  codex-plus-patcher audit-plugins [--json] [--quiet] [--no-progress] [--manual] [--keep-open] [--plugin <id>] [--disable-plugin <id>] [--include-native-open-probes] [--use-live-source-home]
+  codex-plus-patcher audit-plugins [--json|--jsonl] [--quiet] [--no-progress] [--manual] [--keep-open] [--plugin <id>] [--disable-plugin <id>] [--include-native-open-probes] [--use-live-source-home]
   codex-plus-patcher dev-sync [--source-home <path>] [--dev-home <path>] [--json]
   codex-plus-patcher launch-dev --target <path> [--dev-home <path>] [--electron-user-data <path>] [--remote-debugging-port <port>] [--json]
   codex-plus-patcher menu-diagnostics --asar <path> [--json]
@@ -157,6 +168,8 @@ Options:
   --use-live-source-home   Use --source-home for audit-plugins instead of generated fixture state
   --include-native-open-probes
                            Also open DevTools and Mermaid viewer windows during audit probes
+  --artifact-dir <path>    Directory for visual contract artifacts
+  --no-visual-contract     Disable default visual contract screenshots/readback
   --plugin <id>            Probe only one runtime plugin during audit-plugins. Can be repeated
   --plugins <id,id>        Probe only a comma-separated set of runtime plugins during audit-plugins
   --disable-plugin <id>    Do not inject one runtime plugin during audit-plugins. Can be repeated
@@ -164,7 +177,8 @@ Options:
   --no-progress            Suppress audit progress and print only the final summary
   --quiet                  Print minimal audit output
   --debug                  Print stack traces for CLI errors
-  --json                   Print the machine-readable result
+  --json                   Print the full machine-readable result
+  --jsonl                  Stream compact machine-readable progress events
 `;
 }
 
@@ -429,9 +443,22 @@ async function main() {
     return;
   }
   if (args.command === "audit-plugins") {
-    const progress = await createAuditProgress(args);
+    const progress = args.jsonl ? createJsonlProgress() : await createAuditProgress(args);
     const result = await runAudit(args, { progress });
-    process.stdout.write(args.json ? formatAuditJson(result) : formatAuditResult(result, args));
+    if (args.json) process.stdout.write(formatAuditJson(result));
+    else if (args.jsonl) {
+      writeJsonl(process.stdout, jsonlRecord("summary", {
+        ok: result.ok,
+        failures: result.failures || [],
+        expectedWarnings: result.expectedWarnings || [],
+        visualContract: result.visualContract ? {
+          ok: result.visualContract.ok,
+          artifactDir: result.visualContract.artifactDir,
+        } : null,
+      }));
+    } else {
+      process.stdout.write(formatAuditResult(result, args));
+    }
     if (!result.ok) process.exitCode = 1;
     return;
   }

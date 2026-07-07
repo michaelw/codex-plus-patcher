@@ -4,7 +4,14 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { getAppIdentity } = require("../src/core/patch-engine");
-const { createAuditProgress, findFreePort, runAudit } = require("../src/core/plugin-audit");
+const {
+  createAuditProgress,
+  createJsonlProgress,
+  findFreePort,
+  jsonlRecord,
+  runAudit,
+  writeJsonl,
+} = require("../src/core/plugin-audit");
 const { patchSets } = require("../src/patches");
 const { resolveDefaultSourcesDir } = require("./release-intake");
 
@@ -22,9 +29,12 @@ function parseArgs(argv) {
     help: false,
     includeNativeOpenProbes: false,
     json: false,
+    jsonl: false,
     keepOpen: false,
     newest: null,
     noProgress: false,
+    visualContract: true,
+    artifactDir: null,
     remoteDebuggingPort: 9234,
     sourcesDir: null,
     useLiveSourceHome: false,
@@ -43,6 +53,7 @@ function parseArgs(argv) {
     else if (arg === "--filter") args.filter = next();
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
     else if (arg === "--json") args.json = true;
+    else if (arg === "--jsonl") args.jsonl = true;
     else if (arg === "--keep-open") args.keepOpen = true;
     else if (arg === "--newest") {
       const value = Number(next());
@@ -50,6 +61,8 @@ function parseArgs(argv) {
       args.newest = value;
     }
     else if (arg === "--no-progress") args.noProgress = true;
+    else if (arg === "--artifact-dir") args.artifactDir = path.resolve(expandPath(next()));
+    else if (arg === "--no-visual-contract") args.visualContract = false;
     else if (arg === "--remote-debugging-port" || arg === "--port") {
       const value = Number(next());
       if (!Number.isInteger(value) || value < 1) throw new Error(`${arg} must be a positive integer`);
@@ -62,6 +75,7 @@ function parseArgs(argv) {
   }
 
   if (args.autoClean && args.keepOpen) throw new Error("--auto-clean cannot be combined with --keep-open");
+  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -78,14 +92,21 @@ Options:
   --keep-open                  Leave audit-launched apps open
   --use-live-source-home       Use ~/.codex live state instead of generated fixture state
   --include-native-open-probes Include native window-opening audit probes
+  --artifact-dir <path>        Root directory for visual contract artifacts
+  --no-visual-contract         Disable default visual contract screenshots/readback
   --no-progress                Suppress audit progress output
   --remote-debugging-port <N>  Starting port for audit apps. Default: 9234
-  --json                       Print the machine-readable result
+  --json                       Print the full machine-readable result
+  --jsonl                      Stream compact machine-readable progress events
 `;
 }
 
-function defaultRegressionDirForSources(sourcesDir) {
-  return path.join(path.dirname(sourcesDir), "regression", "sources");
+function defaultRegressionDirForSources(_sourcesDir, { cwd = process.cwd() } = {}) {
+  return path.join(cwd, "work", "regression", "sources");
+}
+
+function defaultContractRoot({ cwd = process.cwd(), now = new Date() } = {}) {
+  return path.join(cwd, "work", "regression", "contracts", now.toISOString().replace(/[:.]/g, "-"));
 }
 
 function compareVersionStrings(left, right) {
@@ -101,14 +122,14 @@ function compareVersionStrings(left, right) {
 }
 
 function newestSources(sources, count) {
-  if (count == null) return sources;
   return [...sources]
     .sort((left, right) => compareVersionStrings(right.version, left.version))
-    .slice(0, count);
+    .slice(0, count == null ? undefined : count);
 }
 
-function prefixProgress(progress, prefix) {
+function prefixProgress(progress, prefix, context = {}) {
   if (!progress) return null;
+  if (typeof progress.child === "function") return progress.child(context);
   return {
     start(text) {
       progress.start?.(`${prefix}${text}`);
@@ -244,10 +265,19 @@ function cleanRegressionSources({ regressionDir, sources = [], filter = null, ne
 
 async function runSourceRegression(source, { args, regressionDir, operations = {}, progress = null, index = 1, total = 1 }) {
   const paths = pathsForSource(regressionDir, source.version);
+  const artifactDir = args.visualContract === false ? null : path.join(args.contractRoot, source.version);
+  const sourceContext = {
+    version: source.version,
+    bundleVersion: source.bundleVersion,
+    patchSet: source.patchSet,
+    sourceApp: source.sourceApp,
+    targetApp: paths.targetApp,
+  };
   const label = `[${index}/${total} ${source.version}] `;
+  const sourceProgress = prefixProgress(progress, label, sourceContext);
   if (!source.supported) {
-    progress?.start?.(`${label}Checking source support`);
-    progress?.succeed?.(`${label}Skipped unsupported source`);
+    sourceProgress?.start?.("Checking source support");
+    sourceProgress?.succeed?.("Skipped unsupported source");
     return {
       ...source,
       ok: null,
@@ -260,7 +290,6 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
 
   const runAuditImpl = operations.runAudit || runAudit;
   const findFreePortImpl = operations.findFreePort || findFreePort;
-  const sourceProgress = prefixProgress(progress, label);
   const remoteDebuggingPort = await findFreePortImpl(args.remoteDebuggingPort + index - 1);
   const auditArgs = {
     apply: true,
@@ -269,21 +298,30 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     electronUserDataPath: paths.electronUserDataPath,
     includeNativeOpenProbes: args.includeNativeOpenProbes,
     json: args.json,
+    jsonl: args.jsonl,
     keepOpen: args.keepOpen,
     launch: true,
     noProgress: args.noProgress,
-    quiet: args.json,
+    quiet: args.json || args.jsonl,
     remoteDebuggingPort,
     source: source.sourceApp,
     sourceHome: path.join(os.homedir(), ".codex"),
     target: paths.targetApp,
     useLiveSourceHome: Boolean(args.useLiveSourceHome),
+    visualContract: args.visualContract,
+    artifactDir,
   };
   sourceProgress?.start?.(`Running regression audit with ${source.patchSet}`);
   const auditResult = await runAuditImpl(auditArgs, {
     ...(operations.auditOptions || {}),
     progress: sourceProgress,
   });
+  if (auditResult.visualContract) {
+    sourceProgress?.event?.("visual_contract", {
+      ok: auditResult.visualContract.ok,
+      artifactDir: auditResult.visualContract.artifactDir,
+    });
+  }
   let cleaned = false;
   if (args.autoClean) {
     sourceProgress?.start?.("Removing generated regression output");
@@ -298,6 +336,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     ...source,
     ok: Boolean(auditResult.ok),
     targetApp: paths.targetApp,
+    artifactDir,
     cleaned,
     failures: auditResult.failures || [],
     audit: {
@@ -309,12 +348,23 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
 
 async function runRegressionSources(args, operations = {}) {
   const cwd = operations.cwd || process.cwd();
+  const visualContract = args.visualContract !== false;
   const sourcesDir = args.sourcesDir || resolveDefaultSourcesDir({ cwd, execFileSync: operations.execFileSync });
-  const regressionDir = defaultRegressionDirForSources(sourcesDir);
+  const regressionDir = defaultRegressionDirForSources(sourcesDir, { cwd });
+  const now = operations.now ? operations.now() : new Date();
+  const contractRoot = args.artifactDir || defaultContractRoot({ cwd, now });
+  const runArgs = {
+    ...args,
+    visualContract,
+    contractRoot,
+  };
   const sources = discoverSources({ sourcesDir, filter: args.filter, newest: args.newest, operations });
   const makeProgress = operations.createAuditProgress || createAuditProgress;
+  const makeJsonlProgress = operations.createJsonlProgress || createJsonlProgress;
   const progress = operations.progress === undefined
-    ? await makeProgress({
+    ? args.jsonl
+      ? makeJsonlProgress(operations.progressOptions || {})
+      : await makeProgress({
         json: args.json,
         noProgress: args.noProgress,
         quiet: false,
@@ -331,6 +381,8 @@ async function runRegressionSources(args, operations = {}) {
       filter: args.filter,
       newest: args.newest,
       autoClean: args.autoClean,
+      visualContract,
+      contractRoot,
       useLiveSourceHome: args.useLiveSourceHome,
       results: cleaned.map((entry) => ({
         version: entry.version,
@@ -343,7 +395,7 @@ async function runRegressionSources(args, operations = {}) {
   const results = [];
   for (let index = 0; index < sources.length; index += 1) {
     results.push(await runSourceRegression(sources[index], {
-      args,
+      args: runArgs,
       regressionDir,
       operations,
       progress,
@@ -361,6 +413,8 @@ async function runRegressionSources(args, operations = {}) {
     filter: args.filter,
     newest: args.newest,
     autoClean: args.autoClean,
+    visualContract,
+    contractRoot,
     useLiveSourceHome: args.useLiveSourceHome,
     results,
   };
@@ -398,6 +452,7 @@ function formatHumanResult(result) {
     lines.push(`  Source: ${entry.sourceApp}`);
     lines.push(`  Target: ${entry.targetApp}`);
     lines.push(`  Patch set: ${entry.patchSet}`);
+    if (entry.artifactDir) lines.push(`  Visual contract: ${entry.artifactDir}`);
     if (entry.cleaned) lines.push("  Cleanup: removed generated regression output");
     if (!entry.ok && entry.failures?.length > 0) {
       for (const failure of entry.failures) {
@@ -424,7 +479,19 @@ async function main() {
     return;
   }
   const result = await runRegressionSources(args);
-  process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatHumanResult(result));
+  if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  else if (args.jsonl) {
+    writeJsonl(process.stdout, jsonlRecord("summary", {
+      ok: result.ok,
+      supported: result.results.filter((entry) => entry.supported).length,
+      passed: result.results.filter((entry) => entry.supported && entry.ok).length,
+      failed: result.results.filter((entry) => entry.supported && entry.ok === false).length,
+      skipped: result.results.filter((entry) => !entry.supported).length,
+      contractRoot: result.contractRoot,
+    }));
+  } else {
+    process.stdout.write(formatHumanResult(result));
+  }
   if (!result.ok) process.exitCode = 1;
 }
 
@@ -439,6 +506,7 @@ module.exports = {
   cleanRegressionDir,
   cleanRegressionSources,
   compareVersionStrings,
+  defaultContractRoot,
   defaultRegressionDirForSources,
   discoverSources,
   filterMatches,

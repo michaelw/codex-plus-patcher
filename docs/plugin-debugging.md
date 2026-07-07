@@ -67,11 +67,24 @@ It exits nonzero when any required built-in plugin probe fails.
 Audit launches use the dev-only `com.openai.codex-plus.audit` bundle identity
 by default so they do not compete with a kept-open manual dev copy.
 
-Use JSON for automation:
+Use compact JSONL progress for long-running audits:
+
+```sh
+codex-plus-patcher audit-plugins --jsonl
+```
+
+Use full JSON when you need the final machine-readable result and detailed
+post-failure probe data:
 
 ```sh
 codex-plus-patcher audit-plugins --json
 ```
+
+Plugin audits write a visual contract by default under
+`work/audit-plugins/<timestamp>-<version>/`, including `contract.json`,
+`audit-summary.json`, and screenshots for shell/sidebar, Review,
+command-palette dispatch, and Settings. Pass `--no-visual-contract` only when
+that proof is deliberately unnecessary.
 
 Pass `--keep-open` to leave the workspace-local audit app running for manual
 DevTools inspection after the probes finish. The default audit avoids opening

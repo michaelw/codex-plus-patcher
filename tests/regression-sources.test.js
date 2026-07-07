@@ -48,24 +48,31 @@ test("regression sources parses options and rejects unsafe combinations", () => 
     help: false,
     includeNativeOpenProbes: false,
     json: true,
+    jsonl: false,
     keepOpen: false,
     newest: null,
     noProgress: false,
+    visualContract: true,
+    artifactDir: null,
     remoteDebuggingPort: 9234,
     sourcesDir: null,
     useLiveSourceHome: false,
   });
 
   assert.equal(parseArgs(["--clean"]).clean, true);
+  assert.equal(parseArgs(["--jsonl"]).jsonl, true);
+  assert.equal(parseArgs(["--no-visual-contract"]).visualContract, false);
+  assert.equal(parseArgs(["--artifact-dir", "~/contracts"]).artifactDir, path.join(os.homedir(), "contracts"));
   assert.equal(parseArgs(["--newest", "2"]).newest, 2);
   assert.equal(parseArgs(["--port", "9334"]).remoteDebuggingPort, 9334);
   assert.equal(parseArgs(["--use-live-source-home"]).useLiveSourceHome, true);
   assert.throws(() => parseArgs(["--newest", "0"]), /--newest must be a positive integer/);
   assert.throws(() => parseArgs(["--remote-debugging-port", "0"]), /must be a positive integer/);
   assert.throws(() => parseArgs(["--auto-clean", "--keep-open"]), /cannot be combined/);
+  assert.throws(() => parseArgs(["--json", "--jsonl"]), /--jsonl cannot be combined with --json/);
 });
 
-test("regression sources compares and limits newest versions numerically", async () => {
+test("regression sources sorts newest-first and limits newest versions numerically", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "sources");
     const olderApp = createSourceApp(sourcesDir, "26.623.61825");
@@ -86,6 +93,10 @@ test("regression sources compares and limits newest versions numerically", async
     };
 
     assert.equal(compareVersionStrings("26.623.70822", "26.623.61825") > 0, true);
+    assert.deepEqual(
+      discoverSources({ sourcesDir, filter: "26.623", operations }).map((source) => source.version),
+      ["26.623.70822", "26.623.61825", "26.623.42026"],
+    );
     assert.deepEqual(
       discoverSources({ sourcesDir, filter: "26.623", newest: 2, operations }).map((source) => source.version),
       ["26.623.70822", "26.623.61825"],
@@ -125,8 +136,8 @@ test("regression sources matches supported sources exactly and skips unsupported
     assert.deepEqual(
       sources.map((source) => [source.version, source.supported, source.patchSet]),
       [
-        ["26.623.61825", false, null],
         ["26.623.70822", true, "codex-current"],
+        ["26.623.61825", false, null],
       ],
     );
   });
@@ -156,11 +167,15 @@ test("regression sources filter matches version, path, and patch id", async () =
 });
 
 test("regression sources builds isolated paths for each version", () => {
-  assert.deepEqual(pathsForSource("/repo/work/regression/sources", "26.623.70822"), {
-    root: "/repo/work/regression/sources/26.623.70822",
-    targetApp: "/repo/work/regression/sources/26.623.70822/Codex Plus.app",
-    devHome: "/repo/work/regression/sources/26.623.70822/codex-home",
-    electronUserDataPath: "/repo/work/regression/sources/26.623.70822/electron-user-data",
+  assert.equal(
+    defaultRegressionDirForSources("/main/work/sources", { cwd: "/worktree" }),
+    "/worktree/work/regression/sources",
+  );
+  assert.deepEqual(pathsForSource("/worktree/work/regression/sources", "26.623.70822"), {
+    root: "/worktree/work/regression/sources/26.623.70822",
+    targetApp: "/worktree/work/regression/sources/26.623.70822/Codex Plus.app",
+    devHome: "/worktree/work/regression/sources/26.623.70822/codex-home",
+    electronUserDataPath: "/worktree/work/regression/sources/26.623.70822/electron-user-data",
   });
 });
 
@@ -182,13 +197,17 @@ test("regression sources runs supported sources and continues after failures", a
         filter: null,
         includeNativeOpenProbes: true,
         json: true,
+        jsonl: false,
         keepOpen: false,
         newest: null,
         noProgress: true,
+        visualContract: true,
+        artifactDir: null,
         remoteDebuggingPort: 9400,
         sourcesDir,
       },
       {
+        cwd: tmpDir,
         findFreePort: async (port) => port + 10,
         getAppIdentity: (appPath) => identities.get(appPath),
         patchSets: [
@@ -206,17 +225,19 @@ test("regression sources runs supported sources and continues after failures", a
 
     assert.equal(result.ok, false);
     assert.deepEqual(result.results.map((entry) => [entry.version, entry.ok]), [
-      ["26.623.61825", false],
       ["26.623.70822", true],
+      ["26.623.61825", false],
     ]);
     assert.equal(calls.length, 2);
-    assert.equal(calls[0].target, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "Codex Plus.app"));
-    assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "codex-home"));
-    assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.61825", "electron-user-data"));
+    assert.equal(calls[0].target, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "Codex Plus.app"));
+    assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "codex-home"));
+    assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "electron-user-data"));
     assert.equal(calls[0].remoteDebuggingPort, 9410);
     assert.equal(calls[1].remoteDebuggingPort, 9411);
     assert.equal(calls[0].includeNativeOpenProbes, true);
     assert.equal(calls[0].useLiveSourceHome, false);
+    assert.equal(calls[0].visualContract, true);
+    assert.match(calls[0].artifactDir, /work\/regression\/contracts\/.*\/26\.623\.70822$/);
   });
 });
 
@@ -238,13 +259,17 @@ test("regression sources passes prefixed progress into audits", async () => {
         filter: null,
         includeNativeOpenProbes: false,
         json: false,
+        jsonl: false,
         keepOpen: false,
         newest: null,
         noProgress: false,
+        visualContract: true,
+        artifactDir: null,
         remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {
+        cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
         progress,
@@ -271,6 +296,7 @@ test("regression sources auto-cleans generated version output", async () => {
     const sourcesDir = path.join(tmpDir, "work", "sources");
     const sourceApp = createSourceApp(sourcesDir, "26.623.70822");
     const regressionRoot = path.join(tmpDir, "work", "regression", "sources", "26.623.70822");
+    const contractFile = path.join(tmpDir, "work", "regression", "contracts", "fixed", "26.623.70822", "contract.json");
 
     const result = await runRegressionSources(
       {
@@ -279,19 +305,25 @@ test("regression sources auto-cleans generated version output", async () => {
         filter: null,
         includeNativeOpenProbes: false,
         json: false,
+        jsonl: false,
         keepOpen: false,
         newest: null,
         noProgress: true,
+        visualContract: true,
+        artifactDir: path.join(tmpDir, "work", "regression", "contracts", "fixed"),
         remoteDebuggingPort: 9234,
         sourcesDir,
       },
       {
+        cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
-        runAudit: async () => {
+        runAudit: async (args) => {
           fs.mkdirSync(regressionRoot, { recursive: true });
           fs.writeFileSync(path.join(regressionRoot, "marker"), "generated");
-          return { ok: true, failures: [] };
+          fs.mkdirSync(args.artifactDir, { recursive: true });
+          fs.writeFileSync(contractFile, "{}\n");
+          return { ok: true, failures: [], visualContract: { ok: true, artifactDir: args.artifactDir } };
         },
       },
     );
@@ -299,15 +331,61 @@ test("regression sources auto-cleans generated version output", async () => {
     assert.equal(result.ok, true);
     assert.equal(result.results[0].sourceApp, sourceApp);
     assert.equal(result.results[0].cleaned, true);
+    assert.equal(result.results[0].artifactDir, path.dirname(contractFile));
     assert.equal(fs.existsSync(regressionRoot), false);
+    assert.equal(fs.existsSync(contractFile), true);
     assert.equal(fs.existsSync(sourceApp), true);
+  });
+});
+
+test("regression sources jsonl progress carries source identity", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    const sourceApp = createSourceApp(sourcesDir, "26.623.70822");
+    const writes = [];
+    const stream = { write: (text) => writes.push(text) };
+
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: true,
+        keepOpen: false,
+        newest: null,
+        noProgress: false,
+        visualContract: true,
+        artifactDir: path.join(tmpDir, "contracts"),
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
+        patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        progressOptions: { stream, now: () => new Date("2026-07-07T00:00:00.000Z") },
+        createJsonlProgress: (options) => require("../src/core/plugin-audit").createJsonlProgress(options),
+        runAudit: async (_args, options) => {
+          options.progress.start("Applying patch set");
+          options.progress.succeed("Applied patch set");
+          return { ok: true, failures: [], visualContract: { ok: true, artifactDir: _args.artifactDir } };
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    const records = writes.join("").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records.some((record) => record.version === "26.623.70822" && record.sourceApp === sourceApp), true);
+    assert.equal(records.some((record) => record.type === "visual_contract" && record.artifactDir.endsWith("26.623.70822")), true);
   });
 });
 
 test("regression sources cleanup removes generated dirs only and supports filters", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "work", "sources");
-    const regressionDir = defaultRegressionDirForSources(sourcesDir);
+    const regressionDir = defaultRegressionDirForSources(sourcesDir, { cwd: tmpDir });
     const keepDir = path.join(regressionDir, "26.623.70822");
     const cleanDir = path.join(regressionDir, "26.623.61825");
     fs.mkdirSync(keepDir, { recursive: true });
@@ -328,6 +406,7 @@ test("regression sources cleanup removes generated dirs only and supports filter
         sourcesDir,
       },
       {
+        cwd: tmpDir,
         getAppIdentity: () => identity("26.623.61825", "4548", "sha-b"),
         patchSets: [patchSet("26.623.61825", "4548", "sha-b", "codex-previous")],
       },
@@ -351,7 +430,7 @@ test("regression sources standalone cleanup can remove all generated dirs", asyn
 
     const results = cleanRegressionSources({ regressionDir });
 
-    assert.deepEqual(results.map((entry) => entry.version), ["26.623.61825", "26.623.70822"]);
+    assert.deepEqual(results.map((entry) => entry.version), ["26.623.70822", "26.623.61825"]);
     assert.equal(fs.existsSync(firstDir), false);
     assert.equal(fs.existsSync(secondDir), false);
   });
@@ -392,6 +471,7 @@ test("regression sources formats json-shaped result data", async () => {
         sourcesDir,
       },
       {
+        cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
         runAudit: async () => ({

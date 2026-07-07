@@ -31,9 +31,11 @@ const {
 const {
   auditPreflight,
   auditIdentity,
+  captureVisualContract,
   checkKeepOpenAppStability,
   cleanupLaunchedAuditApp,
   formatAuditJson: formatCoreAuditJson,
+  createJsonlProgress,
   listCrashpadPendingDumps,
   listRunningAuditApps,
   pluginAuditExpression,
@@ -170,6 +172,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
 
   assert.equal(args.command, "audit-plugins");
   assert.equal(args.json, true);
+  assert.equal(args.jsonl, false);
   assert.equal(args.quiet, true);
   assert.equal(args.noProgress, true);
   assert.equal(args.keepOpen, true);
@@ -187,6 +190,13 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(args.devInstanceId, "manual-audit");
   assert.equal(args.remoteDebuggingPort, 9240);
   assert.equal(args.useLiveSourceHome, true);
+  assert.equal(args.visualContract, true);
+
+  const jsonlArgs = parseArgs(["audit-plugins", "--jsonl", "--artifact-dir", "~/contracts", "--no-visual-contract"]);
+  assert.equal(jsonlArgs.jsonl, true);
+  assert.equal(jsonlArgs.visualContract, false);
+  assert.equal(jsonlArgs.artifactDir, path.join(os.homedir(), "contracts"));
+  assert.throws(() => parseArgs(["audit-plugins", "--json", "--jsonl"]), /--jsonl cannot be combined with --json/);
 
   const defaults = parseArgs(["audit-plugins"]);
   assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
@@ -197,6 +207,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.deepEqual(defaults.disabledRuntimePlugins, []);
   assert.equal(defaults.devInstanceId, "audit");
   assert.equal(defaults.useLiveSourceHome, false);
+  assert.equal(defaults.visualContract, true);
 });
 
 test("audit-plugins manual mode parses and implies keep-open", () => {
@@ -2388,4 +2399,93 @@ test("audit progress prints timestamped plain lines for non-tty output", async (
     "[2026-06-27T12:00:00.000Z] OK Runtime ready\n",
     "[2026-06-27T12:00:00.000Z] FAIL Running plugin probes\n",
   ]);
+});
+
+test("audit jsonl progress emits compact event records", () => {
+  const writes = [];
+  const progress = createJsonlProgress({
+    stream: { write: (text) => writes.push(text) },
+    now: () => new Date("2026-07-07T00:00:00.000Z"),
+    context: { version: "26.623.141536" },
+  });
+
+  progress.start("Running plugin probes");
+  progress.succeed("Probed plugins");
+  progress.event("summary", { ok: true });
+
+  assert.deepEqual(writes.map((line) => JSON.parse(line)), [
+    {
+      type: "progress",
+      time: "2026-07-07T00:00:00.000Z",
+      status: "start",
+      message: "Running plugin probes",
+      version: "26.623.141536",
+    },
+    {
+      type: "progress",
+      time: "2026-07-07T00:00:00.000Z",
+      status: "pass",
+      message: "Probed plugins",
+      version: "26.623.141536",
+    },
+    {
+      type: "summary",
+      time: "2026-07-07T00:00:00.000Z",
+      version: "26.623.141536",
+      ok: true,
+    },
+  ]);
+});
+
+test("visual contract writes screenshots and compact readbacks", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-test-"));
+  try {
+    const png = Buffer.from("png").toString("base64");
+    const cdp = {
+      async send(method) {
+        assert.match(method, /^Page\.(captureScreenshot|navigate)$/);
+        if (method === "Page.navigate") return {};
+        return { data: png };
+      },
+      async evaluate(expression) {
+        return {
+          url: "app://-/index.html",
+          title: "Codex Plus",
+          shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects General" },
+          sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
+          review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, rawDiffFallbackCount: 0 },
+          commandPalette: { sidebarBlurred: true },
+          settings: { generalVisible: true, backToAppVisible: true, blank: false },
+        };
+      },
+    };
+
+    const contract = await captureVisualContract(cdp, {
+      artifactDir: tmpDir,
+      result: {
+        ok: true,
+        failures: [],
+        expectedWarnings: [],
+        applyResult: {
+          sourceApp: "/Applications/Codex.app",
+          patchSet: "codex-test",
+          codexVersion: "26.623.141536",
+          bundleVersion: "4753",
+        },
+        target: { app: "/tmp/Codex Plus.app" },
+        pluginResults: {},
+      },
+      wait() {},
+    });
+
+    assert.equal(contract.ok, true);
+    for (const file of ["contract.json", "audit-summary.json", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
+      assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
+    }
+    const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
+    assert.equal(readback.settings.generalVisible, true);
+    assert.equal(readback.review.diffCardCount, 2);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
