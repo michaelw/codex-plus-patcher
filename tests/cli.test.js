@@ -40,6 +40,7 @@ const {
   runAudit,
   verifyProjectSelectorShortcutKey,
   verifyReviewPanelRender,
+  verifySidebarBlurCommandPalette,
   waitForAppShellMounted,
 } = require("../src/core/plugin-audit");
 
@@ -595,6 +596,39 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
   assert.match(result.message, /Project selector fuzzy filtering did not preserve/);
   assert.equal(JSON.stringify(result).includes("/"), false);
   assert.deepEqual(sent.map((call) => call.params.key), [".", ".", "Escape", "Escape"]);
+});
+
+test("sidebar blur command palette verifier uses trusted Enter key activation", async () => {
+  const sent = [];
+  const evaluations = [
+    undefined,
+    undefined,
+    { opened: true, activeTag: "INPUT", inputPlaceholder: "Search commands" },
+    { selected: true, itemText: "Toggle sidebar blur", rect: { x: 64, y: 32 } },
+    { rootBlurred: true, rowFilter: "blur(4px)" },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifySidebarBlurCommandPalette(cdp, { wait() {}, timeoutMs: 1000 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.selected, true);
+  assert.deepEqual(sent.map((call) => call.method), [
+    "Input.insertText",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+  ]);
+  assert.equal(sent[0].params.text, "Toggle sidebar blur");
+  assert.deepEqual(sent.slice(1).map((call) => call.params.type), ["keyDown", "keyUp"]);
+  assert.deepEqual(sent.slice(1).map((call) => call.params.key), ["Enter", "Enter"]);
 });
 
 test("review panel verifier returns sanitized success details", async () => {

@@ -26,7 +26,10 @@
   let composerBoundsTarget = null;
 
   function request(method, params) {
-    return CodexPlus.native.request(method, params).catch((error) => ({
+    return CodexPlus.native.request(method, params).then((result) => result || {
+      ok: false,
+      error: "native-request-empty",
+    }).catch((error) => ({
       ok: false,
       error: "native-request-failed",
       message: error?.message || String(error),
@@ -52,6 +55,11 @@
 
   function shouldRestoreHashRoute() {
     return !appInitialRoute();
+  }
+
+  function shouldStartInThisWindow() {
+    const initialRoute = appInitialRoute();
+    return !initialRoute || !initialRoute.startsWith("/settings");
   }
 
   function clearHashRoute(route) {
@@ -1230,6 +1238,7 @@
         },
       ],
       start(api) {
+        if (!shouldStartInThisWindow()) return;
         api.ui.virtualConversations.registerProvider({
           id: "aharnessRuns",
           match: (candidate) => runIdFromRoute(candidate) != null,

@@ -487,6 +487,10 @@ async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 
   if (!opened?.opened) {
     return { ok: false, ...opened, message: `Command palette did not open: ${JSON.stringify(opened)}` };
   }
+  if (typeof cdp.send !== "function") {
+    return { ok: false, ...opened, message: "Command palette input could not be driven with trusted text events" };
+  }
+  await cdp.send("Input.insertText", { text: "Toggle sidebar blur" });
 
   const selected = await cdp.evaluate(`new Promise((resolve) => {
     const visible = (element) => {
@@ -496,25 +500,6 @@ async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 
       return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
     };
     const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-    const input = Array.from(document.querySelectorAll("input, textarea, [contenteditable='true']"))
-      .find((element) => visible(element) && /command|search|type/i.test([
-        element.getAttribute("placeholder"),
-        element.getAttribute("aria-label"),
-        element.textContent,
-      ].filter(Boolean).join(" ")));
-    if (!input) {
-      resolve({ selected: false, message: "Command palette input disappeared" });
-      return;
-    }
-    input.focus?.();
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    if (input instanceof HTMLInputElement && setter) {
-      setter.call(input, "Toggle sidebar blur");
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: "Toggle sidebar blur", inputType: "insertText" }));
-    } else {
-      input.textContent = "Toggle sidebar blur";
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: "Toggle sidebar blur", inputType: "insertText" }));
-    }
     const startedAt = Date.now();
     const finish = () => {
       const item = Array.from(document.querySelectorAll("[cmdk-item], [role='option'], [role='menuitem'], button"))
@@ -527,12 +512,21 @@ async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 
         resolve({ selected: false, message: "Toggle sidebar blur command was not visible in the command palette" });
         return;
       }
-      item.click?.();
-      resolve({ selected: true, itemText: normalize(item.textContent) });
+      const rect = item.getBoundingClientRect();
+      resolve({
+        selected: true,
+        itemText: normalize(item.textContent),
+        rect: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      });
     };
     setTimeout(finish, 100);
   })`);
   if (!selected?.selected) return { ok: false, ...opened, ...selected };
+  if (typeof cdp.send !== "function") {
+    return { ok: false, ...opened, ...selected, message: "Command palette item could not be activated with trusted keyboard events" };
+  }
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
 
   const deadline = Date.now() + timeoutMs;
   let status = null;
@@ -3718,5 +3712,6 @@ module.exports = {
   verifyMermaidViewerRender,
   verifyProjectSelectorShortcutKey,
   verifyReviewPanelRender,
+  verifySidebarBlurCommandPalette,
   waitForRendererTarget,
 };
