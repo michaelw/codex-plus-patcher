@@ -1528,7 +1528,7 @@ test("aharness plugin stays idle in settings initialRoute windows", async () => 
   assert.deepEqual(timers, []);
 });
 
-test("aharness artifact UI uses thread side panel instead of a fixed body overlay", () => {
+test("aharness artifact UI uses thread side panel API instead of a plugin-owned fixed body overlay", () => {
   const sidePanelApi = fs.readFileSync(path.join(__dirname, "../src/runtime/api/sidePanel.js"), "utf8");
   const threadSidePanelApi = fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8");
   const plugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aharnessRuns.js"), "utf8");
@@ -1536,6 +1536,9 @@ test("aharness artifact UI uses thread side panel instead of a fixed body overla
   assert.doesNotMatch(sidePanelApi, /document\.body\.appendChild/);
   assert.doesNotMatch(plugin, /codex-plus-side-panel-root/);
   assert.doesNotMatch(plugin, /position:fixed;top:0;right:0;bottom:0/);
+  assert.doesNotMatch(threadSidePanelApi, /position:fixed/);
+  assert.doesNotMatch(threadSidePanelApi, /document\.body\.appendChild/);
+  assert.doesNotMatch(threadSidePanelApi, /codex-plus-thread-file-fallback-root/);
   assert.match(threadSidePanelApi, /registerTabProvider/);
   assert.match(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openFile/);
   assert.doesNotMatch(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openTab/);
@@ -1544,7 +1547,7 @@ test("aharness artifact UI uses thread side panel instead of a fixed body overla
   assert.doesNotMatch(threadSidePanelApi, /dispatchNativeFilesLauncher/);
   assert.match(threadSidePanelApi, /workspaceRoot: cwd \|\| undefined/);
   assert.match(threadSidePanelApi, /resetTabState: true/);
-  assert.doesNotMatch(threadSidePanelApi, /data-codex-plus-thread-file-panel/);
+  assert.match(threadSidePanelApi, /data-codex-plus-thread-file-panel/);
   assert.doesNotMatch(threadSidePanelApi, /file:local:\$\{filePath\}/);
   assert.doesNotMatch(plugin, /data-codex-plus-aharness-artifact-content/);
   assert.doesNotMatch(plugin, /cpx-ah-artifact-panel/);
@@ -1766,7 +1769,6 @@ test("thread side panel API opens files through the upstream file tab adapter", 
     filePath: "/tmp/aharness-examples/.aharness/runs/run-1/result.md",
     options: {
       activate: true,
-      hostId: "local",
       isPreview: false,
       resetTabState: true,
       target: "right",
@@ -1910,7 +1912,6 @@ test("thread side panel API can open the native side panel before rendering", as
     filePath: "/tmp/run/result.md",
     options: {
       activate: true,
-      hostId: "local",
       isPreview: false,
       resetTabState: true,
       target: "right",

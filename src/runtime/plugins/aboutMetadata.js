@@ -21,7 +21,7 @@
 
   function aboutPayload(context = {}) {
     return {
-      appDisplayName: "Codex Plus",
+      appDisplayName: context.patchedAppDisplayName || "Codex Plus",
       buildInfoLines: buildInfoLines(context),
       disclaimerBody: DISCLAIMER_BODY,
       disclaimerHeading: DISCLAIMER_HEADING,

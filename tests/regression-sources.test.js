@@ -26,14 +26,18 @@ async function withTempDir(callback) {
   }
 }
 
-function createSourceApp(sourcesDir, version) {
-  const app = path.join(sourcesDir, version, "Codex.app");
+function createSourceApp(sourcesDir, version, appName = "Codex.app") {
+  const app = path.join(sourcesDir, version, appName);
   fs.mkdirSync(app, { recursive: true });
   return app;
 }
 
 function identity(version, bundleVersion, asarSha256) {
   return { version, bundleVersion, asarSha256 };
+}
+
+function familyIdentity(version, bundleVersion, asarSha256, sourceFamily) {
+  return { version, bundleVersion, asarSha256, sourceFamily };
 }
 
 function patchSet(version, bundleVersion, asarSha256, id = `codex-${version}-${bundleVersion}`) {
@@ -114,6 +118,38 @@ test("regression sources discovers source apps in stable order", async () => {
   });
 });
 
+test("regression sources discovers mixed ChatGPT and Codex source apps", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "sources");
+    const chatgpt = createSourceApp(sourcesDir, "26.707.31428", "ChatGPT.app");
+    const codex = createSourceApp(sourcesDir, "26.623.70822", "Codex.app");
+    const identities = new Map([
+      [chatgpt, familyIdentity("26.707.31428", "5059", "sha-chatgpt", "chatgpt")],
+      [codex, familyIdentity("26.623.70822", "4559", "sha-codex", "codex")],
+    ]);
+    const operations = {
+      getAppIdentity: (appPath) => identities.get(appPath),
+      patchSets: [
+        { ...patchSet("26.707.31428", "5059", "sha-chatgpt", "chatgpt-current"), sourceFamily: "chatgpt" },
+        patchSet("26.623.70822", "4559", "sha-codex", "codex-current"),
+      ],
+    };
+
+    assert.deepEqual(listSourceApps(sourcesDir), [codex, chatgpt]);
+    assert.deepEqual(
+      discoverSources({ sourcesDir, operations }).map((source) => [source.version, source.sourceFamily, source.patchSet]),
+      [
+        ["26.707.31428", "chatgpt", "chatgpt-current"],
+        ["26.623.70822", "codex", "codex-current"],
+      ],
+    );
+    assert.deepEqual(
+      discoverSources({ sourcesDir, filter: "chatgpt", operations }).map((source) => source.sourceApp),
+      [chatgpt],
+    );
+  });
+});
+
 test("regression sources matches supported sources exactly and skips unsupported", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "sources");
@@ -176,6 +212,15 @@ test("regression sources builds isolated paths for each version", () => {
     targetApp: "/worktree/work/regression/sources/26.623.70822/Codex Plus.app",
     devHome: "/worktree/work/regression/sources/26.623.70822/codex-home",
     electronUserDataPath: "/worktree/work/regression/sources/26.623.70822/electron-user-data",
+  });
+  assert.deepEqual(pathsForSource("/worktree/work/regression/sources", {
+    version: "26.707.31428",
+    sourceFamily: "chatgpt",
+  }), {
+    root: "/worktree/work/regression/sources/26.707.31428",
+    targetApp: "/worktree/work/regression/sources/26.707.31428/ChatGPT Plus.app",
+    devHome: "/worktree/work/regression/sources/26.707.31428/codex-home",
+    electronUserDataPath: "/worktree/work/regression/sources/26.707.31428/electron-user-data",
   });
 });
 

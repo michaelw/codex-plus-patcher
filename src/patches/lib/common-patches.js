@@ -1,4 +1,5 @@
 const { codexPlusRuntimeAssets } = require("../../runtime/assets");
+const { sourceFamilyConfig } = require("../../core/app-identity");
 const { replaceOnce } = require("./replace");
 const { makePatchSet } = require("./make-patch-set");
 const { aboutMetadataRequire } = require("./hooks/about");
@@ -19,7 +20,11 @@ const {
 
 function buildCodexPlusPatchSet(config) {
   const oldTitle = "<title>Codex</title>";
-  const newTitle = '<title>Codex Plus</title><script src="./assets/codex-plus/runtime.js"></script>';
+  const sourceFamily = config.sourceFamily || "codex";
+  const familyConfig = sourceFamilyConfig(sourceFamily);
+  const appDisplayName = config.appDisplayName || familyConfig.displayName;
+  const bundleIdentifier = config.bundleIdentifier || familyConfig.bundleIdentifier;
+  const newTitle = `<title>${appDisplayName}</title><script src="./assets/codex-plus/runtime.js"></script>`;
   const titleFile = "webview/index.html";
   const workerFile = ".vite/build/worker.js";
   const preloadFile = ".vite/build/preload.js";
@@ -57,6 +62,8 @@ function buildCodexPlusPatchSet(config) {
   const branchPickerDropdownContentFile = files.branchPickerDropdownContent;
   const statsigStartupFile = files.statsigStartup;
   const localThreadCatalogStateFile = files.localThreadCatalogState;
+  const chatGptStartupAnnouncementsFile = files.chatGptStartupAnnouncements;
+  const enabledPatchIds = config.enabledPatches == null ? null : new Set(config.enabledPatches);
 
 function patchTitle(text) {
   return replaceOnce(text, oldTitle, newTitle, `${oldTitle} in ${titleFile}`);
@@ -66,9 +73,62 @@ function patchAboutDialog(text, context = {}) {
   const aboutContext = {
     patcherRepoUrl: context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: context.patcherGitSha || "unknown",
+    patchedAppDisplayName: context.patchedAppDisplayName || "Codex Plus",
     sourceAsarSha256: context.sourceAsarSha256 || "unknown",
     appliedPatches: context.appliedPatches || [],
   };
+  if (text.includes("function m8({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o})")) {
+    let patched = replaceOnce(
+      text,
+      "let r=c.app.getName(),o=c.app.getVersion(),s=c8(o),",
+      `let CPXAbout=${aboutMetadataRequire()}.aboutPayload(${JSON.stringify(aboutContext)}),r=CPXAbout.appDisplayName,o=c.app.getVersion(),s=c8(o),`,
+      "about dialog app name anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "_=f.formatMessage({messageId:Q6,defaultMessage:$6}),v=l8(o),y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
+      "_=f.formatMessage({messageId:Q6,defaultMessage:$6}),v=CPXAbout.buildInfoLines,y=[...i.o()?[`Powered by Codex & OWL`]:[],...v].join(`\n`),",
+      "about dialog build information anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "m8({appDisplayName:r,buildInfoLabel:_,buildInfoText:y,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+      "m8({appDisplayName:r,buildInfoLabel:_,buildInfoText:y,codexPlusDisclaimerHeading:CPXAbout.disclaimerHeading,codexPlusDisclaimerBody:CPXAbout.disclaimerBody,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+      "about dialog renderer call anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function m8({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
+      "function m8({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let CPXAboutMetadata=" +
+        aboutMetadataRequire() +
+        ",q=CPXAboutMetadata.disclaimerMarkup({escape:bH.default,heading:D,body:O}),s=r==null?``:",
+      "about dialog renderer signature anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+      "${CPXAboutMetadata.disclaimerStyles()}\n\n    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+      "about dialog disclaimer styles anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "      color: var(--muted-text);\n      white-space: pre-wrap;",
+      "      color: var(--muted-text);\n      text-align: left;\n      white-space: pre-wrap;",
+      "about dialog build info left align anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "    .app-name,\n    .build-info,\n    .copyright {",
+      "    .app-name,\n    .codex-plus-disclaimer,\n    .build-info,\n    .copyright {",
+      "about dialog selectable disclaimer anchor",
+    );
+    return replaceOnce(
+      patched,
+      '      <div class="app-name" id="app-name">${(0,bH.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,bH.default)(t)}">${(0,bH.default)(n)}</pre>',
+      '      <div class="app-name" id="app-name">${(0,bH.default)(e)}</div>\n      ${q}\n      <pre class="build-info" aria-label="${(0,bH.default)(t)}">${(0,bH.default)(n)}</pre>',
+      "about dialog disclaimer insertion anchor",
+    );
+  }
   if (text.includes("function X4({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o})")) {
     let patched = replaceOnce(
       text,
@@ -278,6 +338,26 @@ function patchAboutDialog(text, context = {}) {
 }
 
 function patchWorker(text) {
+  if (text.includes("function L0({requestKind:e,source:t}){return I0.has(e??``)||R0(t)}")) {
+    let patched = replaceOnce(
+      text,
+      "var Z0=ZW(`git`),",
+      `${workerHook()}var Z0=ZW(\`git\`),`,
+      "worker helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function L0({requestKind:e,source:t}){return I0.has(e??``)||R0(t)}",
+      "function L0({requestKind:e,source:t}){return I0.has(e??``)||R0(t)||CPXW.isReadOnlyBranchRequest(e,t)}",
+      "codex plus branch picker git allowlist anchor",
+    );
+    return replaceOnce(
+      patched,
+      "case`commit-message-diff`:o=Z(await a7(qae(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`submodule-paths`:o=Z({paths:await uoe(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+      "case`commit-message-diff`:o=Z(await a7(qae(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`codex-plus-trace`:o=Z(CPXW.traceRequest(e.params));break;case`repository-targets`:o=Z(await CPXW.repositoryTargetsFromHost(this.gitManager,e.params,r,t.signal,uoe));break;case`codex-plus-branches`:o=Z(await CPXW.listBranches(e.params,t.signal));break;case`codex-plus-current-branch`:o=Z(await CPXW.currentBranch(e.params,t.signal));break;case`submodule-paths`:o=Z({paths:await uoe(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+      "repository-targets worker switch anchor",
+    );
+  }
   if (text.includes("function yae(e,t){return e.queryClient.fetchQuery")) {
     let patched = replaceOnce(
       text,
@@ -433,10 +513,16 @@ function patchThreadSidePanelTabs(text) {
     );
   }
   if (text.includes("function YPt(e){let t=(0,XPt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    const importAnchors = [
+      "import{n as e,r as t,s as n,t as r}from\"./rolldown-runtime-Czos8NxU.js\";",
+      "import{n as e,s as t}from\"./rolldown-runtime-Czos8NxU.js\";",
+    ];
+    const importAnchor = importAnchors.find((anchor) => text.includes(anchor));
+    if (!importAnchor) throw new Error("Could not find branch picker content import anchor");
     let patched = replaceOnce(
       text,
-      "import{n as e,r as t,s as n,t as r}from\"./rolldown-runtime-Czos8NxU.js\";",
-      `import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`,
+      importAnchor,
+      `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`,
       "branch picker content import anchor",
     );
     patched = replaceOnce(
@@ -449,6 +535,26 @@ function patchThreadSidePanelTabs(text) {
       patched,
       "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,yK.jsx)(ZDt,{diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
       "let s;t[1]!==a||t[2]!==r||t[3]!==i?(s=(0,yK.jsx)(CPXRM,{mainReviewContent:(0,yK.jsx)(ZDt,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "review body mux anchor",
+    );
+  }
+  if (text.includes("function Hwe(e){let t=(0,QF.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    let patched = replaceOnce(
+      text,
+      "import{n as e,r as t,s as n,t as r}from\"./rolldown-runtime-Czos8NxU.js\";",
+      `import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`,
+      "branch picker content import anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function Hwe(e){let t=(0,QF.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[$F,Ik,Er,q,fa,_n,en,Gs,null,va,ke,bxe,Yi,null,null,L,be,CPXBranchPickerDropdownContent,null,vd,yte]")}function Hwe(e){let t=(0,QF.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,$F.jsx)(ute,{children:(0,$F.jsx)(bxe,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,$F.jsx)(ute,{children:(0,$F.jsx)(CPXRM,{mainReviewContent:(0,$F.jsx)(bxe,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
       "review body mux anchor",
     );
   }
@@ -861,6 +967,32 @@ function patchAppShell(text) {
       "app shell error detail insertion anchor",
     );
   }
+  if (text.includes("function lce(){let e=(0,HA.c)(3),t,n;")) {
+    let patched = replaceOnce(
+      text,
+      "function lce(){let e=(0,HA.c)(3),t,n;",
+      `${diagnosticDetailsHook()}function CPXCommandMenuBridgeItem(e){let t=e.command,n=t.title??t.id,r=t.description??"",i=t.menuGroups?.[0]??t.commandMenuGroupKey??"suggested";return Sq({id:t.id,enabled:t.commandMenu!==!1,groupKey:i,dependencies:[n,r,t.id],render:i=>(0,$.jsx)(Cx,{value:n,keywords:[r,t.id],title:n,description:r,onSelect:()=>{globalThis.CodexPlus?.commands?.run?.(t.id),i?.()}},t.id)}),null}function CPXCommandMenuBridge(){let e=globalThis.CodexPlus?.ui?.commands?.commandMetadata?.()?.filter?.(e=>e?.id&&e?.title)??[];return(0,$.jsx)($.Fragment,{children:e.map(e=>(0,$.jsx)(CPXCommandMenuBridgeItem,{command:e},e.id))})}function lce(){let e=(0,HA.c)(3),t,n;`,
+      "app shell error fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function Gbe(){let e=(0,G9.c)(13),t=K(H),n=U(ls),",
+      "function Gbe(){let e=(0,G9.c)(13),t=K(H),CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel;CPXSP&&(CPXSP.openFile=(e,n={})=>Q9(t,e,{...n,hostId:n.hostId??Ts}));let n=U(ls),",
+      "ChatGPT thread side panel native file opener app shell anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[t,n,(0,UA.jsx)(gs,{onClick:uce,children:(0,UA.jsx)(W,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:UA.jsx,error:null}),(0,UA.jsx)(gs,{onClick:uce,children:(0,UA.jsx)(W,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "app shell error detail insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[(0,$.jsx)(ope,{}),(0,$.jsx)(Ife,{})]",
+      "children:[(0,$.jsx)(ope,{}),(0,$.jsx)(Ife,{}),(0,$.jsx)(CPXCommandMenuBridge,{})]",
+      "ChatGPT command menu runtime bridge mount anchor",
+    );
+  }
   if (text.includes("function QUe(e){let t=(0,NP.c)(4),{onRetry:n}=e,")) {
     let patched = replaceOnce(
       text,
@@ -957,6 +1089,26 @@ function patchErrorBoundary(text) {
       "webview error boundary error prop anchor",
     );
   }
+  if (text.includes("function X5n(e){let t=(0,Z5n.c)(9),{resetError:n}=e,r=CM(),i,a;")) {
+    let patched = replaceOnce(
+      text,
+      "function X5n(e){let t=(0,Z5n.c)(9),{resetError:n}=e,r=CM(),i,a;",
+      `${diagnosticDetailsHook()}function X5n(e){let t=(0,Z5n.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=CM(),i,a;`,
+      "webview error boundary fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,DX.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,DX.jsx)(mh,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:DX.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,DX.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,DX.jsx)(mh,{onClick:s,children:c})]})]",
+      "webview error boundary detail anchor",
+    );
+    return replaceOnce(
+      patched,
+      "r=e??(e=>(0,DX.jsx)(X5n,{resetError:()=>e.resetError()}));",
+      "r=e??(e=>(0,DX.jsx)(X5n,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));",
+      "webview error boundary error prop anchor",
+    );
+  }
   if (text.includes("function hte(){let e=(0,zA.c)(3),t,n;") && text.includes("CPXDiagnosticDetails({jsx:BA.jsx,error:null})")) {
     return text;
   }
@@ -1002,6 +1154,20 @@ function patchErrorBoundary(text) {
 }
 
 function patchAppMainProjectColors(text) {
+  if (text.includes("function Of(e){let t=(0,kf.c)(57),")) {
+    let patched = replaceOnce(
+      text,
+      "function Of(e){let t=(0,kf.c)(57),",
+      `${projectColorHook()}function Of(e){let t=(0,kf.c)(57),`,
+      "project color app main helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "A=tr.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+      "A={...tr.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}",
+      "project header row color attributes anchor",
+    );
+  }
   if (text.includes("function jh(e){let t=(0,vg.c)(73),") && text.includes("function Kh(e){let t=(0,vg.c)(120),")) {
     let patched = replaceOnce(
       text,
@@ -1193,6 +1359,14 @@ function patchAppMainProjectColors(text) {
 }
 
 function patchAppMainSidebarBlur(text) {
+  if (text.includes("function Of(e){let t=(0,kf.c)(57),")) {
+    return replaceOnce(
+      text,
+      "H=(0,Af.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:g})",
+      "H=(0,Af.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:g})",
+      "project header sidebar blur label anchor",
+    );
+  }
   if (text.includes("function qB(e){let t=(0,ZB.c)(57),")) {
     return replaceOnce(
       text,
@@ -1279,6 +1453,9 @@ function patchAppMainSidebarBlur(text) {
 }
 
 function patchHeader(text) {
+  if (text.includes("function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,")) {
+    return text;
+  }
   if (
     text.includes("function Jn(e){let t=(0,$n.c)(66),") &&
     text.includes("(0,$.jsx)(G,{color:`ghostActive`,type:`button`,onClick:u,")
@@ -1465,6 +1642,20 @@ function patchThreadPageHeader(text) {
 }
 
 function patchLocalConversationPageHeader(text) {
+  if (text.includes("function xl(e){let t=(0,wl.c)(51),")) {
+    let patched = replaceOnce(
+      text,
+      "function xl(e){let t=(0,wl.c)(51),",
+      `${threadHeaderHook()}function xl(e){let t=(0,wl.c)(51),`,
+      "local conversation header helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let ie;t[46]===Symbol.for(`react.memo_cache_sentinel`)?(ie=null,t[46]=ie):ie=t[46];",
+      "let CPX_headerContext={cwd:h,hostId:r??E,header:{surface:`local-conversation`,titleText:typeof p==`string`?p:null,projectName:f??null}},ie=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:Tl.jsx,jsxs:Tl.jsxs,Tooltip:Ze}});",
+      "local conversation header accessory render anchor",
+    );
+  }
   if (text.includes("function pi(e){let t=(0,W.c)(32),")) {
     if (text.includes("projectIcon:a,projectHoverCardContent:o,projectName:s,title:c,titleSuffix:u,cwd:d,canPin:f,hideForkActions:p")) {
       let patched = replaceOnce(
@@ -1605,6 +1796,23 @@ function patchLocalConversationPageHeader(text) {
 
 function patchGeneralSettingsUserBubbleColors(text) {
   if (
+    text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
+    text.includes("children:[E.map(e=>(0,J.jsx)(G,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:b[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),D.map")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+      `${appearanceSettingsHook("{React:Kr,jsx:J.jsx,SettingRow:G,ColorInput:Nr,Switch:U}")}function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+      "user bubble settings helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[E.map(e=>(0,J.jsx)(G,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:b[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),D.map",
+      "children:[E.map(e=>(0,J.jsx)(G,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:b[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),...CPXAppearanceRows(n),D.map",
+      "user bubble settings row anchor",
+    );
+  }
+  if (
     text.includes("function Ir({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
     text.includes("children:[D.map(e=>(0,Y.jsx)(W,{control:(0,Y.jsx)(Vr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label,variant:`nested`},e.role)),O.map")
   ) {
@@ -1735,6 +1943,23 @@ function patchGeneralSettingsUserBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsBubbleColors(text) {
+  if (
+    text.includes("function tG(e){let t=(0,aG.c)(279),") &&
+    text.includes("x=(0,oG.jsxs)(`div`,{className:p,children:[g,_,v,b]})")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function tG(e){let t=(0,aG.c)(279),",
+      `${messageComposerHook()}function tG(e){let t=(0,aG.c)(279),`,
+      "user bubble helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "x=(0,oG.jsxs)(`div`,{className:p,children:[g,_,v,b]})",
+      "x=(0,oG.jsxs)(`div`,{...CPXBubbleProps({}),className:p,children:[g,_,v,b]})",
+      "user bubble marker attribute anchor",
+    );
+  }
   if (text.includes("function nun(e){let t=(0,run.c)(94),")) {
     let patched = replaceOnce(
       text,
@@ -1916,6 +2141,14 @@ function patchUserMessageAttachmentsBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsProjectColors(text) {
+  if (text.includes("...CPXBubbleProps({}),className:p,children:[g,_,v,b]")) {
+    return replaceOnce(
+      text,
+      "...CPXBubbleProps({}),className:p,children:[g,_,v,b]",
+      "...CPXBubbleProps({project:{cwd:m,hostId:h}}),className:p,children:[g,_,v,b]",
+      "user bubble project marker attribute anchor",
+    );
+  }
   if (text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:R?`button`:void 0,")) {
     return replaceOnce(
       text,
@@ -1961,6 +2194,26 @@ function patchUserMessageAttachmentsProjectColors(text) {
 }
 
 function patchComposerBubbleColors(text) {
+  if (text.includes("function Fv(e){let t=(0,Yv.c)(18),")) {
+    let patched = replaceOnce(
+      text,
+      "function Fv(e){let t=(0,Yv.c)(18),",
+      `${messageComposerHook()}function Fv(e){let t=(0,Yv.c)(18),`,
+      "composer user bubble helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function Fv(e){let t=(0,Yv.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceVariant:l,onDragEnter:u,onDragLeave:d,onDragOver:f,onDrop:p}=e,",
+      "function Fv(e){let t=(0,Yv.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceVariant:l,onDragEnter:u,onDragLeave:d,onDragOver:f,onDrop:p,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),",
+      "composer host surface props anchor",
+    );
+    return replaceOnce(
+      patched,
+      "D=(0,Xv.jsx)(jc.div,{inert:a,className:E,onDragEnter:u,onDragOver:f,onDragLeave:d,onDrop:p,children:n})",
+      "D=(0,Xv.jsx)(jc.div,{inert:a,...CPX_resolvedSurfaceProps,className:E,onDragEnter:u,onDragOver:f,onDragLeave:d,onDrop:p,children:n})",
+      "composer user entry marker render anchor",
+    );
+  }
   if (text.includes("function hj(e){let t=(0,kj.c)(13),")) {
     let patched = replaceOnce(
       text,
@@ -2161,6 +2414,17 @@ function patchComposerBubbleColors(text) {
 
 function patchComposerProjectColors(text) {
   if (
+    text.includes("function dS(e){let t=(0,OS.c)(228),") &&
+    text.includes("(0,AS.jsx)(Qv,{utilityBarVariant:Vt,layout:dt,radiusVariant:g,surfaceVariant:_,children:Wt})")
+  ) {
+    return replaceOnce(
+      text,
+      "(0,AS.jsx)(Qv,{utilityBarVariant:Vt,layout:dt,radiusVariant:g,surfaceVariant:_,children:Wt})",
+      "(0,AS.jsx)(Qv,{key:CPXSurfaceProps({project:{threadId:a,title:a,projectKind:`chat`,projectless:!0}})?.[`data-codex-plus-project-color`]??``,codexPlusProps:CPXSurfaceProps({project:{threadId:a,title:a,projectKind:`chat`,projectless:!0}}),utilityBarVariant:Vt,layout:dt,radiusVariant:g,surfaceVariant:_,children:Wt})",
+      "composer project accent style caller anchor",
+    );
+  }
+  if (
     text.includes("function hj(e){let t=(0,kj.c)(13),") &&
     text.includes("(0,TV.jsx)(xV,{className:A,externalFooterVariant:k,hasDropTargetPortal:Vc,")
   ) {
@@ -2279,6 +2543,7 @@ function patchElectronMenuShortcuts(text) {
 }
 
 function patchKeyboardShortcutsSearchInput(text) {
+  if (text.includes("vscodeCommand:{commandId:`chatgpt.newChat`,title:`New Task in ChatGPT Sidebar`")) return text;
   if (text.includes("function uJ(e,t){return`titleIntlId`in e?")) {
     return replaceOnce(
       text,
@@ -2336,6 +2601,14 @@ function patchKeyboardShortcutsSearchInput(text) {
 }
 
 function patchCommandMenuRuntimeCommands(text) {
+  if (text.includes("function yJ({commandId:e}){let t=bJ(fJ(e));return t?.menuTitle==null||t.menuTitleIntlId==null?null:{menuTitle:t.menuTitle,menuTitleIntlId:t.menuTitleIntlId}}")) {
+    return replaceOnce(
+      text,
+      "function yJ({commandId:e}){let t=bJ(fJ(e));return t?.menuTitle==null||t.menuTitleIntlId==null?null:{menuTitle:t.menuTitle,menuTitleIntlId:t.menuTitleIntlId}}",
+      "function yJ({commandId:e}){let t=bJ(fJ(e));return t?.menuTitle==null?null:{menuTitle:t.menuTitle,menuTitleIntlId:t.menuTitleIntlId}}",
+      "ChatGPT command menu runtime title metadata anchor",
+    );
+  }
   if (text.includes("let m=se?P.filter(tY):P,_;")) {
     return replaceOnce(
       text,
@@ -2361,6 +2634,32 @@ function patchCommandMenuRuntimeCommands(text) {
 }
 
 function patchLocalTaskRow(text) {
+  if (text.includes("function Vv(e){let t=(0,qv.c)(128),")) {
+    let patched = replaceOnce(
+      text,
+      "function Vv(e){let t=(0,qv.c)(128),",
+      `${projectColorHook()}function Vv(e){let t=(0,qv.c)(128),`,
+      "local task row project color helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:tr.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+      "dataAttributes:{...tr.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}",
+      "local pending task row project color attributes anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:tr.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+      "dataAttributes:{...tr.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),...CPXPR({hostId:null,threadId:t,title:e.task.title??``})}",
+      "remote sidebar row project color attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "dataAttributes:tr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:S})",
+      "dataAttributes:{...tr.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:S}),...CPXPR({projectId:ye,label:ve,path:ue,cwd:ue,hostId:p,threadId:l,title:S,projectKind:ye||ue?void 0:u,projectless:u===`projectless`})}",
+      "local sidebar row project color attributes anchor",
+    );
+  }
   if (text.includes("function hd(e){let t=(0,gd.c)(77),")) {
     let patched = replaceOnce(
       text,
@@ -2542,6 +2841,20 @@ function patchLocalTaskRow(text) {
 }
 
 function patchMermaidDiagramShell(text) {
+  if (text.includes("function vwr(e){let t=(0,ywr.c)(19),")) {
+    let patched = replaceOnce(
+      text,
+      "function vwr(e){let t=(0,ywr.c)(19),",
+      `${mermaidDiagramHook()}function vwr(e){let t=(0,ywr.c)(19),`,
+      "mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "E=(0,p2.jsx)(`div`,{ref:d,className:C,\"data-wide-markdown-block\":w,\"data-wide-markdown-block-kind\":c,children:T})",
+      "E=(0,p2.jsx)(`div`,{ref:d,...CPXMermaidDiagramProps({code:a}),className:C,\"data-wide-markdown-block\":w,\"data-wide-markdown-block-kind\":c,children:T})",
+      "mermaid diagram shell host props anchor",
+    );
+  }
   if (text.includes("function bz(e){let t=(0,xz.c)(19),")) {
     let patched = replaceOnce(
       text,
@@ -2669,6 +2982,14 @@ function patchMermaidDiagramShell(text) {
 }
 
 function patchPreloadNativeBridge(text) {
+  if (text.includes("e.contextBridge.exposeInMainWorld(`codexWindowType`,g),e.contextBridge.exposeInMainWorld(`electronBridge`,j),typeof window<`u`")) {
+    return replaceOnce(
+      text,
+      "e.contextBridge.exposeInMainWorld(`codexWindowType`,g),e.contextBridge.exposeInMainWorld(`electronBridge`,j),typeof window<`u`",
+      "e.contextBridge.exposeInMainWorld(`codexWindowType`,g),e.contextBridge.exposeInMainWorld(`electronBridge`,j),e.contextBridge.exposeInMainWorld(`codexPlusNative`,{request:(t,n)=>e.ipcRenderer.invoke(`codex_plus:native-request`,{method:t,params:n})}),typeof window<`u`",
+      "codex plus native preload bridge anchor",
+    );
+  }
   return replaceOnce(
     text,
     "e.contextBridge.exposeInMainWorld(`codexWindowType`,m),e.contextBridge.exposeInMainWorld(`electronBridge`,D),typeof window<`u`",
@@ -2694,6 +3015,20 @@ function patchAppProtocolRoutes(text) {
 }
 
 function patchMainNativeBridge(text) {
+  if (text.includes("function V6(e){let{desktopSentry:t,hotkeyWindowLifecycleManager:i,") && text.includes("H6({buildFlavor:o,getContextForWebContents:R.getContextForWebContents,isTrustedIpcEvent:ae,usesOwlAppShell:x}),")) {
+    let patched = replaceOnce(
+      text,
+      "function V6(e){let{desktopSentry:t,hotkeyWindowLifecycleManager:i,",
+      `${nativeMainHook({ electronName: "c" })}function V6(e){let{desktopSentry:t,hotkeyWindowLifecycleManager:i,`,
+      "codex plus native main helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "H6({buildFlavor:o,getContextForWebContents:R.getContextForWebContents,isTrustedIpcEvent:ae,usesOwlAppShell:x}),",
+      "H6({buildFlavor:o,getContextForWebContents:R.getContextForWebContents,isTrustedIpcEvent:ae,usesOwlAppShell:x}),CPXNative.registerNativeRequest({isTrustedIpcEvent:ae}),",
+      "codex plus native main registration anchor",
+    );
+  }
   if (text.includes("function _4(e){let{") && text.includes("U2(l,k),z2(k);let A=!1;")) {
     let patched = replaceOnce(
       text,
@@ -2751,6 +3086,26 @@ function patchMainNativeBridge(text) {
 }
 
 function patchMainMenuDiagnostics(text) {
+  if (text.includes("at={...D(`toggleSidePanel`),click:async()=>{let e=await E();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},ot=")) {
+    let patched = replaceOnce(
+      text,
+      "at={...D(`toggleSidePanel`),click:async()=>{let e=await E();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},ot=",
+      "at={...D(`toggleSidePanel`),click:async()=>{let e=await E();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},ot=",
+      "codex plus menu template helper presence anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "Me,Ne,Pe,Fe,Ie,...l.browserPane?[Le]:[],at,...l.browserPane?",
+      "Me,Ne,Pe,Fe,Ie,...l.browserPane?[Le]:[],at,...CPXNative.templateItems(`view-menu`),...l.browserPane?",
+      "codex plus view menu template items anchor",
+    );
+    return replaceOnce(
+      patched,
+      "w=()=>{C.refresh()};return{applicationMenuManager:C,",
+      "w=()=>{C.refresh()};CPXNative.setRefreshApplicationMenu(w),CPXNative.logMenuDiagnostics();return{applicationMenuManager:C,",
+      "codex plus menu diagnostics refresh anchor",
+    );
+  }
   let patched = replaceOnce(
     text,
     "He={...b(`toggleSidePanel`),click:async()=>{let e=await y();e&&_.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},Ue=",
@@ -2824,30 +3179,28 @@ function patchLocalThreadCatalogEnabled(text) {
   return replaceOnce(text, match[0], match[1], "local thread catalog enabled anchor");
 }
 
-return makePatchSet({
-    id: config.id,
-    codexVersion: config.codexVersion,
-    bundleVersion: config.bundleVersion,
-    asarSha256: config.asarSha256,
-    runtimeConfig: {
-      ...(config.runtimeConfig || {}),
-      bundleVersion: config.bundleVersion,
-      codexVersion: config.codexVersion,
-      patchSetId: config.id,
-    },
-    assetFiles: codexPlusRuntimeAssets({
-      ...(config.runtimeConfig || {}),
-      bundleVersion: config.bundleVersion,
-      codexVersion: config.codexVersion,
-      patchSetId: config.id,
-    }),
-    patches: [
+function patchChatGptStartupAnnouncements(text) {
+  let patched = replaceOnce(
+    text,
+    "function Nce({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===gc.ChatGPT&&t!=null&&t!==xd.Agent&&t!==xd.Dev}",
+    "function Nce({appBrand:e,buildFlavor:t,platform:n}){return false}",
+    "ChatGPT migration announcement eligibility anchor",
+  );
+  return replaceOnce(
+    patched,
+    "function jM(e){let t=(0,MM.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+    "function jM(e){return null;let t=(0,MM.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+    "ChatGPT model upgrade announcement modal anchor",
+  );
+}
+
+  const patches = [
     {
       id: "bundle-identity",
       infoPlistStrings: {
-        CFBundleDisplayName: "Codex Plus",
-        CFBundleName: "Codex Plus",
-        CFBundleIdentifier: "com.openai.codex-plus",
+        CFBundleDisplayName: appDisplayName,
+        CFBundleName: appDisplayName,
+        CFBundleIdentifier: bundleIdentifier,
       },
       fileTransforms: [[titleFile, patchTitle]],
     },
@@ -2942,7 +3295,34 @@ return makePatchSet({
       id: "local-thread-catalog-state",
       fileTransforms: [[localThreadCatalogStateFile, patchLocalThreadCatalogEnabled]],
     }] : []),
-    ],
+    ...(chatGptStartupAnnouncementsFile ? [{
+      id: "chatgpt-startup-announcements",
+      fileTransforms: [[chatGptStartupAnnouncementsFile, patchChatGptStartupAnnouncements]],
+    }] : []),
+  ];
+
+return makePatchSet({
+    id: config.id,
+    codexVersion: config.codexVersion,
+    bundleVersion: config.bundleVersion,
+    asarSha256: config.asarSha256,
+    runtimeConfig: {
+      ...(config.runtimeConfig || {}),
+      bundleVersion: config.bundleVersion,
+      codexVersion: config.codexVersion,
+      patchedAppDisplayName: appDisplayName,
+      patchSetId: config.id,
+      sourceFamily,
+    },
+    assetFiles: codexPlusRuntimeAssets({
+      ...(config.runtimeConfig || {}),
+      bundleVersion: config.bundleVersion,
+      codexVersion: config.codexVersion,
+      patchedAppDisplayName: appDisplayName,
+      patchSetId: config.id,
+      sourceFamily,
+    }),
+    patches: enabledPatchIds == null ? patches : patches.filter((patch) => enabledPatchIds.has(patch.id)),
   });
 }
 

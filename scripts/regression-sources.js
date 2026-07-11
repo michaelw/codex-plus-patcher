@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { getAppIdentity } = require("../src/core/patch-engine");
+const { sourceFamilyConfig } = require("../src/core/app-identity");
 const {
   createAuditProgress,
   createJsonlProgress,
@@ -160,9 +161,10 @@ function filterMatches(filter, values) {
 
 function listSourceApps(sourcesDir, { fsImpl = fs } = {}) {
   if (!fsImpl.existsSync(sourcesDir)) return [];
+  const appNames = ["ChatGPT.app", "Codex.app"];
   return fsImpl.readdirSync(sourcesDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(sourcesDir, entry.name, "Codex.app"))
+    .flatMap((entry) => appNames.map((appName) => path.join(sourcesDir, entry.name, appName)))
     .filter((appPath) => fsImpl.existsSync(appPath))
     .sort((left, right) => left.localeCompare(right));
 }
@@ -176,6 +178,8 @@ function inspectSourceApp(sourceApp, { getAppIdentityImpl = getAppIdentity, patc
     version,
     bundleVersion,
     asarSha256: identity.asarSha256,
+    executable: identity.executable,
+    sourceFamily: identity.sourceFamily || "codex",
     sourceApp,
     supported: Boolean(patchSet),
     patchSet: patchSet?.id || null,
@@ -187,6 +191,7 @@ function sourceMatchesFilter(source, filter) {
   return filterMatches(filter, [
     source.version,
     source.bundleVersion,
+    source.sourceFamily,
     source.sourceApp,
     source.patchSet,
   ]);
@@ -205,11 +210,14 @@ function discoverSources({ sourcesDir, filter = null, newest = null, operations 
   return newestSources(sources, newest);
 }
 
-function pathsForSource(regressionDir, version) {
+function pathsForSource(regressionDir, source) {
+  const sourceInfo = typeof source === "string" ? { version: source, sourceFamily: "codex" } : source;
+  const version = sourceInfo.version;
+  const familyConfig = sourceFamilyConfig(sourceInfo.sourceFamily || "codex");
   const root = path.join(regressionDir, version);
   return {
     root,
-    targetApp: path.join(root, "Codex Plus.app"),
+    targetApp: path.join(root, familyConfig.defaultTargetName),
     devHome: path.join(root, "codex-home"),
     electronUserDataPath: path.join(root, "electron-user-data"),
   };
@@ -264,7 +272,7 @@ function cleanRegressionSources({ regressionDir, sources = [], filter = null, ne
 }
 
 async function runSourceRegression(source, { args, regressionDir, operations = {}, progress = null, index = 1, total = 1 }) {
-  const paths = pathsForSource(regressionDir, source.version);
+  const paths = pathsForSource(regressionDir, source);
   const artifactDir = args.visualContract === false ? null : path.join(args.contractRoot, source.version);
   const sourceContext = {
     version: source.version,

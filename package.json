@@ -2,7 +2,7 @@
   "name": "codex-plus-patcher",
   "version": "0.16.0",
   "private": false,
-  "description": "Patch queue tool for building a local Codex Plus.app from an installed Codex.app.",
+  "description": "Patch queue tool for building local ChatGPT Plus or Codex Plus apps from installed OpenAI desktop apps.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/michaelw/codex-plus-patcher.git"

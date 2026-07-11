@@ -1,8 +1,9 @@
 # Development
 
 `codex-plus-patcher` is a source-only package for applying version-checked ASAR
-patch sets to a local copy of Codex. Generated apps and release artifacts should
-stay outside commits.
+patch sets to a local copy of ChatGPT or Codex. ChatGPT is the primary source
+family; Codex remains supported during the transition period. Generated apps
+and release artifacts should stay outside commits.
 
 ## Project Layout
 
@@ -34,7 +35,8 @@ npm run check:package
 npm --cache /private/tmp/codex-plus-npm-cache pack --dry-run --json
 ```
 
-Dry-run patch selection against the installed Codex app:
+Dry-run patch selection against the default installed source app. The CLI
+prefers `/Applications/ChatGPT.app` and falls back to `/Applications/Codex.app`:
 
 ```sh
 codex-plus-patcher apply --mode dev --patch-dir ./src/patches --dry-run --json
@@ -46,24 +48,24 @@ Apply to a workspace-local app target:
 codex-plus-patcher apply \
   --mode dev \
   --patch-dir ./src/patches \
-  --target "work/Codex Plus <version>.app"
+  --target "work/ChatGPT Plus <version>.app"
 ```
 
 Verify signing on the generated workspace app:
 
 ```sh
-codesign --verify --deep --strict "work/Codex Plus <version>.app"
+codesign --verify --deep --strict "work/ChatGPT Plus <version>.app"
 ```
 
 Read back the patched ASAR SHA and inspect markers:
 
 ```sh
-shasum -a 256 "work/Codex Plus <version>.app/Contents/Resources/app.asar"
+shasum -a 256 "work/ChatGPT Plus <version>.app/Contents/Resources/app.asar"
 codex-plus-patcher asar-list \
-  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
+  --asar "work/ChatGPT Plus <version>.app/Contents/Resources/app.asar" \
   --contains "webview/assets/codex-plus/"
 codex-plus-patcher asar-cat \
-  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar" \
+  --asar "work/ChatGPT Plus <version>.app/Contents/Resources/app.asar" \
   --file "webview/assets/codex-plus/plugins/nestedRepositories.js"
 ```
 
@@ -87,14 +89,14 @@ For native menu issues, launch the workspace app with menu diagnostics enabled:
 
 ```sh
 CODEX_PLUS_MENU_DIAGNOSTICS=1 \
-  "work/Codex Plus <version>.app/Contents/MacOS/Codex"
+  "work/ChatGPT Plus <version>.app/Contents/MacOS/ChatGPT"
 ```
 
 You can also inspect a generated ASAR for menu-related patch markers:
 
 ```sh
 codex-plus-patcher menu-diagnostics \
-  --asar "work/Codex Plus <version>.app/Contents/Resources/app.asar"
+  --asar "work/ChatGPT Plus <version>.app/Contents/Resources/app.asar"
 ```
 
 ## Runtime Plugin Shape
@@ -110,7 +112,7 @@ For the required layer boundaries, glue-size limits, and forbidden minified
 patch shapes, follow `docs/plugin-architecture.md` before editing plugin or
 patch injection code.
 
-## Porting A New Codex Version
+## Porting A New App Version
 
 1. Intake the new mirror release:
 
@@ -139,7 +141,7 @@ patch injection code.
    codex-plus-patcher apply \
      --mode dev \
      --patch-dir ./src/patches \
-     --source "work/sources/<version>/Codex.app" \
+    --source "work/sources/<version>/Codex.app" \
      --dry-run \
      --json
    ```
@@ -152,7 +154,7 @@ patch injection code.
 6. Update `id`, `codexVersion`, `bundleVersion`, and `asarSha256` in the new
    patch file.
 7. Register the new patch in `src/patches/index.js`, with the newest supported
-   patch set first.
+   primary source-family patch set first.
 8. Update `npm run check` in `package.json` if it names patch files explicitly.
 9. If a patch or runtime plugin is added, removed, or renamed, update the
    README patch summary. Also verify the About dialog still reports the applied patch IDs.
@@ -170,13 +172,14 @@ After intaking mirror releases, audit every supported cached source app:
 npm run regression:sources
 ```
 
-The runner scans the main checkout's ignored `work/sources/*/Codex.app`,
-matches each source against the registered patch sets, sorts supported versions
-newest-first, applies them to isolated targets under the current worktree's
+The runner scans the main checkout's ignored `work/sources/*/ChatGPT.app` and
+`work/sources/*/Codex.app`, matches each source against the registered patch
+sets, sorts supported versions newest-first, applies them to family-specific
+isolated targets under the current worktree's
 `work/regression/sources/<version>/`, and runs the live plugin audit
-sequentially. Narrow the run with a case-insensitive filter or limit the run to
-the newest cached sources. The `--newest N` limit is applied after newest-first
-sorting:
+sequentially. Narrow the run with a case-insensitive filter, including
+`chatgpt` or `codex`, or limit the run to the newest cached sources. The
+`--newest N` limit is applied after newest-first sorting:
 
 ```sh
 npm run regression:sources -- --filter 61825
