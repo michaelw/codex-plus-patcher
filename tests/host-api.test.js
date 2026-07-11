@@ -194,6 +194,9 @@ function createContext() {
     Event: window.Event,
     URL,
     URLSearchParams,
+    Date,
+    setTimeout: window.setTimeout,
+    requestAnimationFrame: window.requestAnimationFrame,
   };
   vm.runInNewContext(runtimeFile("api/index.js"), context, { filename: "api/index.js" });
   return { context, window, document, body, main };
@@ -442,11 +445,27 @@ test("composer control exposes input, waiting, stop, and release behavior", () =
 });
 
 test("thread side panel openFile uses route context cwd and native opener", async () => {
-  const { context, window } = createContext();
+  const { context, window, body } = createContext();
   vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
   vm.runInNewContext(runtimeFile("api/threadSidePanel.js"), context, { filename: "api/threadSidePanel.js" });
+  const aside = createElement("aside");
+  const shell = createElement("div");
+  shell.setAttribute("data-app-shell-tabs", "true");
+  const tablist = createElement("div");
+  tablist.setAttribute("role", "tablist");
+  const tabpanel = createElement("div");
+  tabpanel.setAttribute("role", "tabpanel");
+  body.appendChild(aside);
+  aside.appendChild(shell);
+  shell.appendChild(tablist);
+  shell.appendChild(tabpanel);
   const opened = [];
-  window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => opened.push({ filePath, options });
+  window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
+    opened.push({ filePath, options });
+    tabpanel.setAttribute("data-tab-id", `file:local:${filePath}`);
+    tabpanel.textContent = "README.md";
+    return { viewer: "reviewFileSource", status: "opened", placement: "right" };
+  };
   window.CodexPlus.ui.routeContext.set({
     routeId: "virtual:file",
     sourceProject: { id: "repo", label: "Repo", cwd: "/repo" },
@@ -459,6 +478,7 @@ test("thread side panel openFile uses route context cwd and native opener", asyn
 
   assert.equal(result.ok, true);
   assert.equal(result.cwd, "/repo/work");
+  assert.equal(result.result.viewer, "reviewFileSource");
   assert.deepEqual(plain(opened), [{
     filePath: "README.md",
     options: {
@@ -469,4 +489,34 @@ test("thread side panel openFile uses route context cwd and native opener", asyn
       workspaceRoot: "/repo/work",
     },
   }]);
+});
+
+test("thread side panel openFile returns structured failure when native opener fails", async () => {
+  const { context, window } = createContext();
+  let now = 0;
+  context.Date = { now: () => { now += 10000; return now; } };
+  vm.runInNewContext(runtimeFile("api/threadSidePanel.js"), context, { filename: "api/threadSidePanel.js" });
+
+  const missing = await window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" });
+  assert.deepEqual(plain(missing), {
+    ok: false,
+    native: false,
+    error: "native-file-opener-unavailable",
+    message: "native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab",
+    path: "README.md",
+    cwd: "",
+  });
+
+  window.CodexPlusHost.adapters.threadSidePanel.openFile = () => {
+    throw new Error("Missing scope instance");
+  };
+  const failed = await window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" });
+  assert.deepEqual(plain(failed), {
+    ok: false,
+    native: false,
+    error: "native-file-opener-failed",
+    message: "Missing scope instance",
+    path: "README.md",
+    cwd: "",
+  });
 });

@@ -111,6 +111,55 @@
     });
   }
 
+  function nativeFileTabIdMatches(tabId, filePath) {
+    const value = String(tabId || "");
+    return (
+      value.includes(filePath) &&
+      (
+        value.startsWith("file:") ||
+        value.startsWith("file:local:") ||
+        value.startsWith("mcp-capability:file-viewer:file:local:")
+      )
+    );
+  }
+
+  function nativeFileTab(filePath) {
+    const tabsHost = nativeTabs();
+    if (!tabsHost) return null;
+    const queryAll = (selector) => {
+      try {
+        return Array.from(tabsHost.shell.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    };
+    const tabWithId = queryAll("[data-tab-id]")
+      .find((candidate) => nativeFileTabIdMatches(candidate.getAttribute("data-tab-id"), filePath));
+    const tabButton = [...queryAll("[role='tab']"), ...queryAll("[role='tab']:not([data-codex-plus-thread-side-panel-tab])")]
+      .find((candidate) => nativeFileTabIdMatches(candidate.closest?.("[data-tab-id]")?.getAttribute("data-tab-id") || candidate.getAttribute("data-tab-id"), filePath));
+    const panel = [...queryAll("[role='tabpanel']"), ...queryAll("[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])")]
+      .find((candidate) => nativeFileTabIdMatches(candidate.getAttribute("data-tab-id"), filePath) || String(candidate.textContent || "").includes(filePath.split("/").pop() || filePath));
+    if (!tabWithId && !tabButton && !panel) return null;
+    return { tab: tabWithId || tabButton || null, panel: panel || null, shell: tabsHost.shell };
+  }
+
+  function waitForNativeFileTab(filePath, timeoutMs = 5000) {
+    const existing = nativeFileTab(filePath);
+    if (existing) return Promise.resolve(existing);
+    const started = Date.now();
+    return new Promise((resolve) => {
+      const poll = () => {
+        const tab = nativeFileTab(filePath);
+        if (tab || Date.now() - started >= timeoutMs) {
+          resolve(tab || null);
+          return;
+        }
+        setTimeout(poll, 50);
+      };
+      poll();
+    });
+  }
+
   function waitForHost(timeoutMs = 1500) {
     const started = Date.now();
     return new Promise((resolve) => {
@@ -339,28 +388,6 @@
     return render();
   }
 
-  function openFallbackFilePanel({ filePath, cwd, content, title }) {
-    const safeTitle = title || filePath.split("/").pop() || filePath;
-    const tabId = `codex-plus-file:${filePath}`;
-    const result = openTab({
-      id: tabId,
-      title: safeTitle,
-      nativeTabId: tabId,
-      cwd,
-      render({ container }) {
-        container.innerHTML = "";
-        container.setAttribute("data-codex-plus-thread-file-panel", "");
-        container.setAttribute("data-tab-id", tabId);
-        if (cwd) container.setAttribute("data-codex-plus-project-path", cwd);
-        const panel = document.createElement("pre");
-        panel.style.cssText = "box-sizing:border-box;width:100%;height:100%;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text-primary,#fff);background:transparent";
-        panel.textContent = content || "";
-        container.appendChild(panel);
-      },
-    });
-    return { ...result, native: false, fallback: true, path: filePath, cwd };
-  }
-
   async function openFile(file) {
     if (!file?.path) throw new Error("Thread side panel files require a path");
     const filePath = String(file.path);
@@ -382,7 +409,16 @@
     await ensureOpen();
     if (!nativeFileOpener()) await activateNativeFilesSurface();
     const opener = await waitForNativeFileOpener();
-    if (!opener) return openFallbackFilePanel({ filePath, cwd, content: file.content, title: file.name });
+    if (!opener) {
+      return {
+        ok: false,
+        native: false,
+        error: "native-file-opener-unavailable",
+        message: "native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab",
+        path: filePath,
+        cwd,
+      };
+    }
     const openOptions = {
       activate: true,
       isPreview: false,
@@ -392,10 +428,29 @@
     };
     if (file.hostId) openOptions.hostId = String(file.hostId);
     try {
-      opener(filePath, openOptions);
-      return { ok: true, native: true, path: filePath, cwd };
+      const result = opener(filePath, openOptions);
+      const nativeTab = await waitForNativeFileTab(filePath);
+      if (!nativeTab) {
+        return {
+          ok: false,
+          native: false,
+          error: "native-file-opener-unavailable",
+          message: "native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab",
+          path: filePath,
+          cwd,
+          result,
+        };
+      }
+      return { ok: true, native: true, path: filePath, cwd, result };
     } catch (error) {
-      return openFallbackFilePanel({ filePath, cwd, content: file.content, title: file.name || String(error?.message || "") });
+      return {
+        ok: false,
+        native: false,
+        error: "native-file-opener-failed",
+        message: String(error?.message || error || "Native file opener failed"),
+        path: filePath,
+        cwd,
+      };
     }
   }
 

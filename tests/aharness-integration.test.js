@@ -1539,6 +1539,9 @@ test("aharness artifact UI uses thread side panel API instead of a plugin-owned 
   assert.doesNotMatch(threadSidePanelApi, /position:fixed/);
   assert.doesNotMatch(threadSidePanelApi, /document\.body\.appendChild/);
   assert.doesNotMatch(threadSidePanelApi, /codex-plus-thread-file-fallback-root/);
+  assert.doesNotMatch(threadSidePanelApi, /openFallbackFilePanel/);
+  assert.doesNotMatch(threadSidePanelApi, /data-codex-plus-thread-file-panel/);
+  assert.doesNotMatch(threadSidePanelApi, /cpx-thread-file-panel/);
   assert.match(threadSidePanelApi, /registerTabProvider/);
   assert.match(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openFile/);
   assert.doesNotMatch(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openTab/);
@@ -1547,7 +1550,7 @@ test("aharness artifact UI uses thread side panel API instead of a plugin-owned 
   assert.doesNotMatch(threadSidePanelApi, /dispatchNativeFilesLauncher/);
   assert.match(threadSidePanelApi, /workspaceRoot: cwd \|\| undefined/);
   assert.match(threadSidePanelApi, /resetTabState: true/);
-  assert.match(threadSidePanelApi, /data-codex-plus-thread-file-panel/);
+  assert.match(threadSidePanelApi, /native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab/);
   assert.doesNotMatch(threadSidePanelApi, /file:local:\$\{filePath\}/);
   assert.doesNotMatch(plugin, /data-codex-plus-aharness-artifact-content/);
   assert.doesNotMatch(plugin, /cpx-ah-artifact-panel/);
@@ -1686,6 +1689,9 @@ test("thread side panel API opens files through the upstream file tab adapter", 
       querySelectorAll(selector) {
         const matches = [];
         const visit = (child) => {
+          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
+          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
+          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
           if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
           if (selector === "[data-codex-plus-thread-side-panel-tab]" && child.attributes["data-codex-plus-thread-side-panel-tab"] != null) matches.push(child);
           if (selector === "[data-codex-plus-thread-side-panel-body]" && child.attributes["data-codex-plus-thread-side-panel-body"] != null) matches.push(child);
@@ -1754,6 +1760,10 @@ test("thread side panel API opens files through the upstream file tab adapter", 
   let nativeOpen = null;
   window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
     nativeOpen = { filePath, options };
+    nativeTab.setAttribute("data-tab-id", `mcp-capability:file-viewer:file:local:${filePath}`);
+    tabpanel.setAttribute("data-tab-id", `mcp-capability:file-viewer:file:local:${filePath}`);
+    tabpanel.textContent = "# Result";
+    return { viewer: "mcpCapabilityFileViewer", status: "opened", placement: "right" };
   };
 
   const opened = await window.CodexPlus.ui.threadSidePanel.openFile({
@@ -1765,6 +1775,7 @@ test("thread side panel API opens files through the upstream file tab adapter", 
 
   assert.equal(opened.ok, true);
   assert.equal(opened.native, true);
+  assert.equal(opened.result.viewer, "mcpCapabilityFileViewer");
   assert.deepEqual(JSON.parse(JSON.stringify(nativeOpen)), {
     filePath: "/tmp/aharness-examples/.aharness/runs/run-1/result.md",
     options: {
@@ -1816,6 +1827,9 @@ test("thread side panel API can open the native side panel before rendering", as
       querySelectorAll(selector) {
         const matches = [];
         const visit = (child) => {
+          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
+          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
+          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
           if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
           if (selector === "[data-codex-plus-thread-side-panel-tab]" && child.attributes["data-codex-plus-thread-side-panel-tab"] != null) matches.push(child);
           if (selector === "[data-codex-plus-thread-side-panel-body]" && child.attributes["data-codex-plus-thread-side-panel-body"] != null) matches.push(child);
@@ -1895,6 +1909,10 @@ test("thread side panel API can open the native side panel before rendering", as
   let nativeOpen = null;
   window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
     nativeOpen = { filePath, options };
+    const nativePanel = context.document.querySelector("[role='tabpanel']");
+    nativePanel?.setAttribute("data-tab-id", `file:${filePath}`);
+    if (nativePanel) nativePanel.textContent = "# Result";
+    return { viewer: "reviewFileSource", status: "opened", placement: "right" };
   };
 
   const ensured = await window.CodexPlus.ui.threadSidePanel.ensureOpen();
@@ -1947,6 +1965,9 @@ test("thread side panel API waits for the native file opener after the side pane
       querySelectorAll(selector) {
         const matches = [];
         const visit = (child) => {
+          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
+          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
+          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
           if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
           if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel") matches.push(child);
           for (const grandchild of child.children) visit(grandchild);
@@ -2011,6 +2032,9 @@ test("thread side panel API waits for the native file opener after the side pane
   setTimeout(() => {
     window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
       nativeOpen = { filePath, options };
+      tabpanel.setAttribute("data-tab-id", `file:local:${filePath}`);
+      tabpanel.textContent = "# Result";
+      return { viewer: "reviewFileSource", status: "opened", placement: "right" };
     };
   }, 100);
 
@@ -2050,6 +2074,9 @@ test("thread side panel API activates native Files before waiting for its opener
       querySelectorAll(selector) {
         const matches = [];
         const visit = (child) => {
+          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
+          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
+          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
           if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
           if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel") matches.push(child);
           for (const grandchild of child.children) visit(grandchild);
@@ -2096,6 +2123,9 @@ test("thread side panel API activates native Files before waiting for its opener
     setTimeout(() => {
       window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
         window.__nativeOpen = { filePath, options };
+        tabpanel.setAttribute("data-tab-id", `file:${filePath}`);
+        tabpanel.textContent = "# Result";
+        return { viewer: "reviewFileSource", status: "opened", placement: "right" };
       };
     }, 20);
     return true;
