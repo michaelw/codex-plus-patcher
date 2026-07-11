@@ -194,6 +194,7 @@
     const tabsHost = nativeTabs();
     if (!tabsHost) return null;
     attachNativeListener();
+    if (!tabsHost.shell.style.position) tabsHost.shell.style.position = "relative";
     const id = String(tab.id);
     let wrapper = tabsHost.tabList.querySelector(`[data-codex-plus-thread-side-panel-tab-wrapper="${escapeSelector(id)}"]`);
     if (!wrapper) {
@@ -252,7 +253,8 @@
     let panel = tabsHost.shell.querySelector(`[data-codex-plus-thread-side-panel-body="${escapeSelector(id)}"]`);
     if (!panel) {
       panel = document.createElement("div");
-      panel.className = "relative min-h-0 flex-1 outline-none";
+      panel.className = "absolute inset-x-0 bottom-0 top-9 z-20 min-h-0 overflow-hidden bg-token-main-surface-primary outline-none";
+      panel.style.cssText = "position:absolute;left:0;right:0;top:36px;bottom:0;z-index:20;min-height:0;overflow:hidden;background:var(--main-surface-primary,#111)";
       panel.setAttribute("role", "tabpanel");
       panel.setAttribute("tabindex", "-1");
       panel.setAttribute("data-codex-plus-thread-side-panel-body", id);
@@ -337,6 +339,28 @@
     return render();
   }
 
+  function openFallbackFilePanel({ filePath, cwd, content, title }) {
+    const safeTitle = title || filePath.split("/").pop() || filePath;
+    const tabId = `codex-plus-file:${filePath}`;
+    const result = openTab({
+      id: tabId,
+      title: safeTitle,
+      nativeTabId: tabId,
+      cwd,
+      render({ container }) {
+        container.innerHTML = "";
+        container.setAttribute("data-codex-plus-thread-file-panel", "");
+        container.setAttribute("data-tab-id", tabId);
+        if (cwd) container.setAttribute("data-codex-plus-project-path", cwd);
+        const panel = document.createElement("pre");
+        panel.style.cssText = "box-sizing:border-box;width:100%;height:100%;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text-primary,#fff);background:transparent";
+        panel.textContent = content || "";
+        container.appendChild(panel);
+      },
+    });
+    return { ...result, native: false, fallback: true, path: filePath, cwd };
+  }
+
   async function openFile(file) {
     if (!file?.path) throw new Error("Thread side panel files require a path");
     const filePath = String(file.path);
@@ -358,16 +382,21 @@
     await ensureOpen();
     if (!nativeFileOpener()) await activateNativeFilesSurface();
     const opener = await waitForNativeFileOpener();
-    if (!opener) return { ok: false, error: "native-file-opener-not-found" };
-    opener(filePath, {
+    if (!opener) return openFallbackFilePanel({ filePath, cwd, content: file.content, title: file.name });
+    const openOptions = {
       activate: true,
-      hostId: "local",
       isPreview: false,
       resetTabState: true,
       target: "right",
       workspaceRoot: cwd || undefined,
-    });
-    return { ok: true, native: true, path: filePath, cwd };
+    };
+    if (file.hostId) openOptions.hostId = String(file.hostId);
+    try {
+      opener(filePath, openOptions);
+      return { ok: true, native: true, path: filePath, cwd };
+    } catch (error) {
+      return openFallbackFilePanel({ filePath, cwd, content: file.content, title: file.name || String(error?.message || "") });
+    }
   }
 
   function closeTab(tabId = activeTabId) {

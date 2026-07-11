@@ -2,6 +2,44 @@ const { replaceOnce } = require("./replace");
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
+  if (text.includes("function zr(e){let t=(0,Br.c)(44),") && text.includes("function si({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function zr(e){let t=(0,Br.c)(44),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("$")}function zr(e){let t=(0,Br.c)(44),`,
+      "project selector fuzzy search adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=y.trim().toLowerCase();S=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "S=CPXP.fuzzyFilter(r,y);",
+      "project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "O=(0,Z.jsx)(je,{value:y,onChange:s,placeholder:c,className:`mb-1`})",
+      "O=(0,Z.jsx)(je,{value:y,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,S,o,y),placeholder:c,className:`mb-1`})",
+      "project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,Z.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,Z.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,y,Z.jsx)})",
+      "project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "triggerButton:u,contentWidth:`menu`",
+      "triggerButton:CPXPST(u,s),contentWidth:`menu`",
+      "project selector empty trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:u??(s===`hero`?Pe():Me()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(u??(s===`hero`?Pe():Me()),s),contentWidth:`workspace`",
+      "project selector shortcut final dropdown trigger anchor",
+    );
+  }
   if (
     text.includes("var ha,ga,Q,_a,va,$,ya=e((()=>{") &&
     text.includes("Q=Ye(),_a=`icon-xs shrink-0 opacity-75 group-focus:opacity-100 group-hover:opacity-100`,va=(0,ga.memo)(function(e){let t=(0,ha.c)(177),")

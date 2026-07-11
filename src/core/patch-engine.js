@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { patchAsar, sha256File } = require("./asar");
+const { detectSourceFamily, readBundleExecutable, sourceFamilyConfig } = require("./app-identity");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
 const { codexPlusRuntimeAssets } = require("../runtime/assets");
 
@@ -50,10 +51,13 @@ async function withProgress(progress, step, total, label, action) {
 
 function getAppIdentity(appPath) {
   const plistPath = path.join(appPath, "Contents/Info.plist");
+  const sourceFamily = detectSourceFamily(appPath);
   return {
     version: readPlistValue(plistPath, "CFBundleShortVersionString"),
     bundleVersion: readPlistValue(plistPath, "CFBundleVersion"),
     asarSha256: sha256File(path.join(appPath, ASAR_PATH_IN_BUNDLE)),
+    executable: readBundleExecutable(appPath),
+    sourceFamily,
   };
 }
 
@@ -142,12 +146,17 @@ function getPatcherGitSha({ cwd = path.resolve(__dirname, "../.."), execFileSync
 
 function buildPatchContext(patchSet, patchQueue, operations = {}) {
   const readPatcherGitSha = operations.getPatcherGitSha || (() => getPatcherGitSha());
+  const sourceFamily = patchSet.sourceFamily || "codex";
+  const familyConfig = sourceFamilyConfig(sourceFamily);
   return {
     patcherRepoUrl: PATCHER_REPO_URL,
     patcherGitSha: readPatcherGitSha(),
     patchSetId: patchSet.id,
     codexVersion: patchSet.codexVersion,
     bundleVersion: patchSet.bundleVersion,
+    patchedAppDisplayName: familyConfig.displayName,
+    patchedAppBundleIdentifier: familyConfig.bundleIdentifier,
+    sourceFamily,
     sourceAsarSha256: patchSet.asarSha256,
     appliedPatches: patchQueue.map((patch) => patch.id),
   };

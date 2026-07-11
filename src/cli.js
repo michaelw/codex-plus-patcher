@@ -14,6 +14,7 @@ const {
   writeJsonl,
 } = require("./core/plugin-audit");
 const { readAsar, walkFiles } = require("./core/asar");
+const { defaultTargetForSource, existingDefaultSource } = require("./core/app-identity");
 const {
   DEFAULT_DEV_HOME,
   DEFAULT_DEV_INSTANCE_ID,
@@ -34,10 +35,11 @@ function expandPath(input) {
 }
 
 function parseArgs(argv) {
+  const defaultSource = existingDefaultSource();
   const args = {
     command: argv.length === 0 ? "help" : "apply",
-    source: "/Applications/Codex.app",
-    target: path.join(os.homedir(), "Applications", "Codex Plus.app"),
+    source: defaultSource,
+    target: defaultTargetForSource(defaultSource),
     sourceHome: path.join(os.homedir(), ".codex"),
     devHome: DEFAULT_DEV_HOME,
     electronUserDataPath: DEFAULT_ELECTRON_USER_DATA,
@@ -69,6 +71,7 @@ function parseArgs(argv) {
     args.remoteDebuggingPort = DEFAULT_AUDIT_PORT;
     args.devInstanceId = "audit";
   }
+  let targetExplicit = false;
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = () => {
@@ -76,8 +79,14 @@ function parseArgs(argv) {
       if (index >= rest.length) throw new Error(`Missing value for ${arg}`);
       return rest[index];
     };
-    if (arg === "--source") args.source = path.resolve(expandPath(next()));
-    else if (arg === "--target") args.target = path.resolve(expandPath(next()));
+    if (arg === "--source") {
+      args.source = path.resolve(expandPath(next()));
+      if (!targetExplicit && args.command !== "audit-plugins") args.target = defaultTargetForSource(args.source);
+    }
+    else if (arg === "--target") {
+      args.target = path.resolve(expandPath(next()));
+      targetExplicit = true;
+    }
     else if (arg === "--source-home") {
       args.sourceHome = path.resolve(expandPath(next()));
       if (args.command === "audit-plugins") args.useLiveSourceHome = true;
@@ -143,8 +152,8 @@ function helpText() {
   codex-plus-patcher asar-cat --asar <path> --file <asar-path> [--json]
 
 Options:
-  --source <path>          Source Codex.app. Default: /Applications/Codex.app
-  --target <path>          Target Codex Plus.app. Default: ~/Applications/Codex Plus.app
+  --source <path>          Source ChatGPT.app or Codex.app. Default: /Applications/ChatGPT.app when present, otherwise /Applications/Codex.app
+  --target <path>          Target patched app. Default: ~/Applications/ChatGPT Plus.app or ~/Applications/Codex Plus.app by source family
   --source-home <path>     Original Codex home for dev-sync, or live-state audit debugging. Default: ~/.codex
   --dev-home <path>        Isolated CODEX_HOME for dev mode. Default: ./work/codex-plus-dev-home
   --electron-user-data <path>
@@ -297,7 +306,10 @@ function menuDiagnostics({ asar }) {
     }
     if (hasNativeBridge) nativeBridgeFiles.push({ file, hasDevToolsOpenRequest: content.includes("devtools/open"), hasOpenDevToolsCall: content.includes("openDevTools") });
     if (hasRuntimePlugin) runtimePluginFiles.push({ file, hasDevToolsCommand, hasDevToolsOpenRequest: content.includes("devtools/open") });
-    if (hasApplicationMenu) applicationMenuFiles.push({ file, hasDiagnosticsHook: content.includes("CPXLogMenuDiagnostics"), hasDevToolsCommand });
+    const hasDiagnosticsHook = content.includes("CPXLogMenuDiagnostics") ||
+      content.includes("CPXNative.logMenuDiagnostics()") ||
+      content.includes("CPXNative.setRefreshApplicationMenu(");
+    if (hasApplicationMenu) applicationMenuFiles.push({ file, hasDiagnosticsHook, hasDevToolsCommand });
   }
 
   return {

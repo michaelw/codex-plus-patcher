@@ -463,7 +463,6 @@ test("thread side panel openFile uses route context cwd and native opener", asyn
     filePath: "README.md",
     options: {
       activate: true,
-      hostId: "local",
       isPreview: false,
       resetTabState: true,
       target: "right",

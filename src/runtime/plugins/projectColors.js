@@ -219,7 +219,12 @@
 
   function decorateRenderedProjectLists() {
     for (const list of document.querySelectorAll("[data-app-action-sidebar-project-list-id]")) {
-      const project = list.closest("[data-codex-plus-project-sidebar-color]");
+      const projectId = list.getAttribute("data-app-action-sidebar-project-list-id") || "";
+      const project =
+        list.closest("[data-codex-plus-project-sidebar-color]") ||
+        (projectId
+          ? document.querySelector(`[data-app-action-sidebar-project-row][data-app-action-sidebar-project-id="${CSS.escape(projectId)}"][data-codex-plus-project-sidebar-color]`)
+          : null);
       if (!project) continue;
       const computed = getComputedStyle(project);
       const accent = computed.getPropertyValue("--codex-plus-project-accent").trim();

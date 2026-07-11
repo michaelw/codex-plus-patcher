@@ -1,6 +1,6 @@
 # Codex Plus Patcher
 
-`codex-plus-patcher` creates a local `Codex Plus.app` from an installed `Codex.app` by applying version-checked ASAR patch queues. It does not ship `Codex.app` or any OpenAI app binaries.
+`codex-plus-patcher` creates a local patched desktop app from an installed OpenAI app by applying version-checked ASAR patch queues. `ChatGPT.app` is the primary source and produces `ChatGPT Plus.app`; `Codex.app` is still supported during the transition period and produces `Codex Plus.app`. It does not ship OpenAI app binaries.
 
 ## Screenshots
 
@@ -19,7 +19,7 @@
 
 ## Purpose
 
-Codex Plus is an experimental local demonstrator for changes that can be layered onto an installed Codex desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
+Codex Plus and ChatGPT Plus are experimental local demonstrators for changes that can be layered onto an installed OpenAI desktop app without redistributing the app itself. The patcher is meant for technically curious users who want to inspect, test, or iterate on small binary patch sets against their own local copy.
 
 The current built-in Codex Plus features are delivered by versioned ASAR
 patches plus readable runtime plugins:
@@ -45,9 +45,9 @@ side-by-side dev launch and live proof workflow.
 
 ## How It Works
 
-The patcher reads the installed `Codex.app`, verifies the exact Codex version, bundle version, and original `Contents/Resources/app.asar` SHA-256, then selects the matching patch queue. Unsupported app versions fail closed so a patch written for one bundle is not applied to a different bundle by accident.
+The patcher reads the installed `ChatGPT.app` when present, otherwise `Codex.app`, verifies the exact app version, bundle version, source family, and original `Contents/Resources/app.asar` SHA-256, then selects the matching patch queue. Unsupported app versions fail closed so a patch written for one bundle is not applied to a different bundle by accident.
 
-When applying patches, the tool copies `Codex.app` to the target `Codex Plus.app`, rewrites selected packed ASAR files with ordered text transforms, adds Codex Plus runtime/plugin assets, updates bundle metadata such as the app name and identifier, refreshes Electron ASAR integrity metadata, and signs the copied app ad hoc. The source app is not modified.
+When applying patches, the tool copies the source app to a family-specific target (`ChatGPT Plus.app` for ChatGPT sources, `Codex Plus.app` for Codex sources), rewrites selected packed ASAR files with ordered text transforms, adds Codex Plus runtime/plugin assets, updates bundle metadata such as the app name and identifier, refreshes Electron ASAR integrity metadata, and signs the copied app ad hoc. The source app is not modified.
 
 The patch transforms should stay small where possible: their job is increasingly
 to add reusable plugin interfaces and hook those interfaces into Codex core
@@ -89,7 +89,7 @@ Apply built-in patches with defaults:
 codex-plus-patcher apply
 ```
 
-By default this reads `/Applications/Codex.app` and creates `~/Applications/Codex Plus.app`.
+By default this reads `/Applications/ChatGPT.app` when present and creates `~/Applications/ChatGPT Plus.app`. If ChatGPT is not installed, it falls back to `/Applications/Codex.app` and creates `~/Applications/Codex Plus.app`.
 
 Validate the installed Codex version without copying or signing:
 
@@ -100,7 +100,7 @@ codex-plus-patcher apply --dry-run
 Apply a local development patch queue:
 
 ```bash
-codex-plus-patcher apply --mode dev --patch-dir ./src/patches --target "./work/Codex Plus.app"
+codex-plus-patcher apply --mode dev --patch-dir ./src/patches --target "./work/ChatGPT Plus.app"
 ```
 
 Apply patches from a GitHub release asset:
@@ -121,7 +121,7 @@ Inspect menu-related patch markers in a generated app:
 
 ```bash
 codex-plus-patcher menu-diagnostics \
-  --asar "~/Applications/Codex Plus.app/Contents/Resources/app.asar"
+  --asar "~/Applications/ChatGPT Plus.app/Contents/Resources/app.asar"
 ```
 
 For local development of the CLI wrapper:
@@ -154,16 +154,16 @@ npm pack --dry-run
 
 Business logic that can be tested outside Codex lives under `src/plus/`. The current nested repository TOML parser is shared by tests and the injected worker patch source.
 
-## Porting Patches To A New Codex Version
+## Porting Patches To A New App Version
 
-1. Install the new `Codex.app`.
+1. Install the new `ChatGPT.app` or transition-period `Codex.app`.
 2. Record `CFBundleShortVersionString`, `CFBundleVersion`, and raw `Contents/Resources/app.asar` SHA-256.
 3. Copy the closest existing patch set in `src/patches/`.
 4. Update target chunk filenames and fail-closed anchor strings by inspecting the new ASAR.
 5. Run `npm test`, `npm run check`, and a dry run.
 6. Apply the patch to a copied app and verify `codesign --verify --deep --strict`.
-7. Launch manually and validate Review pane nested repository behavior, Appearance controls, project color matching, and command palette entries.
+7. Launch manually and validate the features enabled for that source family. For ChatGPT ports, keep optional UI plugins disabled until current UI evidence and audit screenshots prove they still apply.
 
 ## Update Hook Direction
 
-The update hook should be implemented as a separate patch in the queue. V1 should detect Codex update completion, check GitHub Releases for a matching patch bundle, and offer to repatch `Codex Plus.app`. Silent auto-apply should be avoided until patch availability and signing failures are handled reliably.
+The update hook should be implemented as a separate patch in the queue. V1 should detect source app update completion, check GitHub Releases for a matching patch bundle, and offer to repatch `ChatGPT Plus.app` or `Codex Plus.app`. Silent auto-apply should be avoided until patch availability and signing failures are handled reliably.

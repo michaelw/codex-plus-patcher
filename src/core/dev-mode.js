@@ -4,6 +4,11 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { patchAsar } = require("./asar");
+const {
+  appExecutablePath,
+  detectSourceFamily,
+  sourceFamilyConfig,
+} = require("./app-identity");
 const { replacePlistString, setPlistBuddyValue } = require("./plist");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
@@ -228,14 +233,15 @@ function sanitizeDevInstanceId(devInstanceId) {
   return sanitized;
 }
 
-function devBundleIdentity(devInstanceId) {
+function devBundleIdentity(devInstanceId, sourceFamily = "codex") {
   const sanitized = sanitizeDevInstanceId(devInstanceId);
   if (!sanitized) return null;
+  const family = sourceFamilyConfig(sourceFamily);
   return {
     id: sanitized,
-    bundleIdentifier: `com.openai.codex-plus.${sanitized}`,
-    displayName: `Codex Plus (${sanitized})`,
-    name: `Codex Plus ${sanitized}`,
+    bundleIdentifier: `${family.bundleIdentifier}.${sanitized}`,
+    displayName: `${family.displayName} (${sanitized})`,
+    name: `${family.displayName} ${sanitized}`,
   };
 }
 
@@ -247,11 +253,17 @@ function buildLaunchDev({
   devInstanceId = DEFAULT_DEV_INSTANCE_ID,
 } = {}) {
   if (!targetApp) throw new Error("--target is required");
-  const appBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  const sourceFamily = detectSourceFamily(targetApp);
+  let appBinary;
+  try {
+    appBinary = appExecutablePath(targetApp);
+  } catch {
+    appBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  }
   const resolvedDevHome = path.resolve(devHome);
   const resolvedElectronUserDataPath = path.resolve(electronUserDataPath);
-  const instanceIdentity = devBundleIdentity(devInstanceId);
-  const args = [`--user-data-dir=${resolvedElectronUserDataPath}`];
+  const instanceIdentity = devBundleIdentity(devInstanceId, sourceFamily);
+  const args = [`--user-data-dir=${resolvedElectronUserDataPath}`, "--use-mock-keychain"];
   if (remoteDebuggingPort != null) args.push(`--remote-debugging-port=${remoteDebuggingPort}`);
   return {
     command: appBinary,
@@ -295,7 +307,7 @@ function markDevBundleIdentity(
   devInstanceId = DEFAULT_DEV_INSTANCE_ID,
   { replacePlistStringImpl = replacePlistString } = {},
 ) {
-  const identity = devBundleIdentity(devInstanceId);
+  const identity = devBundleIdentity(devInstanceId, detectSourceFamily(targetApp));
   if (!identity) return null;
   const plistPath = path.join(path.resolve(targetApp), "Contents/Info.plist");
   replacePlistStringImpl(plistPath, "CFBundleIdentifier", identity.bundleIdentifier);

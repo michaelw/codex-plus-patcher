@@ -309,12 +309,12 @@ function resolveDefaultSourcesDir({ cwd = process.cwd(), execFileSync = childPro
   return path.join(mainCheckout, "work", "sources");
 }
 
-function findCodexApps(root, { fsImpl = fs } = {}) {
+function findSourceApps(root, { fsImpl = fs } = {}) {
   const apps = [];
   const visit = (current) => {
     const stat = fsImpl.statSync(current);
     if (!stat.isDirectory()) return;
-    if (path.basename(current) === "Codex.app") {
+    if (path.basename(current) === "Codex.app" || path.basename(current) === "ChatGPT.app") {
       apps.push(current);
       return;
     }
@@ -323,6 +323,8 @@ function findCodexApps(root, { fsImpl = fs } = {}) {
   visit(root);
   return apps;
 }
+
+const findCodexApps = findSourceApps;
 
 function extractZip(zipPath, destination, { execFileSync = childProcess.execFileSync } = {}) {
   execFileSync("/usr/bin/ditto", ["-x", "-k", zipPath, destination], { stdio: "inherit" });
@@ -377,7 +379,8 @@ async function intakeRelease(args, operations = {}) {
 
   const sourcesDir = args.sourcesDir || resolveDefaultSourcesDir({ cwd, execFileSync: operations.execFileSync });
   const versionDir = path.join(sourcesDir, version);
-  const destinationApp = path.join(versionDir, "Codex.app");
+  const destinationAppName = args.asset?.startsWith("ChatGPT-") ? "ChatGPT.app" : "Codex.app";
+  const destinationApp = path.join(versionDir, destinationAppName);
   if (fsImpl.existsSync(destinationApp) && !args.force) {
     const error = new Error(`${destinationApp} already exists; pass --force to replace it`);
     error.code = "SOURCE_EXISTS";
@@ -399,12 +402,12 @@ async function intakeRelease(args, operations = {}) {
 
     const extract = operations.extractZip || extractZip;
     extract(downloadPath, extractDir, operations);
-    const apps = findCodexApps(extractDir, { fsImpl });
-    if (apps.length !== 1) throw new Error(`Expected one Codex.app in ${asset.name}, found ${apps.length}`);
+    const apps = findSourceApps(extractDir, { fsImpl });
+    if (apps.length !== 1) throw new Error(`Expected one source app in ${asset.name}, found ${apps.length}`);
 
     const identity = operations.getAppIdentity ? operations.getAppIdentity(apps[0]) : getAppIdentity(apps[0]);
     if (identity.version !== version) {
-      throw new Error(`Extracted Codex.app version ${identity.version} does not match release ${version}`);
+      throw new Error(`Extracted source app version ${identity.version} does not match release ${version}`);
     }
 
     const sourceAsarSha256 = identity.asarSha256;
@@ -528,6 +531,7 @@ module.exports = {
   fetchJson,
   fetchText,
   findCodexApps,
+  findSourceApps,
   formatResult,
   formatBytes,
   formatDownloadProgress,

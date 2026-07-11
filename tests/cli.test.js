@@ -5,6 +5,12 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const packageJson = require("../package.json");
+const {
+  defaultAuditTargetForSource,
+  defaultTargetForSource,
+  existingDefaultSource,
+} = require("../src/core/app-identity");
+const { buildLaunchDev } = require("../src/core/dev-mode");
 
 const {
   createApplyProgress,
@@ -64,12 +70,13 @@ test("help documents codex-plus-patcher as the only command", () => {
   assert.doesNotMatch(output, /codex-plus apply/);
 });
 
-test("apply uses simple production defaults", () => {
+test("apply uses source-family production defaults", () => {
   const args = parseArgs(["apply"]);
+  const defaultSource = existingDefaultSource();
 
   assert.equal(args.command, "apply");
-  assert.equal(args.source, "/Applications/Codex.app");
-  assert.equal(args.target, path.join(os.homedir(), "Applications", "Codex Plus.app"));
+  assert.equal(args.source, defaultSource);
+  assert.equal(args.target, defaultTargetForSource(defaultSource));
   assert.equal(args.mode, "builtin");
   assert.equal(args.dryRun, false);
 });
@@ -199,7 +206,7 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.throws(() => parseArgs(["audit-plugins", "--json", "--jsonl"]), /--jsonl cannot be combined with --json/);
 
   const defaults = parseArgs(["audit-plugins"]);
-  assert.equal(defaults.target, path.resolve("work/Codex Plus.app"));
+  assert.equal(defaults.target, defaultAuditTargetForSource(existingDefaultSource()));
   assert.equal(defaults.remoteDebuggingPort, 9234);
   assert.equal(defaults.includeNativeOpenProbes, false);
   assert.equal(defaults.manual, false);
@@ -473,7 +480,7 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /"includeNativeOpenProbes":false/);
   assert.match(strictExpression, /"includeNativeOpenProbes":true/);
   assert.match(focusedExpression, /"auditPlugins":\["projectColors"\]/);
-  assert.match(focusedExpression, /shouldProbe = \(id\) => focusedPlugins\.length === 0 \|\| focusedPlugins\.includes\(id\)/);
+  assert.match(focusedExpression, /shouldProbe = \(id\) => !disabledPlugins\.has\(id\) && \(focusedPlugins\.length === 0 \|\| focusedPlugins\.includes\(id\)\)/);
   assert.match(defaultExpression, /if \(options\.includeNativeOpenProbes\)/);
   assert.match(defaultExpression, /window\.CodexPlus\.commands\.run\("codexPlusOpenDevTools"\)/);
   assert.match(defaultExpression, /window\.CodexPlus\.native\.request\("mermaid\/openViewer"/);
@@ -864,8 +871,9 @@ test("app shell wait fails while the startup loader remains", async () => {
   await assert.rejects(
     () => waitForAppShellMounted(
       {
-        evaluate() {
+        evaluate(expression) {
           calls += 1;
+          assert.match(expression, /openai-blossom-shimmer/);
           return Promise.resolve({
             readyState: "complete",
             hasRoot: true,
@@ -1111,6 +1119,7 @@ test("runAudit progress fails when the project selector verifier returns not ok"
           },
         },
         registeredPlugins: ["projectSelectorShortcut"],
+        runtimeStatus: { config: { sourceFamily: "chatgpt" } },
         startedPlugins: ["projectSelectorShortcut"],
       });
     }
@@ -1344,6 +1353,7 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
             bodyTextSampleLength: 42,
           });
         },
+        dismissStartupDialogs() { return Promise.resolve({ present: false, dismissed: false }); },
         verifyMermaidViewerRender() {
           return Promise.resolve({ ok: true, svgLength: 1200 });
         },
@@ -1594,6 +1604,16 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
 test("runAudit manual mode launches and skips plugin probes and cleanup", async () => {
   const progressEvents = [];
   const calls = [];
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-chatgpt-audit-"));
+  const chatgptSource = path.join(tmpDir, "ChatGPT.app");
+  fs.mkdirSync(path.join(chatgptSource, "Contents"), { recursive: true });
+  fs.writeFileSync(path.join(chatgptSource, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.openai.chat</string>
+<key>CFBundleExecutable</key><string>ChatGPT</string>
+</dict></plist>
+`);
   class FakeCdpSession {
     connect() {
       calls.push("connect");
@@ -1614,7 +1634,7 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
 
   const result = await runAudit(
     {
-      source: "/Applications/Codex.app",
+      source: chatgptSource,
       target: "/repo/work/Codex Plus.app",
       sourceHome: "/repo/source-home",
       devHome: "/repo/dev-home",
@@ -1626,6 +1646,7 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
       manual: true,
       includeNativeOpenProbes: false,
       disabledRuntimePlugins: ["projectColors"],
+      visualContract: true,
     },
     {
       progress: {
@@ -1672,15 +1693,24 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
           calls.push("runtime");
           return Promise.resolve({ registered: 10, started: 10 });
         },
-        waitForAppShellMounted() {
+        waitForAppShellMounted(_cdp, timeoutMs) {
           calls.push("shell");
+          calls.push(["shellTimeoutMs", timeoutMs]);
           return Promise.resolve({ readyState: "complete", hasStartupLoader: false });
+        },
+        dismissStartupDialogs() {
+          calls.push("dismissStartupDialogs");
+          return Promise.resolve({ present: true, dismissed: true, cleared: true });
         },
         cleanupLaunchedAuditApp() {
           throw new Error("manual mode must not cleanup the launched app");
         },
         checkKeepOpenAppStability() {
           throw new Error("manual mode must not run post-probe stability checks");
+        },
+        captureVisualContract(_cdp, options) {
+          calls.push(["captureVisualContract", options.includeSettings]);
+          return Promise.resolve({ ok: true, artifactDir: options.artifactDir, settings: null });
         },
         auditIdentity() {
           return { packageName: "codex-plus-patcher", packageVersion: "0.7.0" };
@@ -1696,15 +1726,19 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
   assert.deepEqual(result.pluginResults, {});
   assert.equal(result.launchResult.pid, 123);
   assert.equal(result.fixtureResult.browserStateReadback.seeded, true);
+  assert.equal(result.visualContract.ok, true);
   assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: true, ok: true, pid: 123 });
   assert.deepEqual(
     calls.filter((call) => typeof call === "string"),
-    ["preflight", "patch", "fixture", "launch", "waitRenderer", "connect", "runtime", "shell", "seed", "close"],
+    ["preflight", "patch", "fixture", "launch", "waitRenderer", "connect", "runtime", "shell", "dismissStartupDialogs", "seed", "close"],
   );
+  assert.deepEqual(calls.find((call) => call[0] === "captureVisualContract"), ["captureVisualContract", false]);
+  assert.deepEqual(calls.find((call) => call[0] === "shellTimeoutMs"), ["shellTimeoutMs", 180000]);
   assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
     runtimePluginsDisabled: ["projectColors"],
   });
   assert.equal(progressEvents.some(([, text]) => text === "Running plugin probes"), false);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test("runAudit manual no-launch mode attaches without launching or probing", async () => {
@@ -1753,6 +1787,7 @@ test("runAudit manual no-launch mode attaches without launching or probing", asy
         CdpSession: FakeCdpSession,
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ readyState: "complete", hasStartupLoader: false }); },
+        dismissStartupDialogs() { return Promise.resolve({ present: false, dismissed: false }); },
         cleanupLaunchedAuditApp() {
           throw new Error("manual no-launch mode must not cleanup");
         },
@@ -1997,7 +2032,7 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   });
 
   assert.equal(result.command, path.join(targetApp, "Contents/MacOS/Codex"));
-  assert.deepEqual(result.args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.deepEqual(result.args, [`--user-data-dir=${electronUserDataPath}`, "--use-mock-keychain", "--remote-debugging-port=9234"]);
   assert.equal(result.env.CODEX_HOME, devHome);
   assert.equal(result.env.CODEX_ELECTRON_USER_DATA_PATH, electronUserDataPath);
   assert.deepEqual(result.devRuntimeConfig, {
@@ -2017,7 +2052,7 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   assert.deepEqual(calls[0], { markDevRuntimeConfig: targetApp });
   assert.deepEqual(calls[1], { markDevBundleIdentity: targetApp, devInstanceId: undefined });
   assert.deepEqual(calls[2], { signDevApp: targetApp });
-  assert.deepEqual(calls[3].args, [`--user-data-dir=${electronUserDataPath}`, "--remote-debugging-port=9234"]);
+  assert.deepEqual(calls[3].args, [`--user-data-dir=${electronUserDataPath}`, "--use-mock-keychain", "--remote-debugging-port=9234"]);
   assert.equal(calls[3].options.detached, true);
   assert.equal(calls[3].options.env.KEEP_ME, "yes");
   assert.equal(calls[3].options.env.CODEX_HOME, devHome);
@@ -2025,6 +2060,42 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   assert.deepEqual(calls[4], { unref: true });
   assert.match(formatLaunchDevResult(result), /CODEX_ELECTRON_USER_DATA_PATH/);
   assert.match(formatLaunchDevResult(result), /com\.openai\.codex-plus\.dev/);
+});
+
+test("launch-dev uses ChatGPT executable and dev identity for ChatGPT targets", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-chatgpt-launch-dev-"));
+  const targetApp = path.join(tmpDir, "ChatGPT Plus.app");
+  const plistPath = path.join(targetApp, "Contents", "Info.plist");
+  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+  fs.writeFileSync(plistPath, [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+    "<plist version=\"1.0\">",
+    "<dict>",
+    "<key>CFBundleDisplayName</key>",
+    "<string>ChatGPT Plus</string>",
+    "<key>CFBundleIdentifier</key>",
+    "<string>com.openai.chatgpt-plus</string>",
+    "<key>CFBundleExecutable</key>",
+    "<string>ChatGPT</string>",
+    "</dict>",
+    "</plist>",
+    "",
+  ].join("\n"));
+
+  const result = buildLaunchDev({
+    targetApp,
+    devInstanceId: "audit",
+    remoteDebuggingPort: 9234,
+  });
+
+  assert.equal(result.command, path.join(targetApp, "Contents/MacOS/ChatGPT"));
+  assert.deepEqual(result.instanceIdentity, {
+    id: "audit",
+    bundleIdentifier: "com.openai.chatgpt-plus.audit",
+    displayName: "ChatGPT Plus (audit)",
+    name: "ChatGPT Plus audit",
+  });
 });
 
 test("audit cleanup handles launched, kept-open, missing, and failed process cleanup", async () => {

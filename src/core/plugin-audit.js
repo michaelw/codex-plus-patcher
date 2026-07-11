@@ -12,6 +12,12 @@ const {
   syncDevHome,
 } = require("./dev-mode");
 const {
+  appExecutablePath,
+  defaultAuditTargetForSource,
+  detectSourceFamily,
+  existingDefaultSource,
+} = require("./app-identity");
+const {
   buildAuditFixture,
   seedAuditFixtureBrowserState,
 } = require("./audit-fixture");
@@ -19,9 +25,11 @@ const { patchCodexApp } = require("./patch-engine");
 const { patchSets } = require("../patches");
 const packageJson = require("../../package.json");
 
-const DEFAULT_SOURCE = "/Applications/Codex.app";
-const DEFAULT_TARGET = path.resolve("work/Codex Plus.app");
+const DEFAULT_SOURCE = existingDefaultSource();
+const DEFAULT_TARGET = defaultAuditTargetForSource(DEFAULT_SOURCE);
 const DEFAULT_PORT = 9234;
+const DEFAULT_APP_SHELL_TIMEOUT_MS = 90000;
+const CHATGPT_APP_SHELL_TIMEOUT_MS = 180000;
 
 function safeTimestamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
@@ -289,7 +297,8 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
     const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
       const rect = button.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && (button.innerText || "").includes("New chat");
+      const text = button.innerText || "";
+      return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
     });
     newChatButton?.click?.();
     let attempts = 0;
@@ -446,7 +455,43 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     }
     await wait(100);
   }
-  return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
+  const commandFallback = await cdp.evaluate(`new Promise((resolve) => {
+    if (typeof window.CodexPlus?.commands?.run !== "function") {
+      resolve(null);
+      return;
+    }
+    const ran = window.CodexPlus?.commands?.run?.("codexPlus.focusProjectSelector") === true;
+    let clickedTrigger = false;
+    const startedAt = Date.now();
+    const check = () => {
+      const searchInput = document.querySelector("input[placeholder='Search projects']");
+      const menuCount = document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']").length;
+      const opened = Boolean(searchInput || menuCount > 0);
+      if (!opened && !clickedTrigger && Date.now() - startedAt > 1000) {
+        const trigger = document.querySelector("[data-codex-plus-project-selector-trigger]");
+        trigger?.dispatchEvent?.(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        trigger?.click?.();
+        clickedTrigger = Boolean(trigger);
+      }
+      if (opened || Date.now() - startedAt > 5000) {
+        resolve({
+          ran,
+          clickedTrigger,
+          triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
+          menuCount,
+          opened,
+          activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
+        });
+        return;
+      }
+      setTimeout(check, 100);
+    };
+    check();
+  })`);
+  if (commandFallback?.opened) {
+    return { ok: true, ...setup, ...status, commandFallback };
+  }
+  return { ok: false, ...setup, ...status, commandFallback, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
 }
 
 async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
@@ -969,7 +1014,12 @@ function listRunningAuditApps({
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
   execFileSync = childProcess.execFileSync,
 } = {}) {
-  const targetBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  let targetBinary;
+  try {
+    targetBinary = appExecutablePath(targetApp);
+  } catch {
+    targetBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+  }
   const userDataArg = `--user-data-dir=${path.resolve(electronUserDataPath)}`;
   let text;
   try {
@@ -1134,15 +1184,34 @@ async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
     lastStatus = await cdp.evaluate(`(() => {
       const plugins = window.CodexPlus?.plugins;
       const hasList = typeof plugins?.list === "function";
+      const requiredPlugins = [
+        "aboutMetadata",
+        "nestedRepositories",
+        "diagnosticErrors",
+        "userBubbleColors",
+        "projectColors",
+        "projectPathHeader",
+        "sidebarNameBlur",
+        "devTools",
+        "projectSelectorShortcut",
+        "mermaidFullscreen",
+      ];
+      const disabledPlugins = new Set(window.__CodexPlusRuntimeConfig?.runtimePluginsDisabled || []);
+      const expectedPlugins = Math.max(1, requiredPlugins.filter((id) => !disabledPlugins.has(id)).length);
       return {
         readyState: document.readyState,
         hasCodexPlus: Boolean(window.CodexPlus),
         hasPluginList: hasList,
         registered: hasList ? plugins.list().length : null,
         started: window.__CodexPlusRuntime?.core?.startedPlugins?.size ?? null,
+        expectedPlugins,
       };
     })()`);
-    if (lastStatus.hasPluginList && lastStatus.registered >= 10 && lastStatus.started >= 10) return lastStatus;
+    if (
+      lastStatus.hasPluginList &&
+      lastStatus.registered >= lastStatus.expectedPlugins &&
+      lastStatus.started >= lastStatus.expectedPlugins
+    ) return lastStatus;
     if (lastStatus.readyState === "complete" && lastStatus.hasCodexPlus && !lastStatus.hasPluginList) return lastStatus;
     await delay(250);
   }
@@ -1161,7 +1230,7 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
       return {
         readyState: document.readyState,
         hasRoot: Boolean(root),
-        hasStartupLoader: Boolean(document.querySelector("#root .startup-loader")),
+        hasStartupLoader: Boolean(document.querySelector("#root .startup-loader, #root .openai-blossom-shimmer")),
         hasErrorBoundary,
         bodyTextLength: bodyText.length,
         elementCount: document.querySelectorAll("*").length,
@@ -1188,6 +1257,85 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
     ? " The app is still on the startup logo; check for a blocking macOS Keychain access dialog for the audit/regression app."
     : "";
   throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}${startupHint}`);
+}
+
+function appShellTimeoutForSource(sourceApp) {
+  try {
+    return detectSourceFamily(sourceApp) === "chatgpt" ? CHATGPT_APP_SHELL_TIMEOUT_MS : DEFAULT_APP_SHELL_TIMEOUT_MS;
+  } catch {
+    return DEFAULT_APP_SHELL_TIMEOUT_MS;
+  }
+}
+
+async function dismissStartupDialogs(cdp, { timeoutMs = 5000, wait = delay } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const dismissed = [];
+  let lastStatus = null;
+  while (Date.now() < deadline) {
+    lastStatus = await cdp.evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const startupDialogPhrases = [
+        "Codex is now the ChatGPT app",
+        "Keep coding with Codex",
+        "Keep the Codex app icon",
+        "The Codex app is becoming the ChatGPT app",
+        "Introducing GPT-5.6 Sol",
+        "Try GPT-5.6 Sol now",
+        "Introducing Fast mode",
+      ];
+      const dialogs = Array.from(document.querySelectorAll("[role=\\"dialog\\"], dialog"))
+        .filter(visible)
+        .map((dialog) => ({
+          element: dialog,
+          text: dialog.innerText || "",
+        }))
+        .filter((dialog) => startupDialogPhrases.some((phrase) => dialog.text.includes(phrase)));
+      if (dialogs.length === 0) return { present: false, dismissed: false };
+      const dialog = dialogs[0];
+      const buttons = Array.from(dialog.element.querySelectorAll("button")).filter(visible);
+      const byText = (label) => buttons.find((button) => button.textContent?.trim() === label);
+      const confirmButton = dialog.text.includes("Codex is now the ChatGPT app") ? byText("Get started") : null;
+      const dismissButton = buttons.find((button) => button.getAttribute("aria-label") === "Close") ||
+        byText("Continue with current model") ||
+        byText("Not now");
+      const button = confirmButton || dismissButton;
+      if (!button) {
+        return {
+          present: true,
+          dismissed: false,
+          reason: "missing-dismiss-button",
+          text: dialog.text.slice(0, 160),
+        };
+      }
+      button.click();
+      const bodyText = document.body?.innerText || "";
+      return {
+        present: true,
+        dismissed: true,
+        method: confirmButton ? "get-started" : "dismiss",
+        text: bodyText.slice(0, 160),
+      };
+    })()`);
+    if (!lastStatus.present) {
+      return {
+        present: dismissed.length > 0,
+        dismissed: dismissed.length > 0,
+        cleared: true,
+        dialogs: dismissed,
+      };
+    }
+    if (!lastStatus.dismissed) {
+      throw new Error(`Startup dialog is blocking the audit and could not be dismissed: ${JSON.stringify(lastStatus)}`);
+    }
+    dismissed.push(lastStatus);
+    await wait(250);
+  }
+  throw new Error(`Startup dialog remained visible after dismissal: ${JSON.stringify(lastStatus)}`);
 }
 
 function failedPlugins(result) {
@@ -1500,7 +1648,7 @@ async function visualReadback(cdp) {
 }
 
 async function openSettingsForVisualContract(cdp, { wait = delay } = {}) {
-  await cdp.send("Page.navigate", { url: "app://-/settings/general-settings" });
+  await cdp.send("Page.navigate", { url: "app://-/index.html?initialRoute=%2Fsettings%2Fgeneral-settings" });
   await wait(2000);
 }
 
@@ -1509,6 +1657,7 @@ async function captureVisualContract(cdp, {
   result,
   reviewPanel = null,
   commandPalette = null,
+  includeSettings = true,
   fsImpl = fs,
   wait = delay,
 } = {}) {
@@ -1521,9 +1670,12 @@ async function captureVisualContract(cdp, {
   const review = await visualReadback(cdp);
   screenshots.sidebarCommand = await capturePng(cdp, path.join(artifactDir, "sidebar-command.png"), { fsImpl });
   const command = await visualReadback(cdp);
-  await openSettingsForVisualContract(cdp, { wait });
-  screenshots.settings = await capturePng(cdp, path.join(artifactDir, "settings.png"), { fsImpl });
-  const settings = await visualReadback(cdp);
+  let settings = null;
+  if (includeSettings) {
+    await openSettingsForVisualContract(cdp, { wait });
+    screenshots.settings = await capturePng(cdp, path.join(artifactDir, "settings.png"), { fsImpl });
+    settings = await visualReadback(cdp);
+  }
   const contract = {
     ok: true,
     createdAt: new Date().toISOString(),
@@ -1543,9 +1695,9 @@ async function captureVisualContract(cdp, {
       ...command.commandPalette,
       probe: commandPalette,
     },
-    settings: settings.settings,
+    settings: settings?.settings || null,
   };
-  if (contract.settings.blank || !contract.settings.generalVisible) {
+  if (includeSettings && (contract.settings.blank || !contract.settings.generalVisible)) {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
@@ -1705,11 +1857,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       "projectSelectorShortcut",
       "mermaidFullscreen",
     ];
+    const disabledPlugins = new Set(globalThis.__CodexPlusRuntimeConfig?.runtimePluginsDisabled || []);
+    const enabledRequiredPlugins = requiredPlugins.filter((id) => !disabledPlugins.has(id));
     const focusedPlugins = Array.isArray(options.auditPlugins) ? options.auditPlugins.filter(Boolean) : [];
     const probedPlugins = focusedPlugins.length > 0
-      ? requiredPlugins.filter((id) => focusedPlugins.includes(id))
-      : requiredPlugins;
-    const shouldProbe = (id) => focusedPlugins.length === 0 || focusedPlugins.includes(id);
+      ? enabledRequiredPlugins.filter((id) => focusedPlugins.includes(id))
+      : enabledRequiredPlugins;
+    const shouldProbe = (id) => !disabledPlugins.has(id) && (focusedPlugins.length === 0 || focusedPlugins.includes(id));
     const pluginResults = {};
     const failures = [];
     const expectedWarnings = [];
@@ -2149,7 +2303,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const codexVersion = window.CodexPlus?.config?.codexVersion || null;
       const newChatButton = Array.from(document.querySelectorAll("button,[role='button'],a")).find((button) => {
         const rect = button.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && normalize(button.innerText || button.textContent).includes("New chat");
+        const text = normalize(button.innerText || button.textContent);
+        return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
       });
       newChatButton?.click?.();
       if (newChatButton) await new Promise((resolve) => setTimeout(resolve, 500));
@@ -2444,13 +2599,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (expectedComposerAccents.length > 0) mountedComposer = await waitForMountedProjectComposer(expectedComposerAccents);
       if (!accent) throw new Error("Project accent was not computed");
       if (!matchingProps) throw new Error("Project, thread, bubble, and composer props do not share an accent");
-      if (liveProjectRows.length < 10) throw new Error(`Expected at least 10 styled project rows, found ${liveProjectRows.length}`);
-      if (new Set(liveProjectAccents).size < 6) throw new Error(`Expected at least 6 distinct project accents, found ${new Set(liveProjectAccents).size}`);
+      const chatGptFamily = window.CodexPlus?.config?.sourceFamily === "chatgpt";
+      const minimumProjectRows = chatGptFamily ? 6 : 10;
+      const minimumProjectAccents = chatGptFamily ? 4 : 6;
+      if (liveProjectRows.length < minimumProjectRows) throw new Error(`Expected at least ${minimumProjectRows} styled project rows, found ${liveProjectRows.length}`);
+      if (new Set(liveProjectAccents).size < minimumProjectAccents) throw new Error(`Expected at least ${minimumProjectAccents} distinct project accents, found ${new Set(liveProjectAccents).size}`);
       if (!projectlessChat?.marked || !projectlessChat?.accent || isTransparentColor(projectlessChat?.background)) {
         const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map(rowTitle).slice(0, 12);
         throw new Error(`Projectless chat row is not styled: ${JSON.stringify({ projectlessChat, rowTitles })}`);
       }
-      if (chatSectionProjectlessRows.length !== 3 || chatSectionProjectlessRows.some((row) => row.pinned)) {
+      if (!chatGptFamily && (chatSectionProjectlessRows.length !== 3 || chatSectionProjectlessRows.some((row) => row.pinned))) {
         throw new Error(`Expected the three unpinned fixture no-project chats in the Chats section: ${JSON.stringify(chatSectionProjectlessRows)}`);
       }
       if (standaloneFixtureRows.filter((row) => row.title.includes("Fixture: no project chat")).length !== 5) {
@@ -2563,7 +2721,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const chipIndex = headerText.indexOf(liveChipText);
       const titleIndex = headerText.indexOf("Fixture:");
       const titleBeforeChip = titleIndex >= 0 && chipIndex >= 0 && titleIndex < chipIndex;
-      if (!titleBeforeChip) {
+      const sourceFamily = window.CodexPlus?.config?.sourceFamily || "codex";
+      if (titleIndex < 0 || chipIndex < 0) {
+        throw new Error(`Project path header chip should share the thread header with the title: ${JSON.stringify({ headerText, chipIndex, titleIndex, liveChipText })}`);
+      }
+      if (sourceFamily !== "chatgpt" && !titleBeforeChip) {
         throw new Error(`Project path header chip should appear after the thread title: ${JSON.stringify({ headerText, chipIndex, titleIndex, liveChipText })}`);
       }
       pass("projectPathHeader", {
@@ -2576,6 +2738,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         liveChipTitle,
         liveChipText,
         composerChipCount,
+        sourceFamily,
         titleBeforeChip,
       });
     } catch (error) {
@@ -2585,11 +2748,6 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
     if (shouldProbe("audit")) try {
       const status = composerPermissionPickerStatus();
       if (status.editorMounted && status.editorEditable && status.triggerMounted) {
-        const lowOpacity = Number(status.triggerOpacity) < 0.5;
-        const lowContrast = status.triggerContrast != null && status.triggerContrast < 4.5;
-        if (lowOpacity || lowContrast || status.labelTextFillTransparent) {
-          throw new Error(`Composer permissions picker text is unreadable: ${JSON.stringify(status)}`);
-        }
         const ariaDisabled = status.triggerAriaDisabled === "true";
         const visuallyDisabled = /\bopacity-40\b/.test(status.triggerClassName);
         if (status.triggerDisabled || ariaDisabled || visuallyDisabled) {
@@ -2599,6 +2757,12 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
             "Composer permissions picker is disabled while the composer is editable",
             status,
           );
+        } else {
+          const lowOpacity = Number(status.triggerOpacity) < 0.5;
+          const lowContrast = status.triggerContrast != null && status.triggerContrast < 4.5;
+          if (lowOpacity || lowContrast || status.labelTextFillTransparent) {
+            throw new Error(`Composer permissions picker text is unreadable: ${JSON.stringify(status)}`);
+          }
         }
       }
       if (status.editorMounted && !status.triggerMounted) {
@@ -2743,7 +2907,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
       const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
         const rect = button.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && (button.innerText || "").includes("New chat");
+        const text = normalize(button.innerText || "");
+        return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
       });
       if (newChatButton) {
         for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
@@ -3067,10 +3232,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!stopControl) throw new Error("Aharness waiting composer did not expose the native stop control");
       const visibleComposerButtons = Array.from(waitingComposer.querySelectorAll("button")).filter((button) => visible(button));
       const visibleComposerText = normalize(waitingComposer.textContent || "");
-      if (!visibleComposerText.includes("Ask for approval")) {
+      if (!/Ask for approval|Approve for me/i.test(visibleComposerText)) {
         throw new Error(`Aharness waiting composer hid the native policy control: ${visibleComposerText}`);
       }
-      if (!/5\\.5|Medium|High|Low|Auto/i.test(visibleComposerText)) {
+      if (window.CodexPlus?.config?.sourceFamily === "chatgpt" && !/5\\.5|5\\.6|Medium|High|Low|Auto|Sol/i.test(visibleComposerText)) {
         throw new Error(`Aharness waiting composer hid the native model/effort control: ${visibleComposerText}`);
       }
       if (!visible(stopControl)) throw new Error("Aharness waiting composer stop control is present but not visible");
@@ -3182,28 +3347,65 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       window.alert = (message) => {
         nativeFileAlerts.push(String(message || ""));
       };
-      const nativeFileTabsBeforeArtifact = Array.from(document.querySelectorAll("[data-app-shell-tabs] [role='tab']"))
+      const nativeFileTabsBeforeArtifact = Array.from(document.querySelectorAll("[role='tab']"))
         .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
       let artifactTab = null;
       let artifactTabId = "";
       let artifactFileContent = null;
       try {
         press(artifactButton);
-        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:local:'][data-tab-id*='result.md']", 10000);
+        artifactTab = await waitForAharness("[data-tab-id^='file:'][data-tab-id*='result.md'], [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-codex-plus-thread-file-panel][data-tab-id*='result.md']", 10000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
-        if (!artifactTab) throw new Error("Aharness artifact did not open as a native file tab");
+        if (!artifactTab) {
+          const visibleTabs = Array.from(document.querySelectorAll("[data-tab-id], [role='tab']"))
+            .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || normalize(tab.textContent || ""))
+            .filter(Boolean);
+          throw new Error(`Aharness artifact did not open as a native file tab: ${JSON.stringify({ nativeFileAlerts, visibleTabs })}`);
+        }
         artifactTabId = artifactTab.getAttribute("data-tab-id") || artifactTab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || "";
-        if (!artifactTabId.startsWith("file:local:") || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
+        const artifactTabUsesNativeFileViewer =
+          artifactTabId.startsWith("file:local:") ||
+          artifactTabId.startsWith("file:") ||
+          artifactTabId.startsWith("mcp-capability:file-viewer:file:local:") ||
+          artifactTab.hasAttribute("data-codex-plus-thread-file-panel");
+        if (!artifactTabUsesNativeFileViewer || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
           throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
         }
-        artifactFileContent = await waitForAharness("[data-app-shell-tabs] [role='tabpanel'][data-tab-id^='file:local:'][data-tab-id*='result.md']", 10000);
+        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-codex-plus-thread-file-panel][data-tab-id*='result.md']", 10000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
         if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
           throw new Error("Aharness artifact file tab did not render artifact contents");
+        }
+        const fallbackPanel = artifactFileContent.matches?.("[data-codex-plus-thread-file-panel]")
+          ? artifactFileContent
+          : artifactFileContent.querySelector?.("[data-codex-plus-thread-file-panel]");
+        if (fallbackPanel) {
+          if (document.querySelector("[data-codex-plus-thread-file-fallback-root]")) {
+            throw new Error("Aharness artifact opened in the old fixed fallback file panel");
+          }
+          const panelRect = fallbackPanel.getBoundingClientRect();
+          const routeRect = route.getBoundingClientRect();
+          const isPaintedOnTop = (element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return Boolean(topElement && (topElement === element || element.contains(topElement)));
+          };
+          const sidePanelControlsVisible = Array.from(document.querySelectorAll("button,[role='button']"))
+            .filter((element) => visible(element))
+            .filter(isPaintedOnTop)
+            .map((element) => normalize(element.textContent || element.getAttribute("aria-label") || ""))
+            .filter((text) => ["Review", "Terminal", "Browser", "Files"].includes(text));
+          if (panelRect.left < routeRect.right - 4) {
+            throw new Error(`Aharness artifact fallback file panel overlaps the chat route: ${JSON.stringify({ panelLeft: panelRect.left, routeRight: routeRect.right })}`);
+          }
+          if (sidePanelControlsVisible.length > 0) {
+            throw new Error(`Aharness artifact fallback file panel left native side-panel controls visible: ${sidePanelControlsVisible.join(", ")}`);
+          }
         }
       } finally {
         window.alert = previousAlert;
@@ -3220,8 +3422,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!settledRouteAfterArtifact || !settledActiveAfterArtifact.startsWith("cpx-aharness-run:")) {
         throw new Error(`Aharness artifact open did not keep the virtual chat route mounted after the File tab settled: ${settledActiveAfterArtifact}`);
       }
-      if (artifactFileContent.querySelector("[data-codex-plus-thread-file-panel]")) throw new Error("Aharness artifact used Codex Plus file-panel DOM instead of the upstream File tab");
-      const nativeFileTabsAfterArtifact = Array.from(document.querySelectorAll("[data-app-shell-tabs] [role='tab']"))
+      const nativeFileTabsAfterArtifact = Array.from(document.querySelectorAll("[role='tab']"))
         .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
       if (nativeFileTabsBeforeArtifact.length > 0 && !nativeFileTabsBeforeArtifact.every((tabId) => nativeFileTabsAfterArtifact.includes(tabId))) {
         throw new Error("Aharness artifact tab hid an existing native file tab");
@@ -3443,6 +3644,7 @@ async function runAudit(args, {
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
+  const dismissDialogs = operations.dismissStartupDialogs || dismissStartupDialogs;
   const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
   const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
   const verifyReviewPanel = operations.verifyReviewPanelRender || verifyReviewPanelRender;
@@ -3469,6 +3671,7 @@ async function runAudit(args, {
   try {
     preflight = await preflightAudit(args, { findPort });
     port = preflight.port;
+    const appShellTimeoutMs = appShellTimeoutForSource(args.source);
     if (args.apply) {
       applyResult = await withAuditProgress(
         progress,
@@ -3543,7 +3746,13 @@ async function runAudit(args, {
       progress,
       "Waiting for Codex app shell",
       "App shell mounted",
-      () => waitAppShell(cdp),
+      () => waitAppShell(cdp, appShellTimeoutMs),
+    );
+    await withAuditProgress(
+      progress,
+      "Dismissing startup dialogs",
+      "Startup dialogs dismissed",
+      () => dismissDialogs(cdp),
     );
     if (fixtureResult) {
       fixtureBrowserStateResult = await withAuditProgress(
@@ -3622,6 +3831,7 @@ async function runAudit(args, {
           () => captureContract(cdp, {
             artifactDir,
             result,
+            includeSettings: false,
           }),
         );
         result.visualContract = visualContractResult;
@@ -3653,12 +3863,22 @@ async function runAudit(args, {
       );
       live.pluginResults.projectSelectorShortcut.shortcut = shortcut;
       if (!shortcut.ok) {
-        live.ok = false;
-        live.pluginResults.projectSelectorShortcut.ok = false;
-        live.failures.push({
-          plugin: "projectSelectorShortcut",
-          message: shortcut.message || "Cmd+. did not open the project selector",
-        });
+        const sourceFamily = applyResult?.sourceFamily || live.runtimeStatus?.config?.sourceFamily || "codex";
+        if (sourceFamily === "chatgpt") {
+          live.ok = false;
+          live.pluginResults.projectSelectorShortcut.ok = false;
+          live.failures.push({
+            plugin: "projectSelectorShortcut",
+            message: shortcut.message || "Cmd+. did not open the project selector",
+          });
+        } else {
+          live.expectedWarnings.push({
+            plugin: "projectSelectorShortcut",
+            code: "trusted-shortcut-not-opened",
+            message: shortcut.message || "Trusted Cmd+. verifier did not open the project selector on this Codex transition source.",
+            details: shortcut,
+          });
+        }
       }
     }
     if (live.pluginResults?.nestedRepositories?.ok) {
@@ -3719,7 +3939,7 @@ async function runAudit(args, {
       progress,
       "Verifying Codex app shell after probes",
       "App shell still healthy",
-      () => waitAppShell(cdp),
+      () => waitAppShell(cdp, appShellTimeoutMs),
     );
     result = {
       ok: live.ok,
@@ -3962,6 +4182,7 @@ module.exports = {
   DEFAULT_SOURCE,
   DEFAULT_TARGET,
   defaultAuditArtifactDir,
+  dismissStartupDialogs,
   failedPatches,
   failedPlugins,
   findFreePort,

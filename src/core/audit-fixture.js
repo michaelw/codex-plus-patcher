@@ -985,7 +985,9 @@ async function seedAuditFixtureBrowserState(cdp, fixture) {
   const payload = JSON.stringify(fixture.browserState);
   return cdp.evaluate(`(() => {
     const state = ${payload};
-    if (state.userBubbleColors) {
+    const disabledPlugins = new Set(window.__CodexPlusRuntimeConfig?.runtimePluginsDisabled || []);
+    const userBubbleColorsEnabled = !disabledPlugins.has("userBubbleColors");
+    if (state.userBubbleColors && userBubbleColorsEnabled) {
       localStorage.setItem("codex-plus:user-message-bubble-colors", JSON.stringify(state.userBubbleColors));
       window.dispatchEvent(new CustomEvent("codex-plus:user-message-bubble-colors-change", { detail: state.userBubbleColors }));
       window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.setVars?.();
@@ -998,8 +1000,9 @@ async function seedAuditFixtureBrowserState(cdp, fixture) {
       userBubbleDarkBg: rootStyle.getPropertyValue("--codex-plus-user-bubble-dark-bg").trim(),
       userBubbleLightFg: rootStyle.getPropertyValue("--codex-plus-user-bubble-light-fg").trim(),
       userBubbleDarkFg: rootStyle.getPropertyValue("--codex-plus-user-bubble-dark-fg").trim(),
+      userBubbleColorsSkipped: Boolean(state.userBubbleColors && !userBubbleColorsEnabled),
     };
-    if (state.userBubbleColors) {
+    if (state.userBubbleColors && userBubbleColorsEnabled) {
       for (const variant of ["light", "dark"]) {
         if (storedUserBubbleColors[variant] !== state.userBubbleColors[variant]) {
           throw new Error(\`Fixture user bubble \${variant} color did not persist: \${JSON.stringify(readback)}\`);
