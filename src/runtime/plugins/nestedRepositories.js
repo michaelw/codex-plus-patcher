@@ -40,6 +40,16 @@
     return Array.isArray(value) ? value[0] : value;
   }
 
+  function hostConfigForRequest(hostConfig) {
+    if (hostConfig == null || typeof hostConfig !== "object") return hostConfig ?? null;
+    return {
+      id: hostConfig.id ?? null,
+      label: hostConfig.label ?? hostConfig.display_name ?? hostConfig.name ?? null,
+      display_name: hostConfig.display_name ?? null,
+      name: hostConfig.name ?? null,
+    };
+  }
+
   function hasPathValue(value, pathValue) {
     if (value == null) return false;
     return (typeof pathValue === "function" ? pathValue(value) : value) != null;
@@ -167,6 +177,26 @@
     });
   }
 
+  function OptionalReviewToolbar({ children }, deps) {
+    const { jsx, React } = deps;
+    if (React?.Component == null) return children;
+    class OptionalReviewToolbarBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { failed: false };
+      }
+
+      static getDerivedStateFromError() {
+        return { failed: true };
+      }
+
+      render() {
+        return this.state.failed ? null : this.props.children;
+      }
+    }
+    return jsx(OptionalReviewToolbarBoundary, { children });
+  }
+
   function RepoDiffBody({ cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading }, deps) {
     const { jsx, createElement, parseDiff, DiffCard, pathValue } = deps;
     if (error != null || isLoading || diffText == null) return PlainDiff({ text: statusText }, deps);
@@ -244,7 +274,7 @@
       gitRequest("git")
         .request({
           method: "codex-plus-branches",
-          params: { root: repo.root, limit: 100, hostConfig, operationSource: "codex_plus_review" },
+          params: { root: repo.root, limit: 100, hostConfig: hostConfigForRequest(hostConfig), operationSource: "codex_plus_review" },
           signal: controller.signal,
         })
         .then((result) => setBranches(result?.branches ?? []))
@@ -284,7 +314,7 @@
         gitRequest("git")
           .request({
             method: "codex-plus-branches",
-            params: { root: repo.root, query: trimmed, limit: 50, hostConfig, operationSource: "codex_plus_review" },
+            params: { root: repo.root, query: trimmed, limit: 50, hostConfig: hostConfigForRequest(hostConfig), operationSource: "codex_plus_review" },
             signal: controller.signal,
           })
           .then((result) => setSearchedBranches(result?.branches ?? []))
@@ -442,7 +472,7 @@
       setError(null);
       setLoading(true);
       gitRequest("git")
-        .request({ method: "codex-plus-current-branch", params: { root: repo.root, hostConfig, operationSource: "codex_plus_review" }, signal: controller.signal })
+        .request({ method: "codex-plus-current-branch", params: { root: repo.root, hostConfig: hostConfigForRequest(hostConfig), operationSource: "codex_plus_review" }, signal: controller.signal })
         .then((result) => {
           if (!cancelled) setCurrentBranch(result?.branch ?? null);
         })
@@ -458,7 +488,7 @@
             cwd: repoCwd,
             source: selected ? "branch" : "unstaged",
             operationSource: "codex_plus_review",
-            hostConfig,
+            hostConfig: hostConfigForRequest(hostConfig),
             ...(selected ? { baseBranch: selected } : {}),
           },
           signal: controller.signal,
@@ -502,14 +532,16 @@
             }),
             jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps }),
             ReviewToolbar
-              ? jsx(ReviewToolbar, {
-                  conversationId,
-                  cwd: repo.cwd,
-                  hostId,
-                  codexWorktree: false,
-                  surface: "review-toolbar",
-                  reviewToolbarCompact: true,
-                }, repo.id)
+              ? OptionalReviewToolbar({
+                  children: jsx(ReviewToolbar, {
+                    conversationId,
+                    cwd: repo.cwd,
+                    hostId,
+                    codexWorktree: false,
+                    surface: "review-toolbar",
+                    reviewToolbarCompact: true,
+                  }, repo.id),
+                }, deps)
               : null,
           ],
         }),
@@ -575,7 +607,7 @@
       gitRequest("git")
         .request({
           method: "repository-targets",
-          params: { cwd: cwdPath, hostId, hostConfig, operationSource: "codex_plus_review" },
+          params: { cwd: cwdPath, hostId, hostConfig: hostConfigForRequest(hostConfig), operationSource: "codex_plus_review" },
           signal: controller.signal,
         })
         .then((result) => {

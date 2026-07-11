@@ -2282,7 +2282,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       routeAtom: { auditValue: { routeKind: "local-thread", conversationId: "audit-conversation" } },
       cwdAtom: { auditValue: "/tmp/codex-plus-audit" },
       hostIdAtom: { auditValue: "local" },
-      hostConfigAtom: { auditValue: { id: "local", label: "Local" } },
+      hostConfigAtom: { auditValue: { id: "local", label: "Local", display_name: "Local", cloneHazard() {} } },
       conversationIdAtom: { auditValue: "audit-conversation" },
       gitRequest: { request() { return Promise.resolve({ main: null, repositories: [] }); } },
       pathValue(value) { return value; },
@@ -2416,10 +2416,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (repositoryTargetParams.hostId !== "local" || repositoryTargetParams.hostConfig?.id !== "local") {
         throw new Error(`Repository target request used wrong host context: ${JSON.stringify(repositoryTargetParams)}`);
       }
+      if ("cloneHazard" in (repositoryTargetParams.hostConfig || {})) {
+        throw new Error(`Repository target request leaked non-clone-safe host context: ${JSON.stringify(Object.keys(repositoryTargetParams.hostConfig || {}))}`);
+      }
       if (repositoryTargetParams.operationSource !== "codex_plus_review") {
         throw new Error(`Repository target request used wrong operation source: ${JSON.stringify(repositoryTargetParams.operationSource)}`);
       }
       for (const request of repositoryTargetRequests) {
+        if (["codex-plus-branches", "codex-plus-current-branch", "review-patch"].includes(request?.method) && "cloneHazard" in (request.params?.hostConfig || {})) {
+          throw new Error(`Review Git request leaked non-clone-safe host context: ${JSON.stringify({ method: request.method, keys: Object.keys(request.params?.hostConfig || {}) })}`);
+        }
         if (request?.method !== "codex-plus-branches") continue;
         branchRequests.push(request);
         if (request.params?.root) branchRepos.add(request.params.root);
@@ -3354,11 +3360,14 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       let artifactFileContent = null;
       try {
         press(artifactButton);
-        artifactTab = await waitForAharness("[data-tab-id^='file:'][data-tab-id*='result.md'], [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-codex-plus-thread-file-panel][data-tab-id*='result.md']", 10000);
+        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md']", 20000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
         if (!artifactTab) {
+          if (nativeFileAlerts.some((message) => message.includes("native-file-opener-unavailable"))) {
+            throw new Error(nativeFileAlerts.join(" | "));
+          }
           const visibleTabs = Array.from(document.querySelectorAll("[data-tab-id], [role='tab']"))
             .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || normalize(tab.textContent || ""))
             .filter(Boolean);
@@ -3368,45 +3377,45 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         const artifactTabUsesNativeFileViewer =
           artifactTabId.startsWith("file:local:") ||
           artifactTabId.startsWith("file:") ||
-          artifactTabId.startsWith("mcp-capability:file-viewer:file:local:") ||
-          artifactTab.hasAttribute("data-codex-plus-thread-file-panel");
+          artifactTabId.startsWith("mcp-capability:file-viewer:file:local:");
         if (!artifactTabUsesNativeFileViewer || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
           throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
         }
-        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-codex-plus-thread-file-panel][data-tab-id*='result.md']", 10000);
+        if (!artifactTab.closest?.("[data-app-shell-tabs]")) {
+          throw new Error(`Aharness artifact tab is not inside the native app shell tab strip: ${artifactTabId}`);
+        }
+        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md']", 30000);
+        if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
+          const startedAt = Date.now();
+          while (Date.now() - startedAt < 30000) {
+            artifactFileContent = Array.from(document.querySelectorAll("[role='tabpanel']"))
+              .find((panel) => visible(panel) && normalize(panel.textContent).includes("Color Funnel Result"));
+            if (artifactFileContent) break;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
         if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
           throw new Error("Aharness artifact file tab did not render artifact contents");
         }
-        const fallbackPanel = artifactFileContent.matches?.("[data-codex-plus-thread-file-panel]")
-          ? artifactFileContent
-          : artifactFileContent.querySelector?.("[data-codex-plus-thread-file-panel]");
-        if (fallbackPanel) {
-          if (document.querySelector("[data-codex-plus-thread-file-fallback-root]")) {
-            throw new Error("Aharness artifact opened in the old fixed fallback file panel");
-          }
-          const panelRect = fallbackPanel.getBoundingClientRect();
-          const routeRect = route.getBoundingClientRect();
-          const isPaintedOnTop = (element) => {
-            const rect = element.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return false;
-            const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            return Boolean(topElement && (topElement === element || element.contains(topElement)));
-          };
-          const sidePanelControlsVisible = Array.from(document.querySelectorAll("button,[role='button']"))
-            .filter((element) => visible(element))
-            .filter(isPaintedOnTop)
-            .map((element) => normalize(element.textContent || element.getAttribute("aria-label") || ""))
-            .filter((text) => ["Review", "Terminal", "Browser", "Files"].includes(text));
-          if (panelRect.left < routeRect.right - 4) {
-            throw new Error(`Aharness artifact fallback file panel overlaps the chat route: ${JSON.stringify({ panelLeft: panelRect.left, routeRight: routeRect.right })}`);
-          }
-          if (sidePanelControlsVisible.length > 0) {
-            throw new Error(`Aharness artifact fallback file panel left native side-panel controls visible: ${sidePanelControlsVisible.join(", ")}`);
-          }
+        const artifactShell = artifactTab.closest("[data-app-shell-tabs]");
+        const artifactPanelShell = artifactFileContent.closest("[data-app-shell-tabs]");
+        if (!artifactShell || (artifactPanelShell && artifactShell !== artifactPanelShell)) {
+          throw new Error(`Aharness artifact tab and panel are not contained by the same native app shell: ${artifactTabId}`);
         }
+        const shellRect = artifactShell.getBoundingClientRect();
+        const tabRect = artifactTab.getBoundingClientRect();
+        const panelRect = artifactFileContent.getBoundingClientRect();
+        if (tabRect.left < shellRect.left - 1 || tabRect.right > shellRect.right + 1 || panelRect.left < shellRect.left - 1 || panelRect.right > shellRect.right + 1) {
+          throw new Error(`Aharness artifact native file tab escaped the side panel shell: ${JSON.stringify({
+            shell: { left: shellRect.left, right: shellRect.right },
+            tab: { left: tabRect.left, right: tabRect.right },
+            panel: { left: panelRect.left, right: panelRect.right },
+          })}`);
+        }
+        if (document.querySelector("[data-codex-plus-thread-file-panel]")) throw new Error("Aharness artifact opened in a plugin-owned file panel");
       } finally {
         window.alert = previousAlert;
       }
