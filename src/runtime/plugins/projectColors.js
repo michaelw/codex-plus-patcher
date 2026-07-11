@@ -287,7 +287,9 @@
         ":root:not(.dark):not(.electron-dark) [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-accent)}" +
         ":root.dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]),:root.electron-dark [data-codex-plus-project-color]:not([data-codex-plus-project-sidebar-color]){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent);border-left-color:var(--codex-plus-project-border-dark)}" +
         "[data-codex-plus-sidebar-rail-compensate] :is([data-app-action-sidebar-project-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color]){margin-left:-6px;width:calc(100% + 6px)}" +
-        "[data-codex-plus-user-entry][data-codex-plus-project-color]{box-shadow:inset 6px 0 0 var(--codex-plus-project-accent),0 0 0 .5px rgba(255,255,255,.2)!important}",
+        "[data-codex-plus-user-entry][data-codex-plus-project-color]:not(:has([data-codex-plus-user-bubble])){box-shadow:inset 6px 0 0 var(--codex-plus-project-accent),0 0 0 .5px rgba(255,255,255,.2)!important}" +
+        "[data-codex-plus-user-bubble][data-codex-plus-project-color]:has([data-user-message-bubble]){box-shadow:none!important;border-left:0!important}" +
+        "[data-codex-plus-user-bubble][data-codex-plus-project-color] [data-user-message-bubble]{box-shadow:inset 6px 0 0 var(--codex-plus-project-accent)!important}",
       exports: {
         colorFor,
         colorKey,

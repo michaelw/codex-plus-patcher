@@ -1765,12 +1765,21 @@ test("ChatGPT patch set uses ChatGPT Plus branding with stable CodexPlus runtime
   ]);
   assert.equal(patchSet.runtimeConfig.patchedAppDisplayName, "ChatGPT Plus");
   assert.equal(patchSet.runtimeConfig.sourceFamily, "chatgpt");
+  assert.equal(patchSet.sourceFamily, "chatgpt");
   assert.deepEqual(patchSet.runtimeConfig.runtimePluginsDisabled ?? [], []);
 
   const transformed = transformFile(patchSet, "webview/index.html", "<title>Codex</title>");
   assert.match(transformed, /<title>ChatGPT Plus<\/title>/);
   assert.match(transformed, /<script src="\.\/assets\/codex-plus\/runtime\.js"><\/script>/);
   assert.doesNotMatch(transformed, /ChatGPTPlus/);
+
+  const aboutTransform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAboutDialog",
+  )?.[1];
+  assert.equal(typeof aboutTransform, "function");
+  const aboutTransformed = aboutTransform(fakeAboutDialogBundle(), patchSet.runtimeConfig);
+  assert.match(aboutTransformed, /"patchedAppDisplayName":"ChatGPT Plus"/);
+  assert.doesNotMatch(aboutTransformed, /"patchedAppDisplayName":"Codex Plus"/);
 
   const announcementTransform = collectFileTransforms(patchSet).find(
     ([, candidate]) => candidate.name === "patchChatGptStartupAnnouncements",
@@ -3892,6 +3901,17 @@ test("user message patch applies variant-specific bubble colors with default fal
   const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-light-bg/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\]:not\(:has\(\[data-codex-plus-user-bubble\]\)\)/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\]:has\(\[data-codex-plus-user-bubble\]\)\{background-color:transparent!important;box-shadow:none!important\}/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\]:has\(\[data-user-message-bubble\]\)\{background-color:transparent!important;box-shadow:none!important;border-left:0!important\}/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] \[data-user-message-bubble\].*background-color:var\(--codex-plus-user-bubble-light-bg\).*color:var\(--codex-plus-user-bubble-light-fg\)/);
+  assert.match(bubblePlugin, /:root\.dark \[data-codex-plus-user-bubble\] \[data-user-message-bubble\] ~ \*.*color:var\(--color-token-text-tertiary\)!important/);
+  assert.doesNotMatch(bubblePlugin, /:is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)\{background-color/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,\[data-codex-plus-rich-content\],\[data-codex-plus-rich-content\] \*\).*color:var\(--codex-plus-user-bubble-light-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] :is\(h1,h2,h3,h4,h5,h6,p,li,blockquote,table,thead,tbody,tr,th,td,code,a,span,\[class\*="text-token"\],\[class\*="opacity-"\]\).*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
+  assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /button\[aria-disabled="true"\]/);
   assert.match(bubblePlugin, /opacity:1!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-light-fg\)!important/);
@@ -4083,6 +4103,9 @@ test("composer patch applies the user entry marker and shared color variables", 
   assert.match(projectPlugin, /--codex-plus-project-separator-dark/);
   assert.match(projectPlugin, /box-shadow:inset 6px 0 0 var\(--codex-plus-project-accent\)/);
   assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]/);
+  assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]:not\(:has\(\[data-codex-plus-user-bubble\]\)\)/);
+  assert.match(projectPlugin, /\[data-codex-plus-user-bubble\]\[data-codex-plus-project-color\]:has\(\[data-user-message-bubble\]\)\{box-shadow:none!important;border-left:0!important\}/);
+  assert.match(projectPlugin, /\[data-codex-plus-user-bubble\]\[data-codex-plus-project-color\] \[data-user-message-bubble\]\{box-shadow:inset 6px 0 0 var\(--codex-plus-project-accent\)!important\}/);
   assert.match(projectPlugin, /\[data-app-action-sidebar-project-list-id\]\[data-codex-plus-project-sidebar-color\]\{background-color:var\(--codex-plus-project-bg-dark\)/);
 });
 

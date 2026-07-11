@@ -74,7 +74,7 @@ function patchAboutDialog(text, context = {}) {
   const aboutContext = {
     patcherRepoUrl: context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: context.patcherGitSha || "unknown",
-    patchedAppDisplayName: context.patchedAppDisplayName || "Codex Plus",
+    patchedAppDisplayName: context.patchedAppDisplayName || appDisplayName,
     sourceAsarSha256: context.sourceAsarSha256 || "unknown",
     appliedPatches: context.appliedPatches || [],
   };
@@ -3560,6 +3560,7 @@ return makePatchSet({
     codexVersion: config.codexVersion,
     bundleVersion: config.bundleVersion,
     asarSha256: config.asarSha256,
+    sourceFamily,
     runtimeConfig: {
       ...(config.runtimeConfig || {}),
       bundleVersion: config.bundleVersion,

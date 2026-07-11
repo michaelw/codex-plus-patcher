@@ -1011,6 +1011,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
 
 function listRunningAuditApps({
   targetApp = DEFAULT_TARGET,
+  devHome = null,
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
   execFileSync = childProcess.execFileSync,
 } = {}) {
@@ -1021,6 +1022,8 @@ function listRunningAuditApps({
     targetBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
   }
   const userDataArg = `--user-data-dir=${path.resolve(electronUserDataPath)}`;
+  const targetPrefix = `${path.resolve(targetApp)}${path.sep}`;
+  const devHomePrefix = devHome == null ? null : `${path.resolve(devHome)}${path.sep}`;
   let text;
   try {
     text = execFileSync("ps", ["-axo", "pid=,command="], {
@@ -1036,7 +1039,9 @@ function listRunningAuditApps({
       const match = line.match(/^\s*(\d+)\s+(.*)$/);
       if (!match) return null;
       const command = match[2];
-      if (!command.startsWith(targetBinary) || !command.includes(userDataArg)) return null;
+      const targetProcess = (command.startsWith(targetBinary) || command.startsWith(targetPrefix)) && command.includes(userDataArg);
+      const devHomeProcess = devHomePrefix != null && command.startsWith(devHomePrefix);
+      if (!targetProcess && !devHomeProcess) return null;
       const portMatch = command.match(/--remote-debugging-port=(\d+)/);
       return {
         pid: Number(match[1]),
@@ -1749,11 +1754,27 @@ async function withAuditCheckProgress(progress, startText, doneText, action) {
 async function cleanupLaunchedAuditApp(launchResult, {
   keepOpen = false,
   kill = process.kill,
+  listRunningApps = listRunningAuditApps,
   wait = delay,
 } = {}) {
   const pid = launchResult?.pid;
   if (keepOpen) return { attempted: false, keptOpen: true, ok: true, pid };
   if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
+  if (launchResult.command === "/usr/bin/open" && launchResult.targetApp && launchResult.electronUserDataPath) {
+    const apps = listRunningApps({
+      targetApp: launchResult.targetApp,
+      devHome: launchResult.devHome,
+      electronUserDataPath: launchResult.electronUserDataPath,
+    });
+    for (const app of apps) {
+      try {
+        kill(app.pid, "SIGTERM");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+    if (apps.length > 0) await wait(500);
+  }
   const signals = ["SIGTERM", "SIGKILL"];
   for (const signal of signals) {
     try {
@@ -2193,6 +2214,144 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         labelTextFillTransparent: isTransparent(labelTextFillColor),
         triggerClassName: String(trigger?.className || ""),
       };
+    };
+    const composerContrastStatus = () => {
+      const editor = document.querySelector("[data-codex-composer]");
+      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      if (!surface) return { editorMounted: Boolean(editor), surfaceMounted: false, checks: [] };
+      const surfaceStyle = getComputedStyle(surface);
+      const surfaceBackground = surfaceStyle.backgroundColor;
+      const surfaceRect = surface.getBoundingClientRect();
+      const occludingDescendants = Array.from(surface.querySelectorAll("*"))
+        .map((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            className: String(element.className || ""),
+            background: style.backgroundColor,
+            widthRatio: surfaceRect.width > 0 ? rect.width / surfaceRect.width : 0,
+            heightRatio: surfaceRect.height > 0 ? rect.height / surfaceRect.height : 0,
+          };
+        })
+        .filter((element) =>
+          element.widthRatio >= 0.9 &&
+          element.heightRatio >= 0.5 &&
+          !isTransparent(element.background) &&
+          element.background !== surfaceBackground
+        );
+      const probe = document.createElement("div");
+      probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
+      probe.innerHTML =
+        '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy" data-state="open"><span>Approve for me</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy"><span>Custom</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="model" aria-expanded="true"><span>5.6 Sol Medium</span><svg><path d="M0 0h1"/></svg></button>';
+      surface.appendChild(probe);
+      const actualButtons = Array.from(surface.querySelectorAll("button")).filter((button) => !probe.contains(button));
+      const policyLabels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
+      const actualControls = actualButtons.filter((button) => {
+        const text = normalize(button.textContent);
+        return policyLabels.some((label) => text === label || text.startsWith(`${label} `)) ||
+          /(?:gpt|codex|\bo\d|\d+\.\d+|\bmedium\b|\bhigh\b|\blow\b)/i.test(text);
+      });
+      const targets = [
+        ...probe.querySelectorAll("[data-codex-plus-rich-content] h3,[data-codex-plus-rich-content] th,[data-codex-plus-rich-content] code,[data-codex-plus-rich-content] a,[data-codex-plus-contrast-kind]"),
+        ...actualControls,
+      ];
+      const checks = targets.map((element) => {
+        const style = getComputedStyle(element);
+        const textFillColor = style.webkitTextFillColor || null;
+        const effectiveColor = textFillColor && !isTransparent(textFillColor) ? textFillColor : style.color;
+        const icon = element.querySelector?.("svg,svg path");
+        const iconStyle = icon ? getComputedStyle(icon) : null;
+        const iconColor = iconStyle?.stroke && iconStyle.stroke !== "none" ? iconStyle.stroke : iconStyle?.color || null;
+        return {
+          kind: element.getAttribute("data-codex-plus-contrast-kind") || (probe.contains(element) ? "rich-content" : "live-control"),
+          text: normalize(element.textContent),
+          opacity: style.opacity,
+          color: style.color,
+          textFillColor,
+          textFillTransparent: isTransparent(textFillColor),
+          contrast: contrast(effectiveColor, surfaceBackground),
+          iconColor,
+          iconContrast: iconColor ? contrast(iconColor, surfaceBackground) : null,
+          synthetic: probe.contains(element),
+        };
+      });
+      probe.remove();
+      return {
+        editorMounted: Boolean(editor),
+        surfaceMounted: true,
+        surfaceBackground,
+        policyLabels,
+        liveControlCount: actualControls.length,
+        occludingDescendants,
+        checks,
+      };
+    };
+    const userBubbleShapeStatus = () => {
+      let synthetic = null;
+      let nativeBubble = visibleElements("[data-user-message-bubble]")[0] || null;
+      let themeHost = nativeBubble?.closest("[data-codex-plus-user-bubble]") || null;
+      if (!nativeBubble) {
+        const legacyBubble = visibleElements("[data-codex-plus-user-bubble]:not(:has([data-user-message-bubble]))")[0] || null;
+        if (legacyBubble) {
+          nativeBubble = legacyBubble;
+          themeHost = legacyBubble;
+        }
+      }
+      if (!nativeBubble) {
+        synthetic = document.createElement("div");
+        synthetic.setAttribute("data-codex-plus-user-bubble", "");
+        synthetic.setAttribute("data-codex-plus-project-color", "");
+        synthetic.className = "flex flex-col items-end gap-2";
+        synthetic.style.cssText = "position:fixed;left:0;top:0;width:320px;z-index:-1";
+        synthetic.innerHTML = '<div class="group flex w-full flex-col items-end justify-end gap-1"><div data-user-message-bubble="true" class="bg-token-foreground/5 max-w-[77%] overflow-hidden rounded-2xl px-3 py-2">Fixture user message</div><div><span class="text-token-text-tertiary">1:08 PM</span><button aria-label="Copy message"><svg><path d="M0 0h1"/></svg></button></div></div>';
+        document.body.appendChild(synthetic);
+        nativeBubble = synthetic.querySelector("[data-user-message-bubble]");
+        themeHost = synthetic;
+      }
+      const wrapper = themeHost !== nativeBubble ? themeHost : nativeBubble?.closest("[data-codex-plus-user-entry]") || null;
+      const bubbleStyle = nativeBubble ? getComputedStyle(nativeBubble) : null;
+      const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
+      const decorationRoot = nativeBubble?.nextElementSibling || null;
+      const decorationText = decorationRoot?.querySelector?.(".text-token-text-tertiary") || null;
+      const decorationIcon = decorationRoot?.querySelector?.("button svg,button svg path") || null;
+      const mutedForeground = getComputedStyle(document.documentElement).getPropertyValue("--color-token-text-tertiary").trim();
+      const decorationTextColor = decorationText ? getComputedStyle(decorationText).color : null;
+      const decorationIconColor = decorationIcon ? getComputedStyle(decorationIcon).color : null;
+      const cornerRadius = bubbleStyle ? Math.max(
+        parseFloat(bubbleStyle.borderTopLeftRadius) || 0,
+        parseFloat(bubbleStyle.borderTopRightRadius) || 0,
+        parseFloat(bubbleStyle.borderBottomLeftRadius) || 0,
+        parseFloat(bubbleStyle.borderBottomRightRadius) || 0,
+      ) : 0;
+      const status = {
+        bubbleMounted: Boolean(nativeBubble),
+        nativeBubbleMounted: Boolean(nativeBubble?.hasAttribute("data-user-message-bubble")),
+        themeHostMounted: Boolean(themeHost),
+        wrapperMounted: Boolean(wrapper),
+        synthetic: Boolean(synthetic),
+        bubbleBackground: bubbleStyle?.backgroundColor || null,
+        wrapperBackground: wrapperStyle?.backgroundColor || null,
+        wrapperBackgroundTransparent: wrapperStyle ? isTransparent(wrapperStyle.backgroundColor) : null,
+        decorationsMounted: Boolean(decorationText && decorationIcon),
+        mutedForeground,
+        decorationTextColor,
+        decorationIconColor,
+        decorationsUseMutedForeground: Boolean(
+          decorationText && decorationIcon && mutedForeground &&
+          decorationTextColor === mutedForeground && decorationIconColor === mutedForeground
+        ),
+        bubbleBorderRadius: bubbleStyle?.borderRadius || null,
+        cornerRadius,
+        bubbleClassName: String(nativeBubble?.className || ""),
+        wrapperClassName: String(wrapper?.className || ""),
+      };
+      synthetic?.remove();
+      return status;
     };
     const composerAttachmentPillStatus = () => {
       const editor = document.querySelector("[data-codex-composer]");
@@ -2783,6 +2942,62 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         );
       }
       pass("audit", { composerPermissionPicker: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    if (shouldProbe("audit")) try {
+      const status = composerContrastStatus();
+      if (status.surfaceMounted) {
+        if (status.occludingDescendants.length > 0) {
+          throw new Error(`Composer custom color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
+        }
+        const unreadable = status.checks.find((check) =>
+          Number(check.opacity) < 0.99 ||
+          check.textFillTransparent ||
+          (check.contrast != null && check.contrast < 4.5) ||
+          (check.iconContrast != null && check.iconContrast < 4.5)
+        );
+        if (unreadable) {
+          throw new Error(`Composer rich content or control is unreadable: ${JSON.stringify({ ...status, unreadable })}`);
+        }
+      }
+      if (status.editorMounted && !status.surfaceMounted) {
+        warn(
+          "audit",
+          "composer-entry-surface-not-mounted",
+          "Composer entry surface was not mounted during the composer control contrast probe",
+          status,
+        );
+      }
+      if (!status.editorMounted) {
+        warn(
+          "audit",
+          "composer-not-mounted",
+          "Composer was not mounted during the composer control contrast probe",
+          status,
+        );
+      }
+      pass("audit", { composerControlContrast: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    if (shouldProbe("audit")) try {
+      const status = userBubbleShapeStatus();
+      if (status.bubbleMounted && status.wrapperMounted && !status.wrapperBackgroundTransparent) {
+        throw new Error(`User message wrapper painted behind the rounded bubble: ${JSON.stringify(status)}`);
+      }
+      if (status.bubbleMounted && status.cornerRadius <= 0) {
+        throw new Error(`User message bubble lost its rounded shape: ${JSON.stringify(status)}`);
+      }
+      if (status.decorationsMounted && !status.decorationsUseMutedForeground) {
+        throw new Error(`User message decorations do not use the transcript muted foreground: ${JSON.stringify(status)}`);
+      }
+      if (!status.bubbleMounted) {
+        warn("audit", "user-message-bubble-not-mounted", "User message bubble was not mounted during the shape probe", status);
+      }
+      pass("audit", { userBubbleShape: status });
     } catch (error) {
       fail("audit", error);
     }

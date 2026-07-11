@@ -319,12 +319,27 @@ function markDevBundleIdentity(
 function launchDevApp({
   spawn = childProcess.spawn,
   env = process.env,
+  platform = process.platform,
   markDevRuntimeConfigImpl = markDevRuntimeConfig,
   markDevBundleIdentityImpl = markDevBundleIdentity,
   signDevAppImpl = signDevApp,
   ...options
 } = {}) {
-  const launch = buildLaunchDev(options);
+  const directLaunch = buildLaunchDev(options);
+  const launch = platform === "darwin" ? {
+    ...directLaunch,
+    appCommand: directLaunch.command,
+    command: "/usr/bin/open",
+    args: [
+      "-n",
+      "-W",
+      "--env", `CODEX_HOME=${directLaunch.env.CODEX_HOME}`,
+      "--env", `CODEX_ELECTRON_USER_DATA_PATH=${directLaunch.env.CODEX_ELECTRON_USER_DATA_PATH}`,
+      path.resolve(options.targetApp),
+      "--args",
+      ...directLaunch.args,
+    ],
+  } : directLaunch;
   fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
   fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
@@ -336,7 +351,16 @@ function launchDevApp({
     stdio: "ignore",
   });
   child.unref();
-  return { ...launch, devRuntimeConfig, devBundle, devSignature, pid: child.pid };
+  return {
+    ...launch,
+    targetApp: path.resolve(options.targetApp),
+    devHome: launch.env.CODEX_HOME,
+    electronUserDataPath: launch.env.CODEX_ELECTRON_USER_DATA_PATH,
+    devRuntimeConfig,
+    devBundle,
+    devSignature,
+    pid: child.pid,
+  };
 }
 
 function formatSyncDevHomeResult(result) {

@@ -498,6 +498,19 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
+  assert.match(defaultExpression, /composerContrastStatus/);
+  assert.match(defaultExpression, /Ask for approval/);
+  assert.match(defaultExpression, /Approve for me/);
+  assert.match(defaultExpression, /data-codex-plus-rich-content/);
+  assert.match(defaultExpression, /composerControlContrast/);
+  assert.match(defaultExpression, /occludingDescendants/);
+  assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
+  assert.match(defaultExpression, /userBubbleShapeStatus/);
+  assert.match(defaultExpression, /User message wrapper painted behind the rounded bubble/);
+  assert.match(defaultExpression, /\[data-user-message-bubble\]/);
+  assert.match(defaultExpression, /nativeBubbleMounted/);
+  assert.match(defaultExpression, /decorationsUseMutedForeground/);
+  assert.match(defaultExpression, /User message decorations do not use the transcript muted foreground/);
   assert.match(defaultExpression, /composerAttachmentPillStatus/);
   assert.match(defaultExpression, /const expectedWarnings = \[\]/);
   assert.match(defaultExpression, /const warn = \(id, code, message, details = \{\}\)/);
@@ -1485,11 +1498,14 @@ test("audit preflight no-launch mode uses requested port without free-port searc
 test("running audit app process detection matches target and electron user data", () => {
   const rows = [
     "  123 /repo/work/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
+    "  124 /repo/work/Codex Plus.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper --type=utility --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
+    "  125 /repo/work/codex-plus-dev-home/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
     "  456 /repo/work/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/tmp/other --remote-debugging-port=9235",
     "  789 /other/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9236",
   ].join("\n");
   const running = listRunningAuditApps({
     targetApp: "/repo/work/Codex Plus.app",
+    devHome: "/repo/work/codex-plus-dev-home",
     electronUserDataPath: "/repo/work/codex-plus-electron-user-data",
     execFileSync(command, args) {
       assert.equal(command, "ps");
@@ -1502,6 +1518,14 @@ test("running audit app process detection matches target and electron user data"
     pid: 123,
     command: "/repo/work/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
     remoteDebuggingPort: 9234,
+  }, {
+    pid: 124,
+    command: "/repo/work/Codex Plus.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper --type=utility --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
+    remoteDebuggingPort: 9234,
+  }, {
+    pid: 125,
+    command: "/repo/work/codex-plus-dev-home/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+    remoteDebuggingPort: null,
   }]);
 });
 
@@ -2003,6 +2027,7 @@ test("launch-dev uses isolated Codex and Electron state", () => {
     electronUserDataPath,
     remoteDebuggingPort: "9234",
     env: { KEEP_ME: "yes" },
+    platform: "linux",
     markDevRuntimeConfigImpl(appPath) {
       calls.push({ markDevRuntimeConfig: appPath });
       return { asar: path.join(appPath, "Contents/Resources/app.asar"), patchedAsarSha: "dev-sha" };
@@ -2098,6 +2123,43 @@ test("launch-dev uses ChatGPT executable and dev identity for ChatGPT targets", 
   });
 });
 
+test("launch-dev uses LaunchServices with isolated state on macOS", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-macos-launch-dev-"));
+  const targetApp = path.join(tmpDir, "Codex Plus.app");
+  const devHome = path.join(tmpDir, "dev-home");
+  const electronUserDataPath = path.join(tmpDir, "electron-user-data");
+  const calls = [];
+  const result = launchDevApp({
+    targetApp,
+    devHome,
+    electronUserDataPath,
+    remoteDebuggingPort: 9234,
+    platform: "darwin",
+    markDevRuntimeConfigImpl: () => ({ patchedAsarSha: "dev-sha" }),
+    markDevBundleIdentityImpl: () => ({ bundleIdentifier: "com.openai.codex-plus.dev" }),
+    signDevAppImpl: () => ({ signed: true }),
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return { pid: 2468, unref() {} };
+    },
+  });
+
+  assert.equal(result.command, "/usr/bin/open");
+  assert.deepEqual(result.args, [
+    "-n",
+    "-W",
+    "--env", `CODEX_HOME=${devHome}`,
+    "--env", `CODEX_ELECTRON_USER_DATA_PATH=${electronUserDataPath}`,
+    targetApp,
+    "--args",
+    `--user-data-dir=${electronUserDataPath}`,
+    "--use-mock-keychain",
+    "--remote-debugging-port=9234",
+  ]);
+  assert.deepEqual(calls[0].args, result.args);
+  assert.equal(calls[0].options.detached, true);
+});
+
 test("audit cleanup handles launched, kept-open, missing, and failed process cleanup", async () => {
   const killed = [];
   const cleaned = await cleanupLaunchedAuditApp(
@@ -2141,6 +2203,44 @@ test("audit cleanup handles launched, kept-open, missing, and failed process cle
   assert.equal(failed.ok, false);
   assert.equal(failed.pid, 789);
   assert.match(failed.message, /no permission/);
+});
+
+test("audit cleanup stops a LaunchServices app before its waiting open process", async () => {
+  const killed = [];
+  const result = await cleanupLaunchedAuditApp(
+    {
+      command: "/usr/bin/open",
+      pid: 2468,
+      targetApp: "/repo/work/ChatGPT Plus.app",
+      devHome: "/repo/work/dev-home",
+      electronUserDataPath: "/repo/work/electron-user-data",
+    },
+    {
+      listRunningApps(options) {
+        assert.equal(options.targetApp, "/repo/work/ChatGPT Plus.app");
+        assert.equal(options.devHome, "/repo/work/dev-home");
+        assert.equal(options.electronUserDataPath, "/repo/work/electron-user-data");
+        return [{ pid: 9753 }];
+      },
+      kill(pid, signal) {
+        killed.push([pid, signal]);
+        if (pid === -2468 && signal === "SIGKILL") {
+          const error = new Error("gone");
+          error.code = "ESRCH";
+          throw error;
+        }
+      },
+      wait() {},
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(killed, [
+    [9753, "SIGTERM"],
+    [-2468, "SIGTERM"],
+    [-2468, "SIGKILL"],
+    [2468, "SIGKILL"],
+  ]);
 });
 
 test("audit identity helper handles clean, dirty, and non-git cases", () => {
