@@ -245,11 +245,13 @@ regressions that have broken in real ports:
   beyond the first few palette entries.
 - Pinned threads inherit the color of their project.
 - Project chats have stable colors based on their project identity.
-- Use `--jsonl` for compact live progress during long audits or regression
-  sweeps.
-- Use `regression:sources --json` for post-failure inspection; it includes each
-  failing audit probe's detailed fields, not only the summarized plugin failure
-  message.
+- Use `--jsonl` for agent-supervised long audits or regression sweeps. Stdout is
+  JSONL only, and active phases emit low-noise status at least every two seconds
+  with elapsed time and current version, patch, or plugin context when known.
+- Add `--json` for the detailed final result. By itself it follows human
+  progress with a JSON document; with `--jsonl`, the last line is a detailed
+  JSONL `result` record. This includes each failing audit probe's detailed
+  fields, not only the summarized plugin failure message.
 
 ## Release And Package Checks
 

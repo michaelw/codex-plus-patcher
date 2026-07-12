@@ -73,7 +73,9 @@ test("regression sources parses options and rejects unsafe combinations", () => 
   assert.throws(() => parseArgs(["--newest", "0"]), /--newest must be a positive integer/);
   assert.throws(() => parseArgs(["--remote-debugging-port", "0"]), /must be a positive integer/);
   assert.throws(() => parseArgs(["--auto-clean", "--keep-open"]), /cannot be combined/);
-  assert.throws(() => parseArgs(["--json", "--jsonl"]), /--jsonl cannot be combined with --json/);
+  const detailedJsonl = parseArgs(["--json", "--jsonl"]);
+  assert.equal(detailedJsonl.json, true);
+  assert.equal(detailedJsonl.jsonl, true);
 });
 
 test("regression sources sorts newest-first and limits newest versions numerically", async () => {
@@ -295,6 +297,7 @@ test("regression sources passes prefixed progress into audits", async () => {
       start: (text) => events.push(["start", text]),
       succeed: (text) => events.push(["succeed", text]),
       fail: (text) => events.push(["fail", text]),
+      item: (itemType, item) => events.push(["item", `${itemType}: ${item}`]),
     };
 
     const result = await runRegressionSources(
@@ -319,8 +322,9 @@ test("regression sources passes prefixed progress into audits", async () => {
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
         progress,
         runAudit: async (_args, options) => {
-          options.progress.start("Applying patch set");
-          options.progress.succeed("Applied patch set");
+          options.progress({ status: "start", step: 1, total: 2, label: "Applying patch set" });
+          options.progress.item("patch", "identity");
+          options.progress({ status: "succeed", step: 1, total: 2, label: "Applied patch set" });
           return { ok: true, failures: [] };
         },
       },
@@ -329,8 +333,9 @@ test("regression sources passes prefixed progress into audits", async () => {
     assert.equal(result.ok, true);
     assert.deepEqual(events, [
       ["start", "[1/1 26.623.70822] Running regression audit with codex-26.623.70822-4559"],
-      ["start", "[1/1 26.623.70822] Applying patch set"],
-      ["succeed", "[1/1 26.623.70822] Applied patch set"],
+      ["start", "[1/1 26.623.70822] [1/2] Applying patch set"],
+      ["item", "patch: identity"],
+      ["succeed", "[1/1 26.623.70822] [1/2] Applied patch set"],
       ["succeed", "[1/1 26.623.70822] Regression audit passed"],
     ]);
   });

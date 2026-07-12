@@ -76,7 +76,6 @@ function parseArgs(argv) {
   }
 
   if (args.autoClean && args.keepOpen) throw new Error("--auto-clean cannot be combined with --keep-open");
-  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -97,8 +96,8 @@ Options:
   --no-visual-contract         Disable default visual contract screenshots/readback
   --no-progress                Suppress audit progress output
   --remote-debugging-port <N>  Starting port for audit apps. Default: 9234
-  --json                       Print the full machine-readable result
-  --jsonl                      Stream compact machine-readable progress events
+  --json                       Include the full final machine-readable result
+  --jsonl                      Stream JSONL-only progress on stdout at least every two seconds
 `;
 }
 
@@ -131,7 +130,14 @@ function newestSources(sources, count) {
 function prefixProgress(progress, prefix, context = {}) {
   if (!progress) return null;
   if (typeof progress.child === "function") return progress.child(context);
-  return {
+  const reporter = (event = {}) => {
+    const text = event.step != null ? `[${event.step}/${event.total}] ${event.label}` : event.label || event.message;
+    if (event.status === "item") reporter.item(event.itemType, event.item, event);
+    else if (event.status === "succeed") reporter.succeed(text, event);
+    else if (event.status === "fail") reporter.fail(text, event);
+    else reporter.start(text, event);
+  };
+  Object.assign(reporter, {
     start(text) {
       progress.start?.(`${prefix}${text}`);
     },
@@ -141,7 +147,16 @@ function prefixProgress(progress, prefix, context = {}) {
     fail(text) {
       progress.fail?.(`${prefix}${text}`);
     },
-  };
+    item(itemType, item, extra) {
+      progress.item?.(itemType, item, { ...context, ...extra });
+    },
+    event(type, payload) {
+      progress.event?.(type, { ...context, ...payload });
+    },
+    close() {},
+    suppressCommandOutput: true,
+  });
+  return reporter;
 }
 
 function findPatchSet(identity, patchSetList = patchSets) {
@@ -487,17 +502,21 @@ async function main() {
     return;
   }
   const result = await runRegressionSources(args);
-  if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  else if (args.jsonl) {
-    writeJsonl(process.stdout, jsonlRecord("summary", {
-      ok: result.ok,
-      supported: result.results.filter((entry) => entry.supported).length,
-      passed: result.results.filter((entry) => entry.supported && entry.ok).length,
-      failed: result.results.filter((entry) => entry.supported && entry.ok === false).length,
-      skipped: result.results.filter((entry) => !entry.supported).length,
-      contractRoot: result.contractRoot,
-    }));
-  } else {
+  if (args.jsonl) {
+    if (args.json) {
+      writeJsonl(process.stdout, jsonlRecord("result", { result }));
+    } else {
+      writeJsonl(process.stdout, jsonlRecord("summary", {
+        ok: result.ok,
+        supported: result.results.filter((entry) => entry.supported).length,
+        passed: result.results.filter((entry) => entry.supported && entry.ok).length,
+        failed: result.results.filter((entry) => entry.supported && entry.ok === false).length,
+        skipped: result.results.filter((entry) => !entry.supported).length,
+        contractRoot: result.contractRoot,
+      }));
+    }
+  } else if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  else {
     process.stdout.write(formatHumanResult(result));
   }
   if (!result.ok) process.exitCode = 1;
@@ -505,7 +524,11 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(`Error: ${error.message || String(error)}`);
+    if (process.argv.includes("--jsonl")) {
+      writeJsonl(process.stdout, jsonlRecord("error", { message: error.message || String(error) }));
+    } else {
+      console.error(`Error: ${error.message || String(error)}`);
+    }
     process.exitCode = 1;
   });
 }
