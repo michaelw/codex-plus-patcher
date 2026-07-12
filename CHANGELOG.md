@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.17.0...v0.17.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* select launch fallback by app family ([c458b2e](https://github.com/michaelw/codex-plus-patcher/commit/c458b2e33db5b4a9d827d58cfa90f921d5d55d81))
+
 ## [0.17.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.16.0...v0.17.0) (2026-07-12)
 
 
