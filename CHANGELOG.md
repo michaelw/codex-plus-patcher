@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.17.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.16.0...v0.17.0) (2026-07-12)
+
+
+### Features
+
+* improve regression source audits ([#102](https://github.com/michaelw/codex-plus-patcher/issues/102)) ([682f2b9](https://github.com/michaelw/codex-plus-patcher/commit/682f2b91ecfbd71542c8e1ffed08ae506c055d9d))
+* support ChatGPT 26.707.41301 ([#105](https://github.com/michaelw/codex-plus-patcher/issues/105)) ([dcf6f34](https://github.com/michaelw/codex-plus-patcher/commit/dcf6f34e341e44a5d1ea1421fd43834a2f23da11))
+* support ChatGPT as primary target ([#104](https://github.com/michaelw/codex-plus-patcher/issues/104)) ([7bff78b](https://github.com/michaelw/codex-plus-patcher/commit/7bff78bcd3aa86087f33b719501d00f75cceaefb))
+
+
+### Bug Fixes
+
+* restore audit plugin progress output ([#107](https://github.com/michaelw/codex-plus-patcher/issues/107)) ([01a6b97](https://github.com/michaelw/codex-plus-patcher/commit/01a6b97791d784141501ddb2939b8c897cf961c5))
+* restore composer contrast across supported apps ([#106](https://github.com/michaelw/codex-plus-patcher/issues/106)) ([4346da7](https://github.com/michaelw/codex-plus-patcher/commit/4346da7fea15077193934ec4bb618c5e83a83ab6))
+
 ## [0.16.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.15.1...v0.16.0) (2026-07-07)
 
 
