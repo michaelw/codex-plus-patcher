@@ -11,6 +11,7 @@ const {
   formatAuditResult,
   jsonlRecord,
   runAudit,
+  writeAuditOutput,
   writeJsonl,
 } = require("./core/plugin-audit");
 const { readAsar, walkFiles } = require("./core/asar");
@@ -136,7 +137,6 @@ function parseArgs(argv) {
     else if (arg === "--help" || arg === "-h") args.command = "help";
     else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -186,8 +186,8 @@ Options:
   --no-progress            Suppress audit progress and print only the final summary
   --quiet                  Print minimal audit output
   --debug                  Print stack traces for CLI errors
-  --json                   Print the full machine-readable result
-  --jsonl                  Stream compact machine-readable progress events
+  --json                   Include the full final machine-readable result
+  --jsonl                  Stream JSONL-only progress on stdout at least every two seconds
 `;
 }
 
@@ -457,20 +457,7 @@ async function main() {
   if (args.command === "audit-plugins") {
     const progress = args.jsonl ? createJsonlProgress() : await createAuditProgress(args);
     const result = await runAudit(args, { progress });
-    if (args.json) process.stdout.write(formatAuditJson(result));
-    else if (args.jsonl) {
-      writeJsonl(process.stdout, jsonlRecord("summary", {
-        ok: result.ok,
-        failures: result.failures || [],
-        expectedWarnings: result.expectedWarnings || [],
-        visualContract: result.visualContract ? {
-          ok: result.visualContract.ok,
-          artifactDir: result.visualContract.artifactDir,
-        } : null,
-      }));
-    } else {
-      process.stdout.write(formatAuditResult(result, args));
-    }
+    writeAuditOutput(result, args);
     if (!result.ok) process.exitCode = 1;
     return;
   }
@@ -497,7 +484,14 @@ async function main() {
 if (require.main === module) {
   main().catch((error) => {
     const debug = process.argv.includes("--debug") || process.env.CODEX_PLUS_PATCHER_DEBUG === "1";
-    console.error(formatError(error, { debug }));
+    if (process.argv.includes("--jsonl")) {
+      writeJsonl(process.stdout, jsonlRecord("error", {
+        message: error.message || String(error),
+        ...(debug ? { stack: error.stack } : {}),
+      }));
+    } else {
+      console.error(formatError(error, { debug }));
+    }
     process.exitCode = 1;
   });
 }

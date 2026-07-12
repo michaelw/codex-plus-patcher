@@ -35,6 +35,18 @@ function reportProgress(progress, event) {
   if (progress) progress(event);
 }
 
+function reportItems(progress, itemType, items, extra = {}) {
+  for (const item of items) {
+    reportProgress(progress, {
+      status: "item",
+      phase: "apply",
+      itemType,
+      item,
+      ...extra,
+    });
+  }
+}
+
 async function withProgress(progress, step, total, label, action) {
   reportProgress(progress, { status: "start", step, total, label });
   try {
@@ -43,8 +55,10 @@ async function withProgress(progress, step, total, label, action) {
     return result;
   } catch (error) {
     reportProgress(progress, { status: "fail", step, total, label });
-    if (error.stdout && error.stdout.length > 0) process.stdout.write(error.stdout);
-    if (error.stderr && error.stderr.length > 0) process.stderr.write(error.stderr);
+    if (!progress?.suppressCommandOutput) {
+      if (error.stdout && error.stdout.length > 0) process.stdout.write(error.stdout);
+      if (error.stderr && error.stderr.length > 0) process.stderr.write(error.stderr);
+    }
     throw error;
   }
 }
@@ -241,6 +255,14 @@ async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, 
   const applyProgress = dryRun ? undefined : progress;
   const identity = await withProgress(applyProgress, 1, 8, "Inspect source app", () => getAppIdentity(sourceApp));
   const patchSet = await withProgress(applyProgress, 2, 8, "Select patch set", () => selectPatch(patchSets, identity));
+  reportItems(applyProgress, "patch-set", [patchSet.id], {
+    patchSet: patchSet.id,
+    codexVersion: patchSet.codexVersion,
+    bundleVersion: patchSet.bundleVersion,
+  });
+  reportItems(applyProgress, "patch", collectPatchQueue(patchSet).map((patch) => patch.id), {
+    patchSet: patchSet.id,
+  });
   return applyPatchSet({
     sourceApp,
     targetApp,

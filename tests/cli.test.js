@@ -50,6 +50,7 @@ const {
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForAppShellMounted,
+  writeAuditOutput,
 } = require("../src/core/plugin-audit");
 
 test("empty invocation shows help", () => {
@@ -203,7 +204,9 @@ test("audit-plugins parses output, launch, and path flags", () => {
   assert.equal(jsonlArgs.jsonl, true);
   assert.equal(jsonlArgs.visualContract, false);
   assert.equal(jsonlArgs.artifactDir, path.join(os.homedir(), "contracts"));
-  assert.throws(() => parseArgs(["audit-plugins", "--json", "--jsonl"]), /--jsonl cannot be combined with --json/);
+  const detailedJsonl = parseArgs(["audit-plugins", "--json", "--jsonl"]);
+  assert.equal(detailedJsonl.json, true);
+  assert.equal(detailedJsonl.jsonl, true);
 
   const defaults = parseArgs(["audit-plugins"]);
   assert.equal(defaults.target, defaultAuditTargetForSource(existingDefaultSource()));
@@ -2518,8 +2521,8 @@ test("enabled apply progress reports and completes spinner steps", async () => {
   ]);
 });
 
-test("audit progress is suppressed in json, quiet, and no-progress modes", async () => {
-  for (const args of [{ json: true }, { quiet: true }, { noProgress: true }]) {
+test("audit progress remains visible with json and is suppressed in quiet and no-progress modes", async () => {
+  for (const args of [{ quiet: true }, { noProgress: true }]) {
     const progress = await createAuditProgress(args, {
       stream: { isTTY: true, write() {} },
       importOra() {
@@ -2528,6 +2531,12 @@ test("audit progress is suppressed in json, quiet, and no-progress modes", async
     });
     assert.equal(progress, null);
   }
+  const writes = [];
+  const progress = await createAuditProgress({ json: true }, {
+    stream: { isTTY: false, write: (text) => writes.push(text) },
+  });
+  progress.start("Preparing audit");
+  assert.equal(writes.length, 1);
 });
 
 test("audit progress uses ora for tty output", async () => {
@@ -2618,6 +2627,7 @@ test("audit jsonl progress emits compact event records", () => {
       status: "start",
       message: "Running plugin probes",
       version: "26.623.141536",
+      elapsedMs: 0,
     },
     {
       type: "progress",
@@ -2625,6 +2635,7 @@ test("audit jsonl progress emits compact event records", () => {
       status: "pass",
       message: "Probed plugins",
       version: "26.623.141536",
+      elapsedMs: 0,
     },
     {
       type: "summary",
@@ -2633,6 +2644,51 @@ test("audit jsonl progress emits compact event records", () => {
       ok: true,
     },
   ]);
+});
+
+test("audit jsonl progress emits active status and stops its timer", () => {
+  const writes = [];
+  const timers = new Map();
+  let nextTimer = 1;
+  let currentTime = 0;
+  const progress = createJsonlProgress({
+    stream: { write: (text) => writes.push(JSON.parse(text)) },
+    now: () => new Date(currentTime),
+    setIntervalImpl(callback, delay) {
+      const id = nextTimer++;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearIntervalImpl(id) {
+      timers.delete(id);
+    },
+  });
+  progress.start("Waiting for app shell", { phase: "startup", plugin: "audit" });
+  currentTime = 2000;
+  timers.values().next().value.callback();
+  progress.succeed("App shell mounted");
+
+  assert.equal(writes[1].status, "progress");
+  assert.equal(writes[1].elapsedMs, 2000);
+  assert.equal(writes[1].phase, "startup");
+  assert.equal(writes[1].plugin, "audit");
+  assert.equal(timers.size, 0);
+});
+
+test("audit output supports detailed json in human and jsonl modes", () => {
+  const result = { ok: true, failures: [], pluginResults: { audit: { ok: true } } };
+  const humanWrites = [];
+  writeAuditOutput(result, { json: true, jsonl: false }, { stream: { write: (text) => humanWrites.push(text) } });
+  assert.deepEqual(JSON.parse(humanWrites.join("")), result);
+
+  const jsonlWrites = [];
+  writeAuditOutput(result, { json: true, jsonl: true }, {
+    stream: { write: (text) => jsonlWrites.push(JSON.parse(text)) },
+    now: () => new Date("2026-07-12T00:00:00.000Z"),
+  });
+  assert.equal(jsonlWrites.length, 1);
+  assert.equal(jsonlWrites[0].type, "result");
+  assert.deepEqual(jsonlWrites[0].result, result);
 });
 
 test("visual contract writes screenshots and compact readbacks", async () => {

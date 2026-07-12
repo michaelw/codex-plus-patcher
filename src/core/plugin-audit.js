@@ -104,7 +104,6 @@ function parseArgs(argv) {
     else if (arg === "--disable-plugins") args.disabledRuntimePlugins.push(...next().split(",").map((value) => value.trim()).filter(Boolean));
     else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (args.json && args.jsonl) throw new Error("--jsonl cannot be combined with --json");
   return args;
 }
 
@@ -1469,40 +1468,105 @@ function writeJsonl(stream, record) {
   stream.write(`${JSON.stringify(record)}\n`);
 }
 
-function createJsonlProgress({ stream = process.stdout, now = () => new Date(), context = {} } = {}) {
+function writeAuditOutput(result, args, { stream = process.stdout, now = () => new Date() } = {}) {
+  if (args.jsonl) {
+    if (args.json) {
+      writeJsonl(stream, jsonlRecord("result", { result }, { now }));
+    } else {
+      writeJsonl(stream, jsonlRecord("summary", {
+        ok: result.ok,
+        failures: result.failures || [],
+        expectedWarnings: result.expectedWarnings || [],
+        visualContract: result.visualContract ? {
+          ok: result.visualContract.ok,
+          artifactDir: result.visualContract.artifactDir,
+        } : null,
+      }, { now }));
+    }
+  } else if (args.json) {
+    stream.write(formatAuditJson(result));
+  } else {
+    stream.write(formatAuditResult(result, args));
+  }
+}
+
+function createJsonlProgress({
+  stream = process.stdout,
+  now = () => new Date(),
+  context = {},
+  intervalMs = 2000,
+  setIntervalImpl = setInterval,
+  clearIntervalImpl = clearInterval,
+} = {}) {
+  let active = null;
+  let timer = null;
   const emit = (status, message, extra = {}) => writeJsonl(stream, jsonlRecord("progress", {
     status,
     message,
     ...context,
     ...extra,
   }, { now }));
-  return {
-    start(message, extra) {
-      emit("start", message, extra);
-    },
-    succeed(message, extra) {
-      emit("pass", message, extra);
-    },
-    fail(message, extra) {
-      emit("fail", message, extra);
-    },
-    event(type, payload = {}) {
-      writeJsonl(stream, jsonlRecord(type, {
-        ...context,
-        ...payload,
-      }, { now }));
-    },
-    child(childContext = {}) {
-      return createJsonlProgress({
-        stream,
-        now,
-        context: {
-          ...context,
-          ...childContext,
-        },
-      });
-    },
+  const stopTimer = () => {
+    if (timer != null) clearIntervalImpl(timer);
+    timer = null;
   };
+  const startTimer = () => {
+    stopTimer();
+    timer = setIntervalImpl(() => {
+      if (!active) return;
+      emit("progress", active.message, {
+        ...active.extra,
+        elapsedMs: Math.max(0, now().getTime() - active.startedAt.getTime()),
+      });
+    }, intervalMs);
+    timer?.unref?.();
+  };
+  const reporter = (event = {}) => {
+    if (event.step != null && event.phase == null) event = { phase: "apply", ...event };
+    const message = event.label || event.message || (event.item ? `${event.itemType}: ${event.item}` : "Progress");
+    if (event.status === "item") {
+      emit("progress", message, event);
+      return;
+    }
+    if (event.status === "succeed") reporter.succeed(message, event);
+    else if (event.status === "fail") reporter.fail(message, event);
+    else reporter.start(message, event);
+  };
+  reporter.start = (message, extra = {}) => {
+    stopTimer();
+    active = { message, extra, startedAt: now() };
+    emit("start", message, { ...extra, elapsedMs: 0 });
+    startTimer();
+  };
+  reporter.succeed = (message, extra = {}) => {
+    const elapsedMs = active ? Math.max(0, now().getTime() - active.startedAt.getTime()) : 0;
+    stopTimer();
+    emit("pass", message, { ...(active?.extra || {}), ...extra, elapsedMs });
+    active = null;
+  };
+  reporter.fail = (message, extra = {}) => {
+    const elapsedMs = active ? Math.max(0, now().getTime() - active.startedAt.getTime()) : 0;
+    stopTimer();
+    emit("fail", message, { ...(active?.extra || {}), ...extra, elapsedMs });
+    active = null;
+  };
+  reporter.item = (itemType, item, extra = {}) => reporter({ status: "item", itemType, item, ...extra });
+  reporter.event = (type, payload = {}) => writeJsonl(stream, jsonlRecord(type, { ...context, ...payload }, { now }));
+  reporter.child = (childContext = {}) => createJsonlProgress({
+    stream,
+    now,
+    context: { ...context, ...childContext },
+    intervalMs,
+    setIntervalImpl,
+    clearIntervalImpl,
+  });
+  reporter.close = () => {
+    stopTimer();
+    active = null;
+  };
+  reporter.machineReadable = true;
+  reporter.suppressCommandOutput = true;
+  return reporter;
 }
 
 function formatAuditResult(result, { quiet = false } = {}) {
@@ -1611,8 +1675,8 @@ function formatAuditResult(result, { quiet = false } = {}) {
   return `${lines.join("\n")}\n`;
 }
 
-function shouldShowAuditProgress(args, stream = process.stdout) {
-  return !args.json && !args.quiet && !args.noProgress && stream != null;
+function shouldShowAuditProgress(args, stream = process.stderr) {
+  return !args.jsonl && !args.quiet && !args.noProgress && stream != null;
 }
 
 function timestamp(date = new Date()) {
@@ -1620,7 +1684,7 @@ function timestamp(date = new Date()) {
 }
 
 async function createAuditProgress(args, {
-  stream = process.stdout,
+  stream = process.stderr,
   importOra = (specifier) => import(specifier),
   now = () => new Date(),
 } = {}) {
@@ -1630,7 +1694,14 @@ async function createAuditProgress(args, {
     const { default: ora } = await importOra("ora");
     const spinner = ora({ color: "cyan", spinner: "dots", stream });
     let active = false;
-    return {
+    const reporter = (event = {}) => {
+      const text = event.step != null ? `[${event.step}/${event.total}] ${event.label}` : event.label || event.message;
+      if (event.status === "item") reporter.item(event.itemType, event.item);
+      else if (event.status === "succeed") reporter.succeed(text);
+      else if (event.status === "fail") reporter.fail(text);
+      else reporter.start(text);
+    };
+    Object.assign(reporter, {
       start(text) {
         if (active) spinner.succeed();
         spinner.text = text;
@@ -1647,9 +1718,31 @@ async function createAuditProgress(args, {
         spinner.fail(text);
         active = false;
       },
-    };
+      item(itemType, item) {
+        const text = `${itemType}: ${item}`;
+        if (active && typeof spinner.stopAndPersist === "function") {
+          const activeText = spinner.text;
+          spinner.stopAndPersist({ symbol: "•", text });
+          spinner.text = activeText;
+          spinner.start();
+        } else if (typeof spinner.info === "function") spinner.info(text);
+      },
+      close() {
+        if (active) spinner.stop?.();
+        active = false;
+      },
+      suppressCommandOutput: true,
+    });
+    return reporter;
   }
-  return {
+  const reporter = (event = {}) => {
+    const text = event.step != null ? `[${event.step}/${event.total}] ${event.label}` : event.label || event.message;
+    if (event.status === "item") reporter.item(event.itemType, event.item);
+    else if (event.status === "succeed") reporter.succeed(text);
+    else if (event.status === "fail") reporter.fail(text);
+    else reporter.start(text);
+  };
+  Object.assign(reporter, {
     start(text) {
       stream.write(`[${timestamp(now())}] ${text}\n`);
     },
@@ -1659,7 +1752,13 @@ async function createAuditProgress(args, {
     fail(text) {
       stream.write(`[${timestamp(now())}] FAIL ${text}\n`);
     },
-  };
+    item(itemType, item) {
+      stream.write(`[${timestamp(now())}] ${itemType}: ${item}\n`);
+    },
+    close() {},
+    suppressCommandOutput: true,
+  });
+  return reporter;
 }
 
 async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
@@ -1776,15 +1875,27 @@ async function captureVisualContract(cdp, {
 }
 
 function progressStart(progress, text) {
-  progress?.start?.(text);
+  progress?.start?.(text, { phase: progressPhase(text) });
 }
 
 function progressSucceed(progress, text) {
-  progress?.succeed?.(text);
+  progress?.succeed?.(text, { phase: progressPhase(text) });
 }
 
 function progressFail(progress, text) {
-  progress?.fail?.(text);
+  progress?.fail?.(text, { phase: progressPhase(text) });
+}
+
+function progressPhase(text) {
+  const value = String(text || "").toLowerCase();
+  if (value.includes("preflight")) return "preflight";
+  if (value.includes("patch")) return "apply";
+  if (value.includes("fixture") || value.includes("source home")) return "fixture";
+  if (value.includes("launch")) return "launch";
+  if (value.includes("runtime") || value.includes("app shell") || value.includes("index.html") || value.includes("startup")) return "startup";
+  if (value.includes("visual contract")) return "visual-contract";
+  if (value.includes("clean") || value.includes("kept")) return "cleanup";
+  return "probe";
 }
 
 async function withAuditProgress(progress, startText, doneText, action) {
@@ -3950,7 +4061,12 @@ async function runAudit(args, {
   let initialProjectSelectorShortcut = null;
   let result = null;
   try {
-    preflight = await preflightAudit(args, { findPort });
+    preflight = await withAuditProgress(
+      progress,
+      "Running audit preflight",
+      "Audit preflight passed",
+      () => preflightAudit(args, { findPort }),
+    );
     port = preflight.port;
     const appShellTimeoutMs = appShellTimeoutForSource(args.source);
     if (args.apply) {
@@ -3962,7 +4078,7 @@ async function runAudit(args, {
           sourceApp: args.source,
           targetApp: args.target,
           patchSets,
-          progress: undefined,
+          progress,
           runtimeConfig: args.disabledRuntimePlugins?.length > 0 ? {
             runtimePluginsDisabled: args.disabledRuntimePlugins,
           } : undefined,
@@ -4145,6 +4261,12 @@ async function runAudit(args, {
       "projectColors", "sidebarNameBlur", "devTools",
       "projectSelectorShortcut", "mermaidFullscreen", "audit",
     ] : args.auditPlugins;
+    for (const plugin of [
+      ...(splitAharnessProbe ? ["aharnessRuns", "projectPathHeader"] : []),
+      ...baseAuditPlugins,
+    ]) {
+      progress?.item?.("plugin", plugin, { phase: "probe", plugin });
+    }
     let isolatedAharness = null;
     let isolatedProjectPathHeader = null;
     if (splitAharnessProbe) {
@@ -4491,6 +4613,7 @@ async function runAudit(args, {
       }
       if (result) result.cleanupResult = cleanupResult;
     }
+    progress?.close?.();
   }
 }
 
@@ -4498,26 +4621,17 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const progress = args.jsonl ? createJsonlProgress() : await createAuditProgress(args);
   const result = await runAudit(args, { progress });
-  if (args.json) process.stdout.write(formatAuditJson(result));
-  else if (args.jsonl) {
-    writeJsonl(process.stdout, jsonlRecord("summary", {
-      ok: result.ok,
-      failures: result.failures || [],
-      expectedWarnings: result.expectedWarnings || [],
-      visualContract: result.visualContract ? {
-        ok: result.visualContract.ok,
-        artifactDir: result.visualContract.artifactDir,
-      } : null,
-    }));
-  } else {
-    process.stdout.write(formatAuditResult(result, args));
-  }
+  writeAuditOutput(result, args);
   if (!result.ok) process.exitCode = 1;
 }
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(error.stack || error.message || String(error));
+    if (process.argv.includes("--jsonl")) {
+      writeJsonl(process.stdout, jsonlRecord("error", { message: error.message || String(error) }));
+    } else {
+      console.error(error.stack || error.message || String(error));
+    }
     process.exitCode = 1;
   });
 }
@@ -4559,5 +4673,6 @@ module.exports = {
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   writeJsonl,
+  writeAuditOutput,
   waitForRendererTarget,
 };

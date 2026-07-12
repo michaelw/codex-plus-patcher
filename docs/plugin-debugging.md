@@ -62,22 +62,39 @@ codex-plus-patcher audit-plugins
 
 The audit applies the current patch set to `work/Codex Plus.app`, syncs the
 default dev home, launches with a remote debugging port, attaches to
-`app://-/index.html`, and prints a human-readable progress summary by default.
+`app://-/index.html`, and prints human-readable progress by default. On a TTY,
+spinners show the active major phase while completed phases remain as stable
+lines. Patch application includes its apply steps and names the selected patch
+set and patches; probing names the plugins being checked. Redirected progress
+uses timestamped plain lines without terminal control sequences.
 It exits nonzero when any required built-in plugin probe fails.
 Audit launches use the dev-only `com.openai.codex-plus.audit` bundle identity
 by default so they do not compete with a kept-open manual dev copy.
 
-Use compact JSONL progress for long-running audits:
+Use compact JSONL progress for long-running audits and agent supervision:
 
 ```sh
 codex-plus-patcher audit-plugins --jsonl
 ```
 
-Use full JSON when you need the final machine-readable result and detailed
-post-failure probe data:
+In this mode stdout contains JSONL only, including failures. Active work emits
+a low-noise status record at least every two seconds with its phase, elapsed
+time, and current patch or plugin context when known. There are no spinners or
+other terminal adornments. The last record is a compact `summary`.
+
+Add `--json` when you need the full final result and detailed post-failure
+probe data:
 
 ```sh
 codex-plus-patcher audit-plugins --json
+```
+
+This keeps human progress and prints the detailed JSON result at the end. It
+can also be combined with `--jsonl`; in that case the final line is a JSONL
+`result` record containing the detailed result:
+
+```sh
+codex-plus-patcher audit-plugins --jsonl --json
 ```
 
 Plugin audits write a visual contract by default under
