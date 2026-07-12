@@ -498,6 +498,7 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
+  assert.match(defaultExpression, /text-editor:local:/);
   assert.match(defaultExpression, /composerContrastStatus/);
   assert.match(defaultExpression, /Ask for approval/);
   assert.match(defaultExpression, /Approve for me/);
@@ -527,10 +528,16 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /labelTextFillTransparent/);
   assert.match(defaultExpression, /composerAttachmentPill/);
   assert.match(defaultExpression, /webkitTextFillColor/);
-  assert.match(defaultExpression, /Project selector shortcut trigger marker is missing from the main composer/);
+  assert.match(defaultExpression, /Project selector trigger is missing from the main composer/);
+  assert.match(defaultExpression, /newChatButton\.click\(\)/);
+  assert.match(defaultExpression, /if \(!fixtureThreadActive\) newChatButton\?\.click/);
+  assert.match(defaultExpression, /attempt < 300/);
   assert.match(defaultExpression, /includes\("New chat"\)/);
   assert.match(defaultExpression, /input\[placeholder='Search projects'\]/);
   assert.match(defaultExpression, /syntheticShortcut/);
+  assert.match(defaultExpression, /closest\("header"\)\?\.textContent\)\.includes\("Fixture:"\)/);
+  assert.doesNotMatch(defaultExpression, /commandFallback/);
+  assert.doesNotMatch(defaultExpression, /projectlessThreadRow\?\.click/);
 });
 
 test("project selector shortcut verifier uses trusted CDP key events", async () => {
@@ -1012,6 +1019,9 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread: async () => ({ ok: true }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 0, started: 0 }); },
         waitForAppShellMounted() {
           shellChecks += 1;
@@ -1086,6 +1096,9 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread: async () => ({ ok: true }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
         verifyMermaidViewerRender() {
@@ -1166,6 +1179,9 @@ test("runAudit progress fails when the project selector verifier returns not ok"
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread: async () => ({ ok: true }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
         verifyProjectSelectorShortcutKey() {
@@ -1242,6 +1258,9 @@ test("runAudit fails when the Review panel live probe cannot find a review threa
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread: async () => ({ ok: true }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
         verifyReviewPanelRender() {
@@ -1353,6 +1372,10 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
           });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread() { return Promise.resolve({ ok: true }); },
+        verifyProjectSelectorShortcutKey() { return Promise.resolve({ ok: true }); },
         waitForLiveRuntime() { return Promise.resolve({ registered: 2, started: 2 }); },
         waitForAppShellMounted() {
           return Promise.resolve({
@@ -1589,6 +1612,9 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
           });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
+        activateFixtureThread: async () => ({ ok: true }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() {
           return Promise.resolve({
@@ -1713,6 +1739,8 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
           });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
         waitForLiveRuntime() {
           calls.push("runtime");
           return Promise.resolve({ registered: 10, started: 10 });
@@ -1809,6 +1837,8 @@ test("runAudit manual no-launch mode attaches without launching or probing", asy
           });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ readyState: "complete", hasStartupLoader: false }); },
         dismissStartupDialogs() { return Promise.resolve({ present: false, dismissed: false }); },
@@ -1868,6 +1898,8 @@ test("runAudit manual mode keeps a launched app open after readiness failure", a
           });
         },
         CdpSession: FakeCdpSession,
+        reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
+        closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
         waitForLiveRuntime() {
           throw new Error("runtime did not become ready");
         },
@@ -2123,7 +2155,7 @@ test("launch-dev uses ChatGPT executable and dev identity for ChatGPT targets", 
   });
 });
 
-test("launch-dev uses LaunchServices with isolated state on macOS", () => {
+test("launch-dev directly launches the executable with isolated state on macOS", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-macos-launch-dev-"));
   const targetApp = path.join(tmpDir, "Codex Plus.app");
   const devHome = path.join(tmpDir, "dev-home");
@@ -2144,20 +2176,15 @@ test("launch-dev uses LaunchServices with isolated state on macOS", () => {
     },
   });
 
-  assert.equal(result.command, "/usr/bin/open");
+  assert.equal(result.command, path.join(targetApp, "Contents/MacOS/Codex"));
   assert.deepEqual(result.args, [
-    "-n",
-    "-W",
-    "--env", `CODEX_HOME=${devHome}`,
-    "--env", `CODEX_ELECTRON_USER_DATA_PATH=${electronUserDataPath}`,
-    targetApp,
-    "--args",
     `--user-data-dir=${electronUserDataPath}`,
     "--use-mock-keychain",
     "--remote-debugging-port=9234",
   ]);
   assert.deepEqual(calls[0].args, result.args);
   assert.equal(calls[0].options.detached, true);
+  assert.equal(calls[0].options.stdio, "ignore");
 });
 
 test("audit cleanup handles launched, kept-open, missing, and failed process cleanup", async () => {

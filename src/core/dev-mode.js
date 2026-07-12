@@ -326,26 +326,17 @@ function launchDevApp({
   ...options
 } = {}) {
   const directLaunch = buildLaunchDev(options);
-  const launch = platform === "darwin" ? {
-    ...directLaunch,
-    appCommand: directLaunch.command,
-    command: "/usr/bin/open",
-    args: [
-      "-n",
-      "-W",
-      "--env", `CODEX_HOME=${directLaunch.env.CODEX_HOME}`,
-      "--env", `CODEX_ELECTRON_USER_DATA_PATH=${directLaunch.env.CODEX_ELECTRON_USER_DATA_PATH}`,
-      path.resolve(options.targetApp),
-      "--args",
-      ...directLaunch.args,
-    ],
-  } : directLaunch;
+  // Launch the signed executable directly. LaunchServices' open --env path
+  // does not consistently propagate CODEX_HOME into the Electron process.
+  const launch = directLaunch;
   fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
   fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
   const devBundle = markDevBundleIdentityImpl(options.targetApp, options.devInstanceId);
   const devSignature = signDevAppImpl(options.targetApp);
   const child = spawn(launch.command, launch.args, {
+    // Keep the direct Electron process independent of the audit CLI. In
+    // particular, --keep-open must survive after the CLI writes its result.
     detached: true,
     env: { ...env, ...launch.env },
     stdio: "ignore",
