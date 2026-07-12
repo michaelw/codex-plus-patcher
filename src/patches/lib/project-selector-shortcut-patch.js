@@ -290,6 +290,56 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text) {
+  if (text.includes("function MZ({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function wVe(e){let t=(0,OZ.c)(44),",
+      `${projectSelectorSearchHook()}function wVe(e){let t=(0,OZ.c)(44),`,
+      "home project selector fuzzy search adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();x=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "x=CPXP.fuzzyFilter(r,_);",
+      "home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "T=(0,AZ.jsx)(vie,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "T=(0,AZ.jsx)(vie,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,x,o,_),placeholder:c,className:`mb-1`})",
+      "home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,AZ.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,AZ.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,AZ.jsx)})",
+      "home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function MZ({activeProjectIdOverride:e,",
+      `${projectSelectorTriggerHook("NZ")}function MZ({activeProjectIdOverride:e,`,
+      "home project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,PZ.jsx)(upe,{className:`min-w-0`,\"data-composer-navigation-target\":`workspace-project`,",
+      "children:(0,PZ.jsx)(upe,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:`min-w-0`,\"data-composer-navigation-target\":`workspace-project`,",
+      "home project selector native utility trigger anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "pe=()=>(0,PZ.jsxs)(`button`,{className:wi(`heading-xl text-token-text-tertiary",
+      "pe=()=>(0,PZ.jsxs)(`button`,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:wi(`heading-xl text-token-text-tertiary",
+      "home project selector native hero trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:u??(s===`hero`?pe():de()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:me})",
+      "triggerButton:CPXPST(u??(s===`hero`?pe():de()),s),contentWidth:`workspace`,contentMaxHeight:`tall`,children:me})",
+      "home project selector workspace trigger anchor",
+    );
+  }
   if (
     text.includes("function hte(){let e=(0,zA.c)(3),t,n;") &&
     !text.includes("activeProjectIdOverride") &&

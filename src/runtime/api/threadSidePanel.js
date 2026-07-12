@@ -94,7 +94,7 @@
     });
   }
 
-  function waitForNativeFileOpener(timeoutMs = 8000) {
+  function waitForNativeFileOpener(timeoutMs = 30000) {
     const existing = nativeFileOpener();
     if (existing) return Promise.resolve(existing);
     const started = Date.now();
@@ -118,6 +118,7 @@
       (
         value.startsWith("file:") ||
         value.startsWith("file:local:") ||
+        value.startsWith("text-editor:") ||
         value.startsWith("mcp-capability:file-viewer:file:local:")
       )
     );

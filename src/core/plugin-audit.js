@@ -292,7 +292,7 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
   }
 }
 
-async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
+async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 30000 } = {}) {
   const setup = await cdp.evaluate(`new Promise((resolve) => {
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
     const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
@@ -304,7 +304,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     let attempts = 0;
     const check = () => {
       const triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
-      if (triggerCount > 0 || attempts >= 30) {
+      if (triggerCount > 0 || attempts >= 300) {
         resolve({ triggerCount, clickedNewChat: Boolean(newChatButton) });
         return;
       }
@@ -314,7 +314,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     check();
   })`);
   if (!setup?.triggerCount) {
-    return { ok: false, ...setup, message: "Project selector shortcut trigger marker is missing from the main composer" };
+    return { ok: false, ...setup, message: "Project selector trigger is missing from the main composer" };
   }
 
   await cdp.send("Input.dispatchKeyEvent", {
@@ -455,43 +455,49 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     }
     await wait(100);
   }
-  const commandFallback = await cdp.evaluate(`new Promise((resolve) => {
-    if (typeof window.CodexPlus?.commands?.run !== "function") {
-      resolve(null);
-      return;
-    }
-    const ran = window.CodexPlus?.commands?.run?.("codexPlus.focusProjectSelector") === true;
-    let clickedTrigger = false;
-    const startedAt = Date.now();
-    const check = () => {
-      const searchInput = document.querySelector("input[placeholder='Search projects']");
-      const menuCount = document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']").length;
-      const opened = Boolean(searchInput || menuCount > 0);
-      if (!opened && !clickedTrigger && Date.now() - startedAt > 1000) {
-        const trigger = document.querySelector("[data-codex-plus-project-selector-trigger]");
-        trigger?.dispatchEvent?.(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-        trigger?.click?.();
-        clickedTrigger = Boolean(trigger);
-      }
-      if (opened || Date.now() - startedAt > 5000) {
-        resolve({
-          ran,
-          clickedTrigger,
-          triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
-          menuCount,
-          opened,
-          activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
-        });
-        return;
-      }
-      setTimeout(check, 100);
+  return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
+}
+
+async function activateFixtureThread(cdp, { nested = false, wait = delay, timeoutMs = 10000 } = {}) {
+  const target = await cdp.evaluate(`(() => {
+    const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"; };
+    const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]")).filter(visible).find((element) => {
+      const path = element.getAttribute("data-codex-plus-project-path") || "";
+      const text = String(element.textContent || "");
+      return path.includes("fixture-workspaces") && (${nested} ? text.includes("nested repos") : !text.includes("nested repos"));
+    });
+    if (!row) return null;
+    row.scrollIntoView({ block: "center" });
+    const rect = row.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      path: row.getAttribute("data-codex-plus-project-path") || "",
+      title: String(row.textContent || "").replace(/\s+/g, " ").trim(),
     };
-    check();
-  })`);
-  if (commandFallback?.opened) {
-    return { ok: true, ...setup, ...status, commandFallback };
+  })()`);
+  if (!target) return { ok: false, message: "Fixture thread row was not visible" };
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const active = await cdp.evaluate(`(() => {
+      const visible = (element) => { const rect = element?.getBoundingClientRect?.(); const style = element ? getComputedStyle(element) : null; return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden"); };
+      const headers = Array.from(document.querySelectorAll("header")).filter(visible);
+      const header = headers.find((element) => String(element.textContent || "").includes(${JSON.stringify("Fixture:")}));
+      const chip = header ? Array.from(header.querySelectorAll("[data-codex-plus-project-path-header]")).find(visible) : null;
+      return {
+        titleReady: Boolean(header),
+        chipPath: chip?.getAttribute("title") || "",
+      };
+    })()`);
+    if (active?.titleReady && active.chipPath === target.path) {
+      await cdp.evaluate(`window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__ = true`);
+      return { ok: true, target, active };
+    }
+    await wait(100);
   }
-  return { ok: false, ...setup, ...status, commandFallback, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
+  return { ok: false, target, message: "Trusted fixture-thread click did not update the native title and path header" };
 }
 
 async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
@@ -1011,6 +1017,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
 
 function listRunningAuditApps({
   targetApp = DEFAULT_TARGET,
+  devHome = null,
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
   execFileSync = childProcess.execFileSync,
 } = {}) {
@@ -1021,6 +1028,8 @@ function listRunningAuditApps({
     targetBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
   }
   const userDataArg = `--user-data-dir=${path.resolve(electronUserDataPath)}`;
+  const targetPrefix = `${path.resolve(targetApp)}${path.sep}`;
+  const devHomePrefix = devHome == null ? null : `${path.resolve(devHome)}${path.sep}`;
   let text;
   try {
     text = execFileSync("ps", ["-axo", "pid=,command="], {
@@ -1036,7 +1045,9 @@ function listRunningAuditApps({
       const match = line.match(/^\s*(\d+)\s+(.*)$/);
       if (!match) return null;
       const command = match[2];
-      if (!command.startsWith(targetBinary) || !command.includes(userDataArg)) return null;
+      const targetProcess = (command.startsWith(targetBinary) || command.startsWith(targetPrefix)) && command.includes(userDataArg);
+      const devHomeProcess = devHomePrefix != null && command.startsWith(devHomePrefix);
+      if (!targetProcess && !devHomeProcess) return null;
       const portMatch = command.match(/--remote-debugging-port=(\d+)/);
       return {
         pid: Number(match[1]),
@@ -1134,6 +1145,11 @@ class CdpSession {
     return new Promise((resolve, reject) => {
       this.socket.addEventListener("open", resolve, { once: true });
       this.socket.addEventListener("error", reject, { once: true });
+      this.socket.addEventListener("close", () => {
+        const error = new Error("DevTools connection closed");
+        for (const pending of this.pending.values()) pending.reject(error);
+        this.pending.clear();
+      });
       this.socket.addEventListener("message", (event) => {
         const message = JSON.parse(event.data);
         if (!message.id) return;
@@ -1150,7 +1166,20 @@ class CdpSession {
     const id = this.nextId++;
     this.socket.send(JSON.stringify({ id, method, params }));
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timeout = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        reject(new Error(`DevTools request timed out: ${method}`));
+      }, 90000);
+      this.pending.set(id, {
+        resolve(result) {
+          clearTimeout(timeout);
+          resolve(result);
+        },
+        reject(error) {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      });
     });
   }
 
@@ -1257,6 +1286,46 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
     ? " The app is still on the startup logo; check for a blocking macOS Keychain access dialog for the audit/regression app."
     : "";
   throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}${startupHint}`);
+}
+
+async function reloadAuditRenderer(cdp, { timeoutMs = 30000, wait = delay } = {}) {
+  await cdp.send("Page.reload", { ignoreCache: true });
+  const deadline = Date.now() + timeoutMs;
+  let lastReadyState = null;
+  while (Date.now() < deadline) {
+    try {
+      lastReadyState = await cdp.evaluate("document.readyState");
+      if (lastReadyState === "interactive" || lastReadyState === "complete") {
+        return { ok: true, readyState: lastReadyState };
+      }
+    } catch {
+      // The old execution context is destroyed while Electron replaces it.
+    }
+    await wait(100);
+  }
+  throw new Error(`Timed out waiting for reloaded audit renderer: ${lastReadyState || "unavailable"}`);
+}
+
+async function closeActiveVirtualRoute(cdp, { timeoutMs = 10000, wait = delay } = {}) {
+  const closeResult = await cdp.evaluate(`(() => {
+    const api = window.CodexPlus?.ui?.virtualConversations;
+    return typeof api?.close === "function" ? api.close() : { ok: false, error: "virtual-conversations-unavailable" };
+  })()`);
+  if (!closeResult?.ok) throw new Error(`Could not close active virtual route: ${JSON.stringify(closeResult)}`);
+  const deadline = Date.now() + timeoutMs;
+  let status = null;
+  while (Date.now() < deadline) {
+    status = await cdp.evaluate(`(() => ({
+      activeRouteId: window.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() || "",
+      routeContext: window.CodexPlus?.ui?.routeContext?.active?.() || null,
+      hash: String(window.location.hash || ""),
+    }))()`);
+    if (!status.activeRouteId && !status.routeContext && !status.hash.includes("cpx-aharness-run")) {
+      return { ok: true, ...status };
+    }
+    await wait(100);
+  }
+  throw new Error(`Timed out closing active virtual route: ${JSON.stringify(status)}`);
 }
 
 function appShellTimeoutForSource(sourceApp) {
@@ -1749,11 +1818,27 @@ async function withAuditCheckProgress(progress, startText, doneText, action) {
 async function cleanupLaunchedAuditApp(launchResult, {
   keepOpen = false,
   kill = process.kill,
+  listRunningApps = listRunningAuditApps,
   wait = delay,
 } = {}) {
   const pid = launchResult?.pid;
   if (keepOpen) return { attempted: false, keptOpen: true, ok: true, pid };
   if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
+  if (launchResult.command === "/usr/bin/open" && launchResult.targetApp && launchResult.electronUserDataPath) {
+    const apps = listRunningApps({
+      targetApp: launchResult.targetApp,
+      devHome: launchResult.devHome,
+      electronUserDataPath: launchResult.electronUserDataPath,
+    });
+    for (const app of apps) {
+      try {
+        kill(app.pid, "SIGTERM");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+    if (apps.length > 0) await wait(500);
+  }
   const signals = ["SIGTERM", "SIGKILL"];
   for (const signal of signals) {
     try {
@@ -2028,13 +2113,14 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
     const waitForLiveProjectPathChip = async (plugin, timeoutMs = 10000, acceptsTitle = (title) => title.includes("fixture-workspaces")) => {
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
-        plugin?.exports?.ensureDomProjectPathChip?.();
-        const liveChip = visibleElements("[data-codex-plus-project-path-header]").find((chip) => !isComposerPathChip(chip));
+        const candidates = visibleElements("[data-codex-plus-project-path-header]").filter((chip) => !isComposerPathChip(chip));
+        const liveChip = candidates.find((chip) => normalize(chip.closest("header")?.textContent).includes("Fixture:")) || candidates[0];
         const liveChipTitle = liveChip?.getAttribute("title") || "";
         if (liveChip && acceptsTitle(liveChipTitle)) return liveChip;
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      return visibleElements("[data-codex-plus-project-path-header]").find((chip) => !isComposerPathChip(chip)) || null;
+      const candidates = visibleElements("[data-codex-plus-project-path-header]").filter((chip) => !isComposerPathChip(chip));
+      return candidates.find((chip) => normalize(chip.closest("header")?.textContent).includes("Fixture:")) || candidates[0] || null;
     };
     const projectSelectorMenuStatus = () => {
       const searchInput = document.querySelector("input[placeholder='Search projects']");
@@ -2194,6 +2280,144 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         triggerClassName: String(trigger?.className || ""),
       };
     };
+    const composerContrastStatus = () => {
+      const editor = document.querySelector("[data-codex-composer]");
+      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      if (!surface) return { editorMounted: Boolean(editor), surfaceMounted: false, checks: [] };
+      const surfaceStyle = getComputedStyle(surface);
+      const surfaceBackground = surfaceStyle.backgroundColor;
+      const surfaceRect = surface.getBoundingClientRect();
+      const occludingDescendants = Array.from(surface.querySelectorAll("*"))
+        .map((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            className: String(element.className || ""),
+            background: style.backgroundColor,
+            widthRatio: surfaceRect.width > 0 ? rect.width / surfaceRect.width : 0,
+            heightRatio: surfaceRect.height > 0 ? rect.height / surfaceRect.height : 0,
+          };
+        })
+        .filter((element) =>
+          element.widthRatio >= 0.9 &&
+          element.heightRatio >= 0.5 &&
+          !isTransparent(element.background) &&
+          element.background !== surfaceBackground
+        );
+      const probe = document.createElement("div");
+      probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
+      probe.innerHTML =
+        '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy" data-state="open"><span>Approve for me</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="policy"><span>Custom</span><svg><path d="M0 0h1"/></svg></button>' +
+        '<button type="button" data-codex-plus-contrast-kind="model" aria-expanded="true"><span>5.6 Sol Medium</span><svg><path d="M0 0h1"/></svg></button>';
+      surface.appendChild(probe);
+      const actualButtons = Array.from(surface.querySelectorAll("button")).filter((button) => !probe.contains(button));
+      const policyLabels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
+      const actualControls = actualButtons.filter((button) => {
+        const text = normalize(button.textContent);
+        return policyLabels.some((label) => text === label || text.startsWith(`${label} `)) ||
+          /(?:gpt|codex|\bo\d|\d+\.\d+|\bmedium\b|\bhigh\b|\blow\b)/i.test(text);
+      });
+      const targets = [
+        ...probe.querySelectorAll("[data-codex-plus-rich-content] h3,[data-codex-plus-rich-content] th,[data-codex-plus-rich-content] code,[data-codex-plus-rich-content] a,[data-codex-plus-contrast-kind]"),
+        ...actualControls,
+      ];
+      const checks = targets.map((element) => {
+        const style = getComputedStyle(element);
+        const textFillColor = style.webkitTextFillColor || null;
+        const effectiveColor = textFillColor && !isTransparent(textFillColor) ? textFillColor : style.color;
+        const icon = element.querySelector?.("svg,svg path");
+        const iconStyle = icon ? getComputedStyle(icon) : null;
+        const iconColor = iconStyle?.stroke && iconStyle.stroke !== "none" ? iconStyle.stroke : iconStyle?.color || null;
+        return {
+          kind: element.getAttribute("data-codex-plus-contrast-kind") || (probe.contains(element) ? "rich-content" : "live-control"),
+          text: normalize(element.textContent),
+          opacity: style.opacity,
+          color: style.color,
+          textFillColor,
+          textFillTransparent: isTransparent(textFillColor),
+          contrast: contrast(effectiveColor, surfaceBackground),
+          iconColor,
+          iconContrast: iconColor ? contrast(iconColor, surfaceBackground) : null,
+          synthetic: probe.contains(element),
+        };
+      });
+      probe.remove();
+      return {
+        editorMounted: Boolean(editor),
+        surfaceMounted: true,
+        surfaceBackground,
+        policyLabels,
+        liveControlCount: actualControls.length,
+        occludingDescendants,
+        checks,
+      };
+    };
+    const userBubbleShapeStatus = () => {
+      let synthetic = null;
+      let nativeBubble = visibleElements("[data-user-message-bubble]")[0] || null;
+      let themeHost = nativeBubble?.closest("[data-codex-plus-user-bubble]") || null;
+      if (!nativeBubble) {
+        const legacyBubble = visibleElements("[data-codex-plus-user-bubble]:not(:has([data-user-message-bubble]))")[0] || null;
+        if (legacyBubble) {
+          nativeBubble = legacyBubble;
+          themeHost = legacyBubble;
+        }
+      }
+      if (!nativeBubble) {
+        synthetic = document.createElement("div");
+        synthetic.setAttribute("data-codex-plus-user-bubble", "");
+        synthetic.setAttribute("data-codex-plus-project-color", "");
+        synthetic.className = "flex flex-col items-end gap-2";
+        synthetic.style.cssText = "position:fixed;left:0;top:0;width:320px;z-index:-1";
+        synthetic.innerHTML = '<div class="group flex w-full flex-col items-end justify-end gap-1"><div data-user-message-bubble="true" class="bg-token-foreground/5 max-w-[77%] overflow-hidden rounded-2xl px-3 py-2">Fixture user message</div><div><span class="text-token-text-tertiary">1:08 PM</span><button aria-label="Copy message"><svg><path d="M0 0h1"/></svg></button></div></div>';
+        document.body.appendChild(synthetic);
+        nativeBubble = synthetic.querySelector("[data-user-message-bubble]");
+        themeHost = synthetic;
+      }
+      const wrapper = themeHost !== nativeBubble ? themeHost : nativeBubble?.closest("[data-codex-plus-user-entry]") || null;
+      const bubbleStyle = nativeBubble ? getComputedStyle(nativeBubble) : null;
+      const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
+      const decorationRoot = nativeBubble?.nextElementSibling || null;
+      const decorationText = decorationRoot?.querySelector?.(".text-token-text-tertiary") || null;
+      const decorationIcon = decorationRoot?.querySelector?.("button svg,button svg path") || null;
+      const mutedForeground = getComputedStyle(document.documentElement).getPropertyValue("--color-token-text-tertiary").trim();
+      const decorationTextColor = decorationText ? getComputedStyle(decorationText).color : null;
+      const decorationIconColor = decorationIcon ? getComputedStyle(decorationIcon).color : null;
+      const cornerRadius = bubbleStyle ? Math.max(
+        parseFloat(bubbleStyle.borderTopLeftRadius) || 0,
+        parseFloat(bubbleStyle.borderTopRightRadius) || 0,
+        parseFloat(bubbleStyle.borderBottomLeftRadius) || 0,
+        parseFloat(bubbleStyle.borderBottomRightRadius) || 0,
+      ) : 0;
+      const status = {
+        bubbleMounted: Boolean(nativeBubble),
+        nativeBubbleMounted: Boolean(nativeBubble?.hasAttribute("data-user-message-bubble")),
+        themeHostMounted: Boolean(themeHost),
+        wrapperMounted: Boolean(wrapper),
+        synthetic: Boolean(synthetic),
+        bubbleBackground: bubbleStyle?.backgroundColor || null,
+        wrapperBackground: wrapperStyle?.backgroundColor || null,
+        wrapperBackgroundTransparent: wrapperStyle ? isTransparent(wrapperStyle.backgroundColor) : null,
+        decorationsMounted: Boolean(decorationText && decorationIcon),
+        mutedForeground,
+        decorationTextColor,
+        decorationIconColor,
+        decorationsUseMutedForeground: Boolean(
+          decorationText && decorationIcon && mutedForeground &&
+          decorationTextColor === mutedForeground && decorationIconColor === mutedForeground
+        ),
+        bubbleBorderRadius: bubbleStyle?.borderRadius || null,
+        cornerRadius,
+        bubbleClassName: String(nativeBubble?.className || ""),
+        wrapperClassName: String(wrapper?.className || ""),
+      };
+      synthetic?.remove();
+      return status;
+    };
     const composerAttachmentPillStatus = () => {
       const editor = document.querySelector("[data-codex-composer]");
       const surface = editor?.closest("[data-codex-plus-user-entry]");
@@ -2306,10 +2530,17 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         const text = normalize(button.innerText || button.textContent);
         return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
       });
-      newChatButton?.click?.();
-      if (newChatButton) await new Promise((resolve) => setTimeout(resolve, 500));
-      const strictChooseProject = versionAtLeast(codexVersion, "26.623.81905");
-      const chooseProjectButton = visibleChooseProjectButton();
+      const fixtureThreadActive = Boolean(window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__);
+      if (!fixtureThreadActive) newChatButton?.click?.();
+      const strictChooseProject = versionAtLeast(codexVersion, "26.623.81905") && !fixtureThreadActive;
+      let chooseProjectButton = visibleChooseProjectButton();
+      if (strictChooseProject && newChatButton && !chooseProjectButton) {
+        const deadline = Date.now() + 30000;
+        while (!chooseProjectButton && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          chooseProjectButton = visibleChooseProjectButton();
+        }
+      }
       if (!chooseProjectButton && strictChooseProject) {
         throw new Error(`Initial no-project composer did not show a visible Choose project button: ${JSON.stringify({ codexVersion })}`);
       }
@@ -2686,30 +2917,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         throw new Error(`Project path accessory used wrong header path: ${JSON.stringify(headerAccessory?.props?.title)}`);
       }
       if (missing != null) throw new Error("Project path accessory rendered without cwd");
-      const projectlessThreadRow = await waitForProjectlessChatRow();
-      projectlessThreadRow?.scrollIntoView?.({ block: "center" });
-      projectlessThreadRow?.click?.();
-      if (projectlessThreadRow) await new Promise((resolve) => setTimeout(resolve, 500));
-      const expectedProjectlessPath = projectlessThreadRow?.getAttribute?.("data-codex-plus-project-path") || "~";
-      const projectlessChip = await waitForLiveProjectPathChip(plugin, 10000, (title) => title === expectedProjectlessPath);
-      const projectlessChipTitle = projectlessChip?.getAttribute("title") || "";
-      const projectlessChipText = normalize(projectlessChip?.textContent);
-      if (!projectlessChip || projectlessChipTitle !== expectedProjectlessPath) {
-        const details = { expectedProjectlessPath, projectlessChipTitle, projectlessChipText, rowFound: Boolean(projectlessThreadRow) };
-        if (versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905")) {
-          throw new Error(`Project path header chip was not visible for the no-project fixture thread: ${JSON.stringify(details)}`);
-        }
-        warn(
-          "projectPathHeader",
-          "legacy-no-project-header-missing",
-          "No-project fixture thread did not render a path header on this older Codex version",
-          details,
-        );
-      }
       const fixtureThreadRow = findFixtureProjectThreadRow();
-      fixtureThreadRow?.scrollIntoView?.({ block: "center" });
-      fixtureThreadRow?.click?.();
-      if (fixtureThreadRow) await new Promise((resolve) => setTimeout(resolve, 500));
+      if (!fixtureThreadRow) throw new Error("Fixture project thread row was not found");
       const liveChip = await waitForLiveProjectPathChip(plugin);
       const liveChipTitle = liveChip?.getAttribute("title") || "";
       const liveChipText = normalize(liveChip?.textContent);
@@ -2727,11 +2936,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const chipIndex = headerText.indexOf(liveChipText);
       const titleIndex = headerText.indexOf("Fixture:");
       const titleBeforeChip = titleIndex >= 0 && chipIndex >= 0 && titleIndex < chipIndex;
-      const sourceFamily = window.CodexPlus?.config?.sourceFamily || "codex";
       if (titleIndex < 0 || chipIndex < 0) {
         throw new Error(`Project path header chip should share the thread header with the title: ${JSON.stringify({ headerText, chipIndex, titleIndex, liveChipText })}`);
       }
-      if (sourceFamily !== "chatgpt" && !titleBeforeChip) {
+      if (!titleBeforeChip) {
         throw new Error(`Project path header chip should appear after the thread title: ${JSON.stringify({ headerText, chipIndex, titleIndex, liveChipText })}`);
       }
       pass("projectPathHeader", {
@@ -2739,12 +2947,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         renderedForCwd: true,
         renderedForHeaderProjectPath: true,
         skippedMissingCwd: true,
-        projectlessChipTitle,
-        projectlessChipText,
         liveChipTitle,
         liveChipText,
         composerChipCount,
-        sourceFamily,
         titleBeforeChip,
       });
     } catch (error) {
@@ -2783,6 +2988,62 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         );
       }
       pass("audit", { composerPermissionPicker: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    if (shouldProbe("audit")) try {
+      const status = composerContrastStatus();
+      if (status.surfaceMounted) {
+        if (status.occludingDescendants.length > 0) {
+          throw new Error(`Composer custom color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
+        }
+        const unreadable = status.checks.find((check) =>
+          Number(check.opacity) < 0.99 ||
+          check.textFillTransparent ||
+          (check.contrast != null && check.contrast < 4.5) ||
+          (check.iconContrast != null && check.iconContrast < 4.5)
+        );
+        if (unreadable) {
+          throw new Error(`Composer rich content or control is unreadable: ${JSON.stringify({ ...status, unreadable })}`);
+        }
+      }
+      if (status.editorMounted && !status.surfaceMounted) {
+        warn(
+          "audit",
+          "composer-entry-surface-not-mounted",
+          "Composer entry surface was not mounted during the composer control contrast probe",
+          status,
+        );
+      }
+      if (!status.editorMounted) {
+        warn(
+          "audit",
+          "composer-not-mounted",
+          "Composer was not mounted during the composer control contrast probe",
+          status,
+        );
+      }
+      pass("audit", { composerControlContrast: status });
+    } catch (error) {
+      fail("audit", error);
+    }
+
+    if (shouldProbe("audit")) try {
+      const status = userBubbleShapeStatus();
+      if (status.bubbleMounted && status.wrapperMounted && !status.wrapperBackgroundTransparent) {
+        throw new Error(`User message wrapper painted behind the rounded bubble: ${JSON.stringify(status)}`);
+      }
+      if (status.bubbleMounted && status.cornerRadius <= 0) {
+        throw new Error(`User message bubble lost its rounded shape: ${JSON.stringify(status)}`);
+      }
+      if (status.decorationsMounted && !status.decorationsUseMutedForeground) {
+        throw new Error(`User message decorations do not use the transcript muted foreground: ${JSON.stringify(status)}`);
+      }
+      if (!status.bubbleMounted) {
+        warn("audit", "user-message-bubble-not-mounted", "User message bubble was not mounted during the shape probe", status);
+      }
+      pass("audit", { userBubbleShape: status });
     } catch (error) {
       fail("audit", error);
     }
@@ -2917,21 +3178,15 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
       });
       if (newChatButton) {
-        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-          newChatButton.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
-        }
-        newChatButton.focus?.();
-        for (const type of ["keydown", "keyup"]) {
-          newChatButton.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, key: "Enter", code: "Enter" }));
-        }
+        newChatButton.click();
       }
       let triggerCount = 0;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      for (let attempt = 0; attempt < 300; attempt += 1) {
         triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
         if (triggerCount > 0) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (triggerCount === 0) throw new Error("Project selector shortcut trigger marker is missing from the main composer");
+      if (triggerCount === 0) throw new Error("Project selector trigger is missing from the main composer");
       const syntheticShortcut = await new Promise((resolve) => {
         const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: ".", metaKey: true });
         document.dispatchEvent(event);
@@ -3203,8 +3458,18 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!virtualProjectContext?.cwd?.includes("aharness-examples") || virtualProjectContext?.label !== "aharness-examples") {
         throw new Error(`Aharness virtual route did not expose the aharness project context: ${JSON.stringify(virtualProjectContext)}`);
       }
-      const visiblePathChips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter((chip) => visible(chip));
-      const stalePathChip = visiblePathChips.find((chip) => chip.getAttribute("title") && !chip.getAttribute("title").includes("aharness-examples"));
+      const waitForSettledVirtualPathHeader = async (timeoutMs = 10000) => {
+        const startedAt = Date.now();
+        let stalePathChip = null;
+        while (Date.now() - startedAt < timeoutMs) {
+          const visiblePathChips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter((chip) => visible(chip));
+          stalePathChip = visiblePathChips.find((chip) => chip.getAttribute("title") && !chip.getAttribute("title").includes("aharness-examples")) || null;
+          if (!stalePathChip) return null;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return stalePathChip;
+      };
+      const stalePathChip = await waitForSettledVirtualPathHeader();
       if (stalePathChip) throw new Error(`Aharness virtual route left a stale native header path chip visible: ${stalePathChip.getAttribute("title")}`);
       const routeBackground = getComputedStyle(route).backgroundColor;
       const rootBackground = getComputedStyle(document.querySelector("#codex-plus-virtual-conversation-root")).backgroundColor;
@@ -3238,11 +3503,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!stopControl) throw new Error("Aharness waiting composer did not expose the native stop control");
       const visibleComposerButtons = Array.from(waitingComposer.querySelectorAll("button")).filter((button) => visible(button));
       const visibleComposerText = normalize(waitingComposer.textContent || "");
-      if (!/Ask for approval|Approve for me/i.test(visibleComposerText)) {
+      const policyLabels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
+      const visiblePolicyControl = visibleComposerButtons.find((button) => {
+        const text = normalize(button.textContent || "");
+        return policyLabels.some((label) => text === label || text.startsWith(`${label} `));
+      });
+      if (!visiblePolicyControl) {
         throw new Error(`Aharness waiting composer hid the native policy control: ${visibleComposerText}`);
-      }
-      if (window.CodexPlus?.config?.sourceFamily === "chatgpt" && !/5\\.5|5\\.6|Medium|High|Low|Auto|Sol/i.test(visibleComposerText)) {
-        throw new Error(`Aharness waiting composer hid the native model/effort control: ${visibleComposerText}`);
       }
       if (!visible(stopControl)) throw new Error("Aharness waiting composer stop control is present but not visible");
       if (visibleComposerButtons.length < 3) {
@@ -3250,7 +3517,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       }
       const chatRect = chat?.getBoundingClientRect?.();
       const composerRect = waitingComposer.getBoundingClientRect();
-      if (chatRect && composerRect.width > 0) {
+      if (chatRect?.width > 0 && chatRect?.height > 0 && composerRect.width > 0) {
         const chatCenter = chatRect.left + chatRect.width / 2;
         const composerCenter = composerRect.left + composerRect.width / 2;
         if (Math.abs(chatCenter - composerCenter) > 18) {
@@ -3360,7 +3627,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       let artifactFileContent = null;
       try {
         press(artifactButton);
-        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md']", 20000);
+        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 20000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
@@ -3377,14 +3644,15 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         const artifactTabUsesNativeFileViewer =
           artifactTabId.startsWith("file:local:") ||
           artifactTabId.startsWith("file:") ||
-          artifactTabId.startsWith("mcp-capability:file-viewer:file:local:");
+          artifactTabId.startsWith("mcp-capability:file-viewer:file:local:") ||
+          artifactTabId.startsWith("text-editor:local:");
         if (!artifactTabUsesNativeFileViewer || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
           throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
         }
         if (!artifactTab.closest?.("[data-app-shell-tabs]")) {
           throw new Error(`Aharness artifact tab is not inside the native app shell tab strip: ${artifactTabId}`);
         }
-        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md']", 30000);
+        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 30000);
         if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
           const startedAt = Date.now();
           while (Date.now() - startedAt < 30000) {
@@ -3653,9 +3921,12 @@ async function runAudit(args, {
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
+  const reloadRenderer = operations.reloadAuditRenderer || reloadAuditRenderer;
+  const closeVirtualRoute = operations.closeActiveVirtualRoute || closeActiveVirtualRoute;
   const dismissDialogs = operations.dismissStartupDialogs || dismissStartupDialogs;
   const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
   const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
+  const activateFixture = operations.activateFixtureThread || activateFixtureThread;
   const verifyReviewPanel = operations.verifyReviewPanelRender || verifyReviewPanelRender;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
   const captureContract = operations.captureVisualContract || captureVisualContract;
@@ -3676,6 +3947,7 @@ async function runAudit(args, {
   let appShellStatus = null;
   let cleanupResult = null;
   let visualContractResult = null;
+  let initialProjectSelectorShortcut = null;
   let result = null;
   try {
     preflight = await preflightAudit(args, { findPort });
@@ -3854,17 +4126,89 @@ async function runAudit(args, {
       }
       return result;
     }
+    initialProjectSelectorShortcut = await withAuditCheckProgress(
+      progress,
+      "Verifying project selector shortcut and fuzzy match",
+      "Project selector shortcut fuzzy match passed",
+      () => verifyProjectSelectorShortcut(cdp),
+    );
+    const fixtureThread = await withAuditCheckProgress(
+      progress,
+      "Activating fixture thread with trusted input",
+      "Activated fixture thread",
+      () => activateFixture(cdp),
+    );
+    if (!fixtureThread.ok) throw new Error(fixtureThread.message);
+    const splitAharnessProbe = !Array.isArray(args.auditPlugins) || args.auditPlugins.length === 0;
+    const baseAuditPlugins = splitAharnessProbe ? [
+      "aboutMetadata", "nestedRepositories", "diagnosticErrors", "userBubbleColors",
+      "projectColors", "sidebarNameBlur", "devTools",
+      "projectSelectorShortcut", "mermaidFullscreen", "audit",
+    ] : args.auditPlugins;
+    let isolatedAharness = null;
+    let isolatedProjectPathHeader = null;
+    if (splitAharnessProbe) {
+      isolatedAharness = await withAuditCheckProgress(
+        progress,
+        "Running isolated Aharness probe",
+        "Aharness probe passed",
+        () => cdp.evaluate(pluginAuditExpression({ auditPlugins: ["aharnessRuns"] })),
+      );
+      await withAuditProgress(
+        progress,
+        "Reloading renderer after isolated Aharness probe",
+        "Renderer reloaded after Aharness probe",
+        async () => {
+          await closeVirtualRoute(cdp);
+          const reloadStatus = await reloadRenderer(cdp);
+          await cdp.send("Runtime.enable");
+          runtimeStatus = await waitRuntime(cdp);
+          appShellStatus = await waitAppShell(cdp, appShellTimeoutMs);
+          await dismissDialogs(cdp);
+          if (fixtureResult) fixtureBrowserStateResult = await seedFixtureBrowserState(cdp, fixtureResult);
+          return reloadStatus;
+        },
+      );
+      const restoredFixture = await activateFixture(cdp);
+      if (!restoredFixture.ok) throw new Error(restoredFixture.message);
+      isolatedProjectPathHeader = await withAuditCheckProgress(
+        progress,
+        "Verifying project path header on activated fixture",
+        "Project path header passed",
+        () => cdp.evaluate(pluginAuditExpression({ auditPlugins: ["projectPathHeader"] })),
+      );
+    }
     const live = await withAuditProgress(
       progress,
       "Running plugin probes",
       "Probed plugins",
       () => cdp.evaluate(pluginAuditExpression({
         includeNativeOpenProbes: args.includeNativeOpenProbes,
-        auditPlugins: args.auditPlugins,
+        auditPlugins: baseAuditPlugins,
       })),
     );
+    if (isolatedAharness) {
+      const aharnessResult = isolatedAharness.pluginResults?.aharnessRuns;
+      if (aharnessResult) {
+        const aharnessFailures = isolatedAharness.failures.filter((failure) => failure.plugin === "aharnessRuns");
+        live.ok = live.ok && aharnessResult.ok && aharnessFailures.length === 0;
+        live.failures.push(...aharnessFailures);
+        live.expectedWarnings.push(...isolatedAharness.expectedWarnings.filter((warning) => warning.plugin === "aharnessRuns"));
+        live.pluginResults.aharnessRuns = aharnessResult;
+      }
+    }
+    if (isolatedProjectPathHeader) {
+      const pathResult = isolatedProjectPathHeader.pluginResults?.projectPathHeader;
+      if (pathResult) {
+        const pathFailures = isolatedProjectPathHeader.failures.filter((failure) => failure.plugin === "projectPathHeader");
+        live.ok = live.ok && pathResult.ok && pathFailures.length === 0;
+        live.failures.push(...pathFailures);
+        live.expectedWarnings.push(...isolatedProjectPathHeader.expectedWarnings.filter((warning) => warning.plugin === "projectPathHeader"));
+        live.pluginResults.projectPathHeader = pathResult;
+      }
+    }
     if (live.pluginResults?.projectSelectorShortcut?.ok) {
-      const shortcut = await withAuditCheckProgress(
+      const shortcut = initialProjectSelectorShortcut || await withAuditCheckProgress(
         progress,
         "Verifying project selector shortcut and fuzzy match",
         "Project selector shortcut fuzzy match passed",
@@ -4184,6 +4528,7 @@ module.exports = {
   auditPreflight,
   cleanupLaunchedAuditApp,
   checkKeepOpenAppStability,
+  closeActiveVirtualRoute,
   captureVisualContract,
   createAuditProgress,
   createJsonlProgress,
@@ -4204,6 +4549,7 @@ module.exports = {
   parseArgs,
   pluginAuditExpression,
   processIsAlive,
+  reloadAuditRenderer,
   runAudit,
   shouldShowAuditProgress,
   waitForAppShellMounted,

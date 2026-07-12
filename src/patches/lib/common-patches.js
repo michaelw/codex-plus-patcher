@@ -47,6 +47,7 @@ function buildCodexPlusPatchSet(config) {
   const threadSidePanelCoreFile = files.threadSidePanelCore;
   const userMessageAttachmentsFile = files.userMessageAttachments;
   const composerFile = files.composer;
+  const composerPrimitiveFile = files.composerPrimitive;
   const runCommandInUserMessageAttachments = files.runCommandInUserMessageAttachments !== false;
   const localActiveWorkspaceRootDropdownFile = files.localActiveWorkspaceRootDropdown;
   const homeProjectDropdownFile = files.homeProjectDropdown;
@@ -74,7 +75,7 @@ function patchAboutDialog(text, context = {}) {
   const aboutContext = {
     patcherRepoUrl: context.patcherRepoUrl || "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: context.patcherGitSha || "unknown",
-    patchedAppDisplayName: context.patchedAppDisplayName || "Codex Plus",
+    patchedAppDisplayName: context.patchedAppDisplayName || appDisplayName,
     sourceAsarSha256: context.sourceAsarSha256 || "unknown",
     appliedPatches: context.appliedPatches || [],
   };
@@ -88,7 +89,7 @@ function patchAboutDialog(text, context = {}) {
     patched = replaceOnce(
       patched,
       "_=f.formatMessage({messageId:Q6,defaultMessage:$6}),v=l8(o),y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
-      "_=f.formatMessage({messageId:Q6,defaultMessage:$6}),v=CPXAbout.buildInfoLines,y=[...i.o()?[`Powered by Codex & OWL`]:[],...v].join(`\n`),",
+      "_=f.formatMessage({messageId:Q6,defaultMessage:$6}),v=l8(o),CPXAboutLines=CPXAbout.buildInfoLines,y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v,...CPXAboutLines].join(`\n`),",
       "about dialog build information anchor",
     );
     patched = replaceOnce(
@@ -140,7 +141,7 @@ function patchAboutDialog(text, context = {}) {
     patched = replaceOnce(
       patched,
       "g=d.formatMessage({messageId:P4,defaultMessage:F4}),_=G4(o),v=_.length===0?h:[h,``,..._].join(`\n`),",
-      "g=d.formatMessage({messageId:P4,defaultMessage:F4}),_=CPXAbout.buildInfoLines,v=_.length===0?h:[h,``,..._].join(`\n`),",
+      "g=d.formatMessage({messageId:P4,defaultMessage:F4}),_=G4(o),CPXAboutLines=CPXAbout.buildInfoLines,v=[h,..._,``,...CPXAboutLines].join(`\n`),",
       "about dialog build information anchor",
     );
     patched = replaceOnce(
@@ -192,7 +193,7 @@ function patchAboutDialog(text, context = {}) {
     patched = replaceOnce(
       patched,
       "g=d.formatMessage({messageId:L4,defaultMessage:R4}),_=J4(o),v=_.length===0?h:[h,``,..._].join(`\n`),",
-      "g=d.formatMessage({messageId:L4,defaultMessage:R4}),_=CPXAbout.buildInfoLines,v=_.length===0?h:[h,``,..._].join(`\n`),",
+      "g=d.formatMessage({messageId:L4,defaultMessage:R4}),_=J4(o),CPXAboutLines=CPXAbout.buildInfoLines,v=[h,..._,``,...CPXAboutLines].join(`\n`),",
       "about dialog build information anchor",
     );
     patched = replaceOnce(
@@ -244,7 +245,7 @@ function patchAboutDialog(text, context = {}) {
     patched = replaceOnce(
       patched,
       "g=d.formatMessage({messageId:I4,defaultMessage:L4}),_=q4(o),v=_.length===0?h:[h,``,..._].join(`\n`),",
-      "g=d.formatMessage({messageId:I4,defaultMessage:L4}),_=CPXAbout.buildInfoLines,v=_.length===0?h:[h,``,..._].join(`\n`),",
+      "g=d.formatMessage({messageId:I4,defaultMessage:L4}),_=q4(o),CPXAboutLines=CPXAbout.buildInfoLines,v=[h,..._,``,...CPXAboutLines].join(`\n`),",
       "about dialog build information anchor",
     );
     patched = replaceOnce(
@@ -295,7 +296,7 @@ function patchAboutDialog(text, context = {}) {
   patched = replaceOnce(
     patched,
     "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),v=_.length===0?h:[h,``,..._].join(`\n`),",
-    "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=CPXAbout.buildInfoLines,v=_.length===0?h:[h,``,..._].join(`\n`),",
+    "g=d.formatMessage({messageId:A0,defaultMessage:j0}),_=V0(o),CPXAboutLines=CPXAbout.buildInfoLines,v=[h,..._,``,...CPXAboutLines].join(`\n`),",
     "about dialog build information anchor",
   );
   patched = replaceOnce(
@@ -1555,7 +1556,45 @@ function patchAppMainSidebarBlur(text) {
 
 function patchHeader(text) {
   if (text.includes("function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,")) {
-    return text;
+    let patched = replaceOnce(
+      text,
+      "function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,",
+      `${threadHeaderHook()}function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,`,
+      "41301 thread shell header accessory helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let c;return t[2]!==s||t[3]!==r?(c=(0,or.jsx)(K.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,or.jsx)(qn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],c}",
+      "let s=o,CPX_headerContext={cwd:i.cwd,hostId:r?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:or.jsx,jsxs:or.jsxs}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,or.jsx)(K.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return CPX_headerAction;let c;return t[2]!==s||t[3]!==r?(c=(0,or.jsx)(K.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,or.jsx)(qn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],CPX_headerAction==null?c:(0,or.jsxs)(or.Fragment,{children:[CPX_headerAction,c]})}",
+      "41301 thread shell header accessory mount anchor",
+    );
+    return patched;
+  }
+  if (text.includes("function Yn(e){let t=(0,er.c)(66),")) {
+    let patched = replaceOnce(
+      text,
+      "function Yn(e){let t=(0,er.c)(66),",
+      `${threadHeaderHook()}function Yn(e){let t=(0,er.c)(66),`,
+      "41301 thread header accessory helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o}=e,",
+      "{className:n,desktopDeepLinkConversationId:r,title:i,onBack:a,trailing:o,cwd:CPX_headerCwd}=e,",
+      "41301 thread header cwd prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let S;t[35]!==c||t[36]!==g||t[37]!==i?",
+      "let CPX_headerContext={cwd:CPX_headerCwd,header:{surface:`header`,titleText:typeof i==`string`?i:null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:$.jsx,jsxs:$.jsxs}});let S;t[35]!==c||t[36]!==g||t[37]!==i?",
+      "41301 thread header accessory context anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:(0,$.jsx)(`span`,{className:`truncate`,children:i})})]}):(0,$.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,$.jsx)(Qn,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[35]=c,t[36]=g,t[37]=i,t[38]=S):S=t[38];",
+      "children:(0,$.jsx)(`span`,{className:`truncate`,children:i})}),CPX_headerAccessories]}):(0,$.jsx)(`span`,{className:`text-token-description-foreground`,children:(0,$.jsx)(Qn,{mergedTasks:g,onBack:c,showBackButton:!0})})}),t[35]=c,t[36]=g,t[37]=i,t[38]=S):S=t[38];",
+      "41301 thread header title accessory render anchor",
+    );
   }
   if (
     text.includes("function Jn(e){let t=(0,$n.c)(66),") &&
@@ -1743,6 +1782,14 @@ function patchThreadPageHeader(text) {
 }
 
 function patchLocalConversationPageHeader(text) {
+  if (text.includes("function QS(e){let t=(0,oC.c)(29),")) {
+    return replaceOnce(
+      text,
+      "(0,$.jsx)(Of,{desktopDeepLinkConversationId:n,onBack:g,title:_,trailing:v})",
+      "(0,$.jsx)(Of,{desktopDeepLinkConversationId:n,onBack:g,title:_,trailing:v,cwd:d??f})",
+      "41301 local conversation header cwd bridge anchor",
+    );
+  }
   if (text.includes("function xl(e){let t=(0,wl.c)(51),")) {
     let patched = replaceOnce(
       text,
@@ -1758,6 +1805,20 @@ function patchLocalConversationPageHeader(text) {
     );
   }
   if (text.includes("function pi(e){let t=(0,W.c)(32),")) {
+    if (text.includes("projectIcon:s,projectHoverCardContent:c,projectName:l,title:u,titleSuffix:d,cwd:f,canPin:m,hideForkActions:h")) {
+      let patched = replaceOnce(
+        text,
+        "function pi(e){let t=(0,W.c)(32),",
+        `${threadHeaderHook()}function pi(e){let t=(0,W.c)(32),`,
+        "81905 local conversation header helper insertion anchor",
+      );
+      return replaceOnce(
+        patched,
+        "let k;t[26]===Symbol.for(`react.memo_cache_sentinel`)?(k=null,t[26]=k):k=t[26];",
+        "let CPX_headerContext={cwd:f,hostId:null,header:{surface:`local-conversation`,titleText:typeof u==`string`?u:null,projectName:l??null}},k=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:G.jsx,jsxs:G.jsxs,Tooltip:re}});",
+        "81905 local conversation header accessory render anchor",
+      );
+    }
     if (text.includes("projectIcon:a,projectHoverCardContent:o,projectName:s,title:c,titleSuffix:u,cwd:d,canPin:f,hideForkActions:p")) {
       let patched = replaceOnce(
         text,
@@ -2347,12 +2408,7 @@ function patchComposerBubbleColors(text) {
       `${messageComposerHook()}function WX(e){let t=(0,GX.c)(107),`,
       "composer user bubble helper insertion anchor",
     );
-    return replaceOnce(
-      patched,
-      "Ye=(0,qX.jsxs)(`div`,{className:Le,\"data-codex-composer-root\":``,children:[ze,Ve,Je]})",
-      "Ye=(0,qX.jsxs)(`div`,{className:Le,\"data-codex-composer-root\":``,...CPXSurfaceProps({}),children:[ze,Ve,Je]})",
-      "composer user entry marker render anchor",
-    );
+    return patched;
   }
   if (text.includes("function Fv(e){let t=(0,Yv.c)(18),")) {
     let patched = replaceOnce(
@@ -2572,7 +2628,33 @@ function patchComposerBubbleColors(text) {
   return patched;
 }
 
+function patchComposerPrimitiveSurface(text) {
+  if (!text.includes("function b(e){let t=(0,P.c)(18),{children:n,className:r,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,")) {
+    return text;
+  }
+  let patched = replaceOnce(
+    text,
+    "function b(e){let t=(0,P.c)(18),{children:n,className:r,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,",
+    `${messageComposerHook()}function b(e){let t=(0,P.c)(18),{children:n,className:r,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+    "41301 native composer primitive surface props anchor",
+  );
+  return replaceOnce(
+    patched,
+    "A=(0,F.jsx)(i.div,{inert:s,className:k,onDragEnter:f,onDragOver:m,onDragLeave:p,onDrop:h,children:n}),",
+    "A=(0,F.jsx)(i.div,{inert:s,...CPX_resolvedSurfaceProps,className:k,onDragEnter:f,onDragOver:m,onDragLeave:p,onDrop:h,children:n}),",
+    "41301 native composer primitive surface render anchor",
+  );
+}
+
 function patchComposerProjectColors(text) {
+  if (text.includes("function ZBe({aboveComposerHeaderContent:e,activeCollaborationMode:t,") && text.includes("bo=(e,t=xr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;bc({path:n,line:r,column:r==null?void 0:1,cwd:vn,hostId:t,openFile:Zt.mutate})},xo=e=>")) {
+    return replaceOnce(
+      text,
+      "bo=(e,t=xr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;bc({path:n,line:r,column:r==null?void 0:1,cwd:vn,hostId:t,openFile:Zt.mutate})},xo=e=>",
+      "CPXSP=globalThis.CodexPlusHost?.adapters?.threadSidePanel,CPXOpenFile=CPXSP&&(CPXSP.openFile=(e,t={})=>bc({scope:N,path:e,cwd:t.workspaceRoot??vn,hostConfig:Sr,hostId:t.hostId??xr,openFile:Zt.mutate,openInSidePanel:!0})),bo=(e,t=xr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;bc({path:n,line:r,column:r==null?void 0:1,cwd:vn,hostId:t,openFile:Zt.mutate})},xo=e=>",
+      "41301 composer-native file opener adapter anchor",
+    );
+  }
   if (
     text.includes("function dS(e){let t=(0,OS.c)(228),") &&
     text.includes("(0,AS.jsx)(Qv,{utilityBarVariant:Vt,layout:dt,radiusVariant:g,surfaceVariant:_,children:Wt})")
@@ -3501,6 +3583,10 @@ function patchChatGptStartupAnnouncements(text) {
         [composerFile, patchComposerProjectColors],
       ],
     },
+    ...(composerPrimitiveFile ? [{
+      id: "native-composer-surface",
+      fileTransforms: [[composerPrimitiveFile, patchComposerPrimitiveSurface]],
+    }] : []),
     ...(headerFile ? [{
       id: "project-path-header",
       fileTransforms: [
@@ -3560,6 +3646,7 @@ return makePatchSet({
     codexVersion: config.codexVersion,
     bundleVersion: config.bundleVersion,
     asarSha256: config.asarSha256,
+    sourceFamily,
     runtimeConfig: {
       ...(config.runtimeConfig || {}),
       bundleVersion: config.bundleVersion,

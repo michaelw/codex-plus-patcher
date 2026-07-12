@@ -367,6 +367,18 @@ function removeIfExists(target, { fsImpl = fs } = {}) {
   fsImpl.rmSync(target, { recursive: true, force: true });
 }
 
+function existingSourceApp(versionDir, { fsImpl = fs } = {}) {
+  for (const appName of ["ChatGPT.app", "Codex.app"]) {
+    const candidate = path.join(versionDir, appName);
+    if (fsImpl.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function sourceAppName(identity) {
+  return identity?.sourceFamily === "chatgpt" ? "ChatGPT.app" : "Codex.app";
+}
+
 async function intakeRelease(args, operations = {}) {
   const fsImpl = operations.fs || fs;
   const cwd = operations.cwd || process.cwd();
@@ -379,13 +391,12 @@ async function intakeRelease(args, operations = {}) {
 
   const sourcesDir = args.sourcesDir || resolveDefaultSourcesDir({ cwd, execFileSync: operations.execFileSync });
   const versionDir = path.join(sourcesDir, version);
-  const destinationAppName = args.asset?.startsWith("ChatGPT-") ? "ChatGPT.app" : "Codex.app";
-  const destinationApp = path.join(versionDir, destinationAppName);
-  if (fsImpl.existsSync(destinationApp) && !args.force) {
-    const error = new Error(`${destinationApp} already exists; pass --force to replace it`);
+  const existingApp = existingSourceApp(versionDir, { fsImpl });
+  if (existingApp && !args.force) {
+    const error = new Error(`${existingApp} already exists; pass --force to replace it`);
     error.code = "SOURCE_EXISTS";
     error.version = version;
-    error.sourceApp = destinationApp;
+    error.sourceApp = existingApp;
     throw error;
   }
 
@@ -409,6 +420,7 @@ async function intakeRelease(args, operations = {}) {
     if (identity.version !== version) {
       throw new Error(`Extracted source app version ${identity.version} does not match release ${version}`);
     }
+    const destinationApp = path.join(versionDir, sourceAppName(identity));
 
     const sourceAsarSha256 = identity.asarSha256;
     const patchIdentity = assertPatchIdentity(identity, operations.patchSets || patchSets);
@@ -528,6 +540,7 @@ module.exports = {
   buildMetadata,
   createDownloadProgress,
   downloadFile,
+  existingSourceApp,
   fetchJson,
   fetchText,
   findCodexApps,
@@ -549,5 +562,6 @@ module.exports = {
   resolveDefaultSourcesDir,
   selectAsset,
   selectChecksumAsset,
+  sourceAppName,
   verifyFileSha256,
 };

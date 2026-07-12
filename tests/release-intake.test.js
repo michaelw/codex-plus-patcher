@@ -208,6 +208,30 @@ test("release intake refuses to overwrite an existing source app without force",
   });
 });
 
+test("release intake recognizes an existing ChatGPT app from a legacy Codex-named asset", async () => {
+  await withTempDir(async (tmpDir) => {
+    const existingApp = path.join(tmpDir, "26.707.31428", "ChatGPT.app");
+    fs.mkdirSync(existingApp, { recursive: true });
+
+    await assert.rejects(
+      intakeRelease(
+        {
+          asset: null,
+          force: false,
+          json: false,
+          repo: "Wangnov/codex-app-mirror",
+          sourcesDir: tmpDir,
+          tag: "latest",
+        },
+        {
+          release: createRelease({ tag: "codex-app-26.707.31428" }),
+        },
+      ),
+      (error) => error.code === "SOURCE_EXISTS" && error.sourceApp === existingApp,
+    );
+  });
+});
+
 test("release intake rejects a bad checksum", async () => {
   await withTempDir(async (tmpDir) => {
     const release = createRelease();
@@ -284,6 +308,46 @@ test("release intake writes metadata and allows unsupported new versions", async
     assert.equal(metadata.CFBundleVersion, "4559");
     assert.equal(metadata.sourceAsarSha256, "source-sha");
     assert.equal(metadata.intakeTimestamp, "2026-06-29T12:00:00.000Z");
+  });
+});
+
+test("release intake names a legacy-packaged ChatGPT bundle from its plist identity", async () => {
+  await withTempDir(async (tmpDir) => {
+    const release = createRelease({ tag: "codex-app-26.707.51957" });
+    const zipContent = Buffer.from("chatgpt-zip-content");
+    const zipSha = sha256(zipContent);
+
+    const result = await intakeRelease(
+      {
+        asset: null,
+        force: false,
+        json: false,
+        repo: "Wangnov/codex-app-mirror",
+        sourcesDir: tmpDir,
+        tag: "latest",
+      },
+      {
+        extractZip: (_zip, destination) => {
+          fs.mkdirSync(path.join(destination, "Codex.app"), { recursive: true });
+        },
+        fetchImpl: createFetch({
+          "https://example.test/26.707.51957/SHA256SUMS-macos.txt": response(`${zipSha}  ${hostTestAssetName("26.707.51957")}\n`),
+          "https://example.test/26.707.51957/Codex.zip": response(zipContent),
+        }),
+        getAppIdentity: () => ({
+          asarSha256: "chatgpt-source-sha",
+          bundleVersion: "5200",
+          sourceFamily: "chatgpt",
+          version: "26.707.51957",
+        }),
+        patchSets: [],
+        release,
+      },
+    );
+
+    assert.equal(result.sourceApp, path.join(tmpDir, "26.707.51957", "ChatGPT.app"));
+    assert.equal(fs.statSync(result.sourceApp).isDirectory(), true);
+    assert.equal(fs.existsSync(path.join(tmpDir, "26.707.51957", "Codex.app")), false);
   });
 });
 

@@ -1546,7 +1546,7 @@ test("aharness artifact UI uses thread side panel API instead of a plugin-owned 
   assert.match(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openFile/);
   assert.doesNotMatch(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openTab/);
   assert.match(threadSidePanelApi, /nativeFileOpener/);
-  assert.match(threadSidePanelApi, /waitForNativeFileOpener\(timeoutMs = 8000\)/);
+  assert.match(threadSidePanelApi, /waitForNativeFileOpener\(timeoutMs = 30000\)/);
   assert.doesNotMatch(threadSidePanelApi, /dispatchNativeFilesLauncher/);
   assert.match(threadSidePanelApi, /workspaceRoot: cwd \|\| undefined/);
   assert.match(threadSidePanelApi, /resetTabState: true/);
@@ -1760,8 +1760,8 @@ test("thread side panel API opens files through the upstream file tab adapter", 
   let nativeOpen = null;
   window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
     nativeOpen = { filePath, options };
-    nativeTab.setAttribute("data-tab-id", `mcp-capability:file-viewer:file:local:${filePath}`);
-    tabpanel.setAttribute("data-tab-id", `mcp-capability:file-viewer:file:local:${filePath}`);
+    nativeTab.setAttribute("data-tab-id", `text-editor:local:${filePath}`);
+    tabpanel.setAttribute("data-tab-id", `text-editor:local:${filePath}`);
     tabpanel.textContent = "# Result";
     return { viewer: "mcpCapabilityFileViewer", status: "opened", placement: "right" };
   };
