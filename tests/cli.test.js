@@ -2122,26 +2122,9 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   assert.match(formatLaunchDevResult(result), /com\.openai\.codex-plus\.dev/);
 });
 
-test("launch-dev uses ChatGPT executable and dev identity for ChatGPT targets", () => {
+test("launch-dev falls back to the ChatGPT executable and dev identity for ChatGPT targets", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-chatgpt-launch-dev-"));
   const targetApp = path.join(tmpDir, "ChatGPT Plus.app");
-  const plistPath = path.join(targetApp, "Contents", "Info.plist");
-  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
-  fs.writeFileSync(plistPath, [
-    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
-    "<plist version=\"1.0\">",
-    "<dict>",
-    "<key>CFBundleDisplayName</key>",
-    "<string>ChatGPT Plus</string>",
-    "<key>CFBundleIdentifier</key>",
-    "<string>com.openai.chatgpt-plus</string>",
-    "<key>CFBundleExecutable</key>",
-    "<string>ChatGPT</string>",
-    "</dict>",
-    "</plist>",
-    "",
-  ].join("\n"));
 
   const result = buildLaunchDev({
     targetApp,
