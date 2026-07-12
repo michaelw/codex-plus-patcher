@@ -258,7 +258,7 @@ function buildLaunchDev({
   try {
     appBinary = appExecutablePath(targetApp);
   } catch {
-    appBinary = path.join(path.resolve(targetApp), "Contents/MacOS/Codex");
+    appBinary = path.join(path.resolve(targetApp), "Contents/MacOS", sourceFamilyConfig(sourceFamily).executable);
   }
   const resolvedDevHome = path.resolve(devHome);
   const resolvedElectronUserDataPath = path.resolve(electronUserDataPath);

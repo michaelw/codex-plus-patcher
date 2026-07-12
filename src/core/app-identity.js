@@ -13,12 +13,14 @@ const SOURCE_FAMILIES = {
     displayName: "ChatGPT Plus",
     bundleIdentifier: "com.openai.chatgpt-plus",
     defaultTargetName: "ChatGPT Plus.app",
+    executable: "ChatGPT",
   },
   codex: {
     appName: "Codex.app",
     displayName: "Codex Plus",
     bundleIdentifier: "com.openai.codex-plus",
     defaultTargetName: "Codex Plus.app",
+    executable: "Codex",
   },
 };
 
