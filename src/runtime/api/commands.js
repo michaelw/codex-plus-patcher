@@ -54,14 +54,14 @@
           title: command.title,
           description: command.description,
           onSelect() {
-            run(command.id);
+            globalObject.CodexPlusHost.adapters.commands.dispatch(command.id);
             closeMenu?.();
             close?.();
           },
         },
         command.id,
       );
-    deps?.register?.(command.id, () => run(command.id), {
+    deps?.register?.(command.id, () => globalObject.CodexPlusHost.adapters.commands.dispatch(command.id), {
       menuItem: { id: command.id, groupKey: group, render },
     });
     return null;

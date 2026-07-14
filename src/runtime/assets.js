@@ -4,6 +4,7 @@ const path = require("node:path");
 const runtimeRoot = __dirname;
 const browserRuntimeFiles = [
   "api/index.js",
+  "api/hostAdapters.js",
   "api/diagnostics.js",
   "api/modules.js",
   "api/settings.js",
@@ -25,11 +26,14 @@ const browserRuntimeFiles = [
   "api/chatRows.js",
   "api/threadSidePanel.js",
   "api/sidePanel.js",
+  "host/threadSidePanel.js",
+  "host/coreAdapters.js",
   "host/review.js",
   "host/sidebar.js",
   "host/messageComposer.js",
   "host/projectSelector.js",
   "host/threadHeader.js",
+  "host/preflight.js",
   "vendor/fzf.umd.js",
   "plugins/aboutMetadata.js",
   "plugins/nestedRepositories.js",

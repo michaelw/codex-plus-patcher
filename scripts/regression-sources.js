@@ -244,7 +244,7 @@ function cleanRegressionDir(target, regressionDir, { fsImpl = fs } = {}) {
   if (resolvedTarget === resolvedRegressionDir || !resolvedTarget.startsWith(`${resolvedRegressionDir}${path.sep}`)) {
     throw new Error(`Refusing to clean outside regression directory: ${target}`);
   }
-  fsImpl.rmSync(resolvedTarget, { recursive: true, force: true });
+  fsImpl.rmSync(resolvedTarget, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   return true;
 }
 

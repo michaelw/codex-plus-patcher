@@ -388,6 +388,23 @@ test("regression sources auto-cleans generated version output", async () => {
   });
 });
 
+test("regression source cleanup retries transient non-empty directories", () => {
+  const regressionDir = path.join(path.sep, "tmp", "regression", "sources");
+  const target = path.join(regressionDir, "26.623.31921");
+  const calls = [];
+  cleanRegressionDir(target, regressionDir, {
+    fsImpl: {
+      rmSync(actualTarget, options) {
+        calls.push([actualTarget, options]);
+      },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], target);
+  assert.deepEqual(calls[0][1], { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+});
+
 test("regression sources jsonl progress carries source identity", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "work", "sources");

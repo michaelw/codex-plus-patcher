@@ -20,6 +20,7 @@ module.exports = buildCodexPlusPatchSet({
     sidebarProjectHoverCardSourceRows: "webview/assets/app-initial~app-main~remote-conversation-page~projects-index-page-By2_tGIM.js",
     threadSidePanelTabs: "webview/assets/app-initial~app-main~remote-conversation-page~onboarding-page~hotkey-window-thread-page~thr~bsekxs5f-B7kqEFqX.js",
     threadSidePanelCore: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~hgx54pg3-D4ItPAoC.js",
+    threadHeaderActionShell: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~new-thread-panel-page~o~hgx54pg3-D4ItPAoC.js",
     userMessageAttachments: "webview/assets/app-initial~app-main~worktree-init-v2-page~remote-conversation-page~onboarding-page~hotkey-~ke3yc5wu-CfZV4-S3.js",
     composer: "webview/assets/app-initial~app-main~remote-conversation-page~new-thread-panel-page~appgen-library-page~hot~djo67r4n-D92FAoMo.js",
     localActiveWorkspaceRootDropdown: "webview/assets/local-remote-dropdown-Nv0QS2Xp.js",

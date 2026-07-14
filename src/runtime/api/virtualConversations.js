@@ -297,7 +297,7 @@
     }
     updateVirtualRouteSurface(null);
     clearRowCloseListeners();
-    globalObject.CodexPlus?.ui?.routeContext?.clear?.(closingRouteId);
+    globalObject.CodexPlusHost.adapters.context.clear(closingRouteId);
     activeRouteId = null;
     activeProvider = null;
     const location = globalObject.location;

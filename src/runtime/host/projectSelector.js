@@ -1,20 +1,13 @@
 (function () {
   const globalObject = typeof window !== "undefined" ? window : globalThis;
+  const openHandlers = new Map();
 
   function fuzzyFilter(projects, query) {
-    const needle = String(query ?? "").trim().toLowerCase();
-    return globalObject.CodexPlus?.ui?.projectSelector?.fuzzyFilter?.(projects, query) ??
-      (needle
-        ? projects.filter((project) =>
-            [project.label, project.repositoryData?.rootFolder ?? "", project.path ?? "", project.hostDisplayName ?? ""].some((value) =>
-              String(value ?? "").toLowerCase().includes(needle),
-            ),
-          )
-        : projects);
+    return globalObject.CodexPlus.ui.projectSelector.fuzzyFilter(projects, query);
   }
 
   function fuzzyHighlight(text, query, jsx) {
-    return globalObject.CodexPlus?.ui?.projectSelector?.fuzzyHighlight?.({ text, query, jsx }) ?? text;
+    return globalObject.CodexPlus.ui.projectSelector.fuzzyHighlight({ text, query, jsx });
   }
 
   function closeDropdown(event) {
@@ -41,23 +34,41 @@
 
   function trigger(element, variant, React) {
     const cloneElement = typeof React?.cloneElement === "function" ? React.cloneElement : React?.default?.cloneElement;
-    return typeof cloneElement === "function" &&
-      element != null &&
-      typeof element === "object" &&
-      "props" in element &&
-      "type" in element
-      ? cloneElement(element, {
-          ...element.props,
-          "data-codex-plus-project-selector-trigger": true,
-          "data-codex-plus-project-selector-variant": variant,
-        })
-      : element;
+    if (typeof cloneElement !== "function") throw new Error("Project selector adapter requires React.cloneElement");
+    if (element == null || typeof element !== "object" || !("props" in element) || !("type" in element)) {
+      throw new Error("Project selector adapter requires a React element trigger");
+    }
+    return cloneElement(element, {
+      ...element.props,
+      "data-codex-plus-project-selector-trigger": true,
+      "data-codex-plus-project-selector-variant": variant,
+    });
+  }
+
+  function setOpenHandler(variant, handler) {
+    if (typeof handler === "function") openHandlers.set(variant || "default", handler);
+    if (globalObject.CodexPlus?.ui?.projectSelector) globalObject.CodexPlus.ui.projectSelector.open = open;
+  }
+
+  function open(variant = "default") {
+    let handler = openHandlers.get(variant);
+    if (handler == null && variant === "default") {
+      for (const candidate of ["home", "hero"]) {
+        handler = openHandlers.get(candidate);
+        if (handler != null) break;
+      }
+      if (handler == null) handler = openHandlers.values().next().value;
+    }
+    if (typeof handler !== "function") throw new Error(`Project selector host did not bind the ${variant} trigger`);
+    return handler() !== false;
   }
 
   globalObject.CodexPlusHost.adapters.projectSelector = {
     acceptFirst,
     fuzzyFilter,
     fuzzyHighlight,
+    open,
+    setOpenHandler,
     trigger,
   };
 })();

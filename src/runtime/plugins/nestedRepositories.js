@@ -13,29 +13,6 @@
     return JSON.stringify([hostId, conversationId, cwd]);
   }
 
-  function fallbackCwdFromProjectHeader() {
-    const virtualContext = activeVirtualProjectContext();
-    if (virtualContext?.cwd) return virtualContext.cwd;
-    const projectButton = document.querySelector("button[aria-label^='Project:']");
-    const label = projectButton?.getAttribute("aria-label")?.replace(/^Project:\s*/, "").trim();
-    if (!label) return null;
-    const rows = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"));
-    const row = rows.find((element) => element.getAttribute("data-app-action-sidebar-project-label") === label);
-    return row?.getAttribute("data-app-action-sidebar-project-id") || null;
-  }
-
-  function watchFallbackCwd(setCwd) {
-    const update = () => setCwd(fallbackCwdFromProjectHeader());
-    if (!document.body) {
-      window.addEventListener("DOMContentLoaded", update, { once: true });
-      return () => window.removeEventListener("DOMContentLoaded", update);
-    }
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
-    return () => observer.disconnect();
-  }
-
   function atomValue(value) {
     return Array.isArray(value) ? value[0] : value;
   }
@@ -48,19 +25,6 @@
       display_name: hostConfig.display_name ?? null,
       name: hostConfig.name ?? null,
     };
-  }
-
-  function hasPathValue(value, pathValue) {
-    if (value == null) return false;
-    return (typeof pathValue === "function" ? pathValue(value) : value) != null;
-  }
-
-  function activeVirtualProjectContext() {
-    const route =
-      CodexPlus?.ui?.virtualConversations?.activeRouteId?.() ||
-      decodeURIComponent(String(window.location?.hash || "").replace(/^#/, ""));
-    const context = CodexPlus?.ui?.projectContext?.active?.();
-    return context?.cwd ? { cwd: String(context.cwd), label: context.label || "", route: String(route) } : null;
   }
 
   function workerRequest(workerId, method, params, signal) {
@@ -163,10 +127,10 @@
     });
   }
 
-  function UpstreamReviewFallback(_, deps) {
+  function ReviewDiagnostic({ message }, deps) {
     return deps.jsx("div", {
       className: "mx-3 mb-3 rounded-md border border-token-border bg-token-main-surface-secondary px-3 py-2 text-xs text-token-description-foreground",
-      children: "Unstaged",
+      children: message,
     });
   }
 
@@ -177,30 +141,22 @@
     });
   }
 
-  function OptionalReviewToolbar({ children }, deps) {
-    const { jsx, React } = deps;
-    if (React?.Component == null) return children;
-    class OptionalReviewToolbarBoundary extends React.Component {
-      constructor(props) {
-        super(props);
-        this.state = { failed: false };
-      }
-
-      static getDerivedStateFromError() {
-        return { failed: true };
-      }
-
-      render() {
-        return this.state.failed ? null : this.props.children;
-      }
-    }
-    return jsx(OptionalReviewToolbarBoundary, { children });
+  function ControlledDiffCard({ DiffCard, deps, props }) {
+    const [open, setOpen] = deps.React.useState(false);
+    return deps.createElement(DiffCard, {
+      ...props,
+      open,
+      onOpenChange: setOpen,
+    });
   }
 
   function RepoDiffBody({ cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading }, deps) {
     const { jsx, createElement, parseDiff, DiffCard, pathValue } = deps;
-    if (error != null || isLoading || diffText == null) return PlainDiff({ text: statusText }, deps);
-    if (typeof parseDiff !== "function" || typeof DiffCard !== "function") return PlainDiff({ text: diffText }, deps);
+    if (error != null) return PlainDiff({ text: `Unable to load diff: ${statusText}` }, deps);
+    if (isLoading || diffText == null) return ReviewDiagnostic({ message: statusText }, deps);
+    if (typeof parseDiff !== "function" || typeof DiffCard !== "function") {
+      throw new Error("Review adapter did not supply parseDiff and DiffCard");
+    }
     let parsed;
     try {
       parsed = parseDiff(diffText);
@@ -208,29 +164,32 @@
       const message = parseError instanceof Error ? parseError.message : String(parseError);
       return PlainDiff({ text: `Unable to parse diff: ${message}\n\n${diffText}` }, deps);
     }
-    if (parsed == null || parsed.length === 0) return PlainDiff({ text: statusText }, deps);
+    if (parsed == null || parsed.length === 0) return ReviewDiagnostic({ message: statusText }, deps);
     return jsx("div", {
       className: "mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2",
       children: parsed.map((diff, index) =>
-        createElement(DiffCard, {
+        createElement(ControlledDiffCard, {
           key: `${diff.metadata?.newPath ?? diff.metadata?.oldPath ?? index}:${index}`,
-          containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
-          conversationId: conversationId ?? undefined,
-          cwd: pathValue(cwd) ?? cwd,
-          defaultOpen: true,
-          diff,
-          diffViewWrap: true,
-          expandScope: "review",
-          fullContentNextFallbackToDisk: true,
-          headerVariant: "full-review",
-          hostConfig,
-          hunkActionsVariant: "unstaged",
-          hunkSeparators: diff.metadata?.additionLines ? "line-info" : "metadata",
-          roundedCorners: false,
-          showFileActions: false,
-          showHunkActions: false,
-          stickyHeader: false,
-          viewType: diffMode ?? "unified",
+          DiffCard,
+          deps,
+          props: {
+            containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
+            conversationId: conversationId ?? undefined,
+            cwd: pathValue(cwd) ?? cwd,
+            diff,
+            diffViewWrap: true,
+            expandScope: "review",
+            fullContentNextFallbackToDisk: true,
+            headerVariant: "full-review",
+            hostConfig,
+            hunkActionsVariant: "unstaged",
+            hunkSeparators: diff.metadata?.additionLines ? "line-info" : "metadata",
+            roundedCorners: false,
+            showFileActions: false,
+            showHunkActions: false,
+            stickyHeader: false,
+            viewType: diffMode ?? "unified",
+          },
         }),
       ),
     });
@@ -291,12 +250,12 @@
       if (!open) return undefined;
       const controller = loadBranches();
       return () => controller.abort();
-    }, [open, repo.root, hostConfig.id, branches.length]);
+    }, [open, repo.root, hostConfig?.id, branches.length]);
 
     React.useEffect(() => {
       const controller = loadBranches({ force: true });
       return () => controller.abort();
-    }, [repo.root, hostConfig.id]);
+    }, [repo.root, hostConfig?.id]);
 
     React.useEffect(() => {
       if (!open) return undefined;
@@ -329,7 +288,7 @@
         clearTimeout(timer);
         controller.abort();
       };
-    }, [open, query, repo.root, hostConfig.id]);
+    }, [open, query, repo.root, hostConfig?.id]);
 
     const title = selected || "Unstaged";
     const currentBranches = currentBranch ? [{ name: currentBranch }] : [];
@@ -458,7 +417,7 @@
   }
 
   function RepoPatchGroup({ repo, hostConfig, hostId, conversationId, diffMode, baseBranch, setBaseBranch, collapsed, setCollapsed, deps }) {
-    const { jsx, jsxs, React, ReviewToolbar, gitRequest, pathValue } = deps;
+    const { jsx, jsxs, React, gitRequest, pathValue } = deps;
     const [diffText, setDiffText] = React.useState(null);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState(null);
@@ -508,10 +467,11 @@
         cancelled = true;
         controller.abort();
       };
-    }, [repo.cwd, repo.root, hostConfig.id, baseBranch]);
+    }, [repo.cwd, repo.root, hostConfig?.id, baseBranch]);
 
     const statusText = error ?? (loading ? "Loading diff..." : diffText == null ? "No changes" : diffText);
     return jsxs("section", {
+      "data-codex-plus-repo-patch-group": repo.path ?? repo.id,
       className: "relative z-0 mt-3 clear-both border-b border-token-border-default",
       children: [
         jsxs("div", {
@@ -531,18 +491,6 @@
               ],
             }),
             jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps }),
-            ReviewToolbar
-              ? OptionalReviewToolbar({
-                  children: jsx(ReviewToolbar, {
-                    conversationId,
-                    cwd: repo.cwd,
-                    hostId,
-                    codexWorktree: false,
-                    surface: "review-toolbar",
-                    reviewToolbarCompact: true,
-                  }, repo.id),
-                }, deps)
-              : null,
           ],
         }),
         collapsed ? null : RepoDiffBody({ cwd: repo.cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading: loading }, deps),
@@ -551,25 +499,18 @@
   }
 
   function ReviewMux(props, deps) {
-    const { jsx, jsxs, React, useStore, useAtom, routeAtom, cwdAtom, hostIdAtom, hostConfigAtom, conversationIdAtom, gitRequest, pathValue, DefaultReview } = deps;
-    const routeStore = useStore(routeAtom);
-    const atomCwd = atomValue(useAtom(cwdAtom));
-    const virtualContext = activeVirtualProjectContext();
-    const [fallbackCwd, setFallbackCwd] = React.useState(() => fallbackCwdFromProjectHeader());
-    const liveFallbackCwd = fallbackCwd ?? fallbackCwdFromProjectHeader();
-    const cwd = virtualContext?.cwd ?? (hasPathValue(atomCwd, pathValue) ? atomCwd : liveFallbackCwd);
-    const hostId = atomValue(useAtom(hostIdAtom));
-    const hostConfig = atomValue(useAtom(hostConfigAtom));
-    const conversationAtomValue = conversationIdAtom ? atomValue(useAtom(conversationIdAtom)) : null;
-    const conversationId = virtualContext?.route ?? (routeStore.value.routeKind === "local-thread" ? routeStore.value.conversationId : null);
+    const { jsx, jsxs, React, useAtom, hostConfigAtom, gitRequest, pathValue } = deps;
+    if (typeof gitRequest !== "function" || typeof pathValue !== "function") throw new Error("Review adapter did not supply gitRequest and pathValue");
+    const context = window.CodexPlusHost.adapters.context.active();
+    const cwd = context?.cwd || null;
+    const hostId = context?.hostId || null;
+    const hostConfig = typeof useAtom === "function" && hostConfigAtom != null ? atomValue(useAtom(hostConfigAtom)) : null;
+    const conversationId = context?.threadId || context?.routeId || null;
+    const isVirtual = Boolean(context?.routeId?.startsWith("cpx-"));
     const [targets, setTargets] = React.useState(null);
     const [collapsed, setCollapsedState] = React.useState(() => new Map());
     const [baseBranches, setBaseBranches] = React.useState(() => new Map());
-    const mainReviewContent = props.mainReviewContent;
-    const upstreamReview = React.useMemo(
-      () => mainReviewContent ?? jsx(DefaultReview, props),
-      [mainReviewContent, props.diffRefs, props.diffMode, props.isCappedMode, props.reviewDiffMetrics, props.showReviewGitActions],
-    );
+    const upstreamReview = props.hostBody;
     const UpstreamReviewBoundary = React.useMemo(() => {
       return class extends React.Component {
         constructor(props) {
@@ -587,18 +528,13 @@
       };
     }, [React]);
     const safeUpstreamReview = jsx(UpstreamReviewBoundary, {
-      fallback: UpstreamReviewFallback({}, deps),
+      fallback: ReviewDiagnostic({ message: "Host review content failed to render" }, deps),
       children: upstreamReview,
     });
 
     React.useEffect(() => {
-      if (atomCwd != null) return undefined;
-      return watchFallbackCwd(setFallbackCwd);
-    }, [atomCwd]);
-
-    React.useEffect(() => {
       const cwdPath = pathValue(cwd) ?? cwd;
-      if (cwdPath == null || hostConfig == null) {
+      if (cwdPath == null) {
         setTargets(null);
         return undefined;
       }
@@ -626,9 +562,9 @@
     const main = targets?.main ?? (cwdPath == null ? null : { id: `main:${cwdPath}`, kind: "main", path: ".", label: "Main", cwd: cwdPath });
     const repositories = targets?.repositories ?? [];
     const all = [main, ...repositories].filter(Boolean);
-    if (!virtualContext && (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null))) return safeUpstreamReview;
+    if (!isVirtual && (main == null || (all.length <= 1 && (!targets?.warnings || targets.warnings.length === 0) && targets?.debug == null))) return safeUpstreamReview;
 
-    const session = sessionKey(hostId, conversationId ?? conversationAtomValue, cwdPath);
+    const session = sessionKey(hostId, conversationId, cwdPath);
     const keyFor = (repo) => `${session}:${repoKey(repo)}`;
     const isCollapsed = (repo) => collapsed.get(keyFor(repo)) === true;
     const setCollapsed = (repo, next) =>
@@ -651,12 +587,12 @@
         jsx("div", { className: "px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-token-description-foreground", children: "Codex Plus repositories" }),
         Warnings({ warnings: targets?.warnings ?? [] }, deps),
         Debug({ debug: targets?.debug }, deps),
-        virtualContext
+        isVirtual
           ? null
           : main
             ? MainGroup({ repo: main, collapsed: isCollapsed(main), onToggle: () => setCollapsed(main, !isCollapsed(main)), children: safeUpstreamReview }, deps)
             : safeUpstreamReview,
-        (virtualContext ? all : repositories).map((repo) =>
+        (isVirtual ? all : repositories).map((repo) =>
           jsx(
             RepoPatchGroup,
             {

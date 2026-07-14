@@ -5,14 +5,16 @@
 
   function normalizeContext(context) {
     if (!context || typeof context !== "object") return null;
-    const activeCwd = context.activeCwd || context.workspaceRoot || context.cwd || context.sourceProject?.cwd || "";
-    if (!activeCwd) return null;
+    const cwd = context.cwd || context.activeCwd || context.workspaceRoot || "";
+    if (!cwd) return null;
     return {
       routeId: context.routeId == null ? "" : String(context.routeId),
       sourceProject: context.sourceProject && typeof context.sourceProject === "object" ? { ...context.sourceProject } : null,
-      activeCwd: String(activeCwd),
-      workspaceRoot: context.workspaceRoot == null ? String(activeCwd) : String(context.workspaceRoot),
+      cwd: String(cwd),
+      activeCwd: String(cwd),
+      workspaceRoot: context.workspaceRoot == null ? String(cwd) : String(context.workspaceRoot),
       gitRoot: context.gitRoot == null ? "" : String(context.gitRoot),
+      hostId: context.hostId == null ? "" : String(context.hostId),
       threadId: context.threadId == null ? "" : String(context.threadId),
       branchName: context.branchName == null ? "" : String(context.branchName),
       source: context.source == null ? "" : String(context.source),
@@ -34,9 +36,9 @@
     ].filter(Boolean);
     for (const target of targets) {
       if (!target?.setAttribute) continue;
-      if (context?.activeCwd) {
-        target.setAttribute("data-codex-plus-active-project-path", context.activeCwd);
-        target.setAttribute("data-codex-plus-project-path", context.activeCwd);
+      if (context?.cwd) {
+        target.setAttribute("data-codex-plus-active-project-path", context.cwd);
+        target.setAttribute("data-codex-plus-project-path", context.cwd);
         target.setAttribute("data-codex-plus-route-context-source", context.source || "");
         if (context.sourceProject?.label) target.setAttribute("data-codex-plus-project-label", context.sourceProject.label);
         if (context.title) target.setAttribute("data-codex-plus-route-title", context.title);
@@ -93,7 +95,7 @@
       const context = active();
       if (!context) return null;
       return {
-        cwd: context.activeCwd,
+        cwd: context.cwd,
         label: context.sourceProject?.label || "",
         source: context.source || "",
         routeId: context.routeId,
@@ -113,9 +115,10 @@
           label: context?.label || "",
           cwd: context?.cwd || "",
         },
-        activeCwd: context?.cwd,
+        cwd: context?.cwd,
         workspaceRoot: context?.workspaceRoot || context?.cwd,
         gitRoot: context?.gitRoot,
+        hostId: context?.hostId,
         threadId: context?.threadId,
         branchName: context?.branchName,
         source: context?.source,

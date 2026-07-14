@@ -36,6 +36,7 @@ const {
 } = require("../src/cli");
 const {
   auditPreflight,
+  auditRequiredHostAdapters,
   auditIdentity,
   captureVisualContract,
   checkKeepOpenAppStability,
@@ -52,6 +53,23 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("required adapter bootstrap audit defers native side-panel binding until a thread mounts", async () => {
+  const cdp = {
+    evaluate() {
+      return Promise.resolve({
+        ok: false,
+        missing: ["threadSidePanel.openFile(binding)", "threadSidePanel.mount(binding)"],
+      });
+    },
+  };
+
+  assert.deepEqual(await auditRequiredHostAdapters(cdp), { ok: true, missing: [] });
+  await assert.rejects(
+    auditRequiredHostAdapters(cdp, { requireBindings: true }),
+    /threadSidePanel\.openFile\(binding\), threadSidePanel\.mount\(binding\)/,
+  );
+});
 
 test("empty invocation shows help", () => {
   assert.equal(parseArgs([]).command, "help");
@@ -531,13 +549,14 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /labelTextFillTransparent/);
   assert.match(defaultExpression, /composerAttachmentPill/);
   assert.match(defaultExpression, /webkitTextFillColor/);
-  assert.match(defaultExpression, /Project selector trigger is missing from the main composer/);
-  assert.match(defaultExpression, /newChatButton\.click\(\)/);
+  assert.doesNotMatch(defaultExpression, /Project selector trigger is missing from the main composer/);
+  assert.doesNotMatch(defaultExpression, /newChatButton\.click\(\)/);
   assert.match(defaultExpression, /if \(!fixtureThreadActive\) newChatButton\?\.click/);
-  assert.match(defaultExpression, /attempt < 300/);
   assert.match(defaultExpression, /includes\("New chat"\)/);
   assert.match(defaultExpression, /input\[placeholder='Search projects'\]/);
   assert.match(defaultExpression, /syntheticShortcut/);
+  assert.match(defaultExpression, /workspaceRoot: "\/tmp\/header-project"/);
+  assert.doesNotMatch(defaultExpression, /projectName:\s*\{/);
   assert.match(defaultExpression, /closest\("header"\)\?\.textContent\)\.includes\("Fixture:"\)/);
   assert.doesNotMatch(defaultExpression, /commandFallback/);
   assert.doesNotMatch(defaultExpression, /projectlessThreadRow\?\.click/);
@@ -545,9 +564,11 @@ test("audit probe expression skips native window-opening probes by default", () 
 
 test("project selector shortcut verifier uses trusted CDP key events", async () => {
   const sent = [];
+  const expressions = [];
   const evaluations = [
-    { triggerCount: 1, clickedNewChat: true },
-    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { triggerCount: 0, newTask: { x: 80, y: 40 } },
+    { triggerCount: 1, newTask: null },
+    { triggerCount: 0, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
     {
       suitableProjectFound: true,
       queryLength: 3,
@@ -562,7 +583,8 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
       sent.push({ method, params });
       return Promise.resolve();
     },
-    evaluate() {
+    evaluate(expression) {
+      expressions.push(expression);
       return Promise.resolve(evaluations.shift());
     },
   };
@@ -581,13 +603,38 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   });
   assert.equal(Object.prototype.hasOwnProperty.call(result.fuzzyDom, "label"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.fuzzyDom, "path"), false);
+  expressions.forEach((expression, index) => {
+    assert.doesNotThrow(() => new Function(`return (${expression})`), `browser expression ${index} must parse`);
+  });
+  assert.match(expressions[0], /data-codex-plus-project-selector-trigger/);
+  assert.match(expressions[0], /New chat|New task/);
+  assert.match(expressions[0], /startsWith\(\"New task\"\)/);
+  assert.doesNotMatch(expressions[0], /\.click/);
   assert.deepEqual(sent.map((call) => call.method), [
+    "Input.dispatchMouseEvent",
+    "Input.dispatchMouseEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
   ]);
-  assert.deepEqual(sent[0].params, {
+  assert.deepEqual(sent[2].params, {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 53,
+  });
+  assert.deepEqual(sent[3].params, {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 53,
+  });
+  assert.deepEqual(sent[4].params, {
     type: "keyDown",
     key: ".",
     code: "Period",
@@ -595,7 +642,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     nativeVirtualKeyCode: 47,
     modifiers: 4,
   });
-  assert.deepEqual(sent[1].params, {
+  assert.deepEqual(sent[5].params, {
     type: "keyUp",
     key: ".",
     code: "Period",
@@ -605,10 +652,41 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   });
 });
 
+test("fixture activation verifies the canonical active cwd and retries the stable thread identity", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("async function activateFixtureThread");
+  const end = source.indexOf("async function verifySidebarBlurCommandPalette", start);
+  const activation = source.slice(start, end);
+
+  assert.match(activation, /CodexPlusHost\.adapters\.context\.active\(\)/);
+  assert.match(activation, /activeContext\?\.cwd/);
+  assert.match(activation, /target\.title/);
+  assert.match(activation, /data-app-action-sidebar-thread-title/);
+  assert.match(activation, /target\.path/);
+  assert.doesNotMatch(activation, /target\.rowText/);
+  assert.doesNotMatch(activation, /replace\(\/\\s\+\/g/);
+  assert.match(activation, /JSON\.stringify\(\{ target, active \}\)/);
+  assert.doesNotMatch(activation, /active\.chipPath === target\.path/);
+  assert.doesNotMatch(activation, /getAttribute\("data-codex-plus-project-path"\) ===/);
+});
+
+test("aharness artifact audit recognizes both native app-shell tab layouts", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("const nativeFileTabsBeforeArtifact");
+  const end = source.indexOf("const routeAfterArtifact", start);
+  const artifactAudit = source.slice(start, end);
+
+  assert.match(artifactAudit, /data-app-shell-tabs/);
+  assert.match(artifactAudit, /data-app-shell-tab-strip-controller/);
+  assert.match(artifactAudit, /data-app-shell-tab-panel-controller/);
+  assert.match(artifactAudit, /artifactCommonShell/);
+  assert.match(artifactAudit, /new Set/);
+});
+
 test("project selector shortcut verifier fails with fuzzy DOM details diagnostic", async () => {
   const sent = [];
   const evaluations = [
-    { triggerCount: 1, clickedNewChat: true },
+    { triggerCount: 1, newTask: null },
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
     {
       suitableProjectFound: false,
@@ -636,7 +714,7 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
   assert.equal(result.fuzzyDom.suitableProjectFound, false);
   assert.match(result.message, /Project selector fuzzy filtering did not preserve/);
   assert.equal(JSON.stringify(result).includes("/"), false);
-  assert.deepEqual(sent.map((call) => call.params.key), [".", ".", "Escape", "Escape"]);
+  assert.deepEqual(sent.map((call) => call.params.key), ["Escape", "Escape", ".", ".", "Escape", "Escape"]);
 });
 
 test("sidebar blur command palette verifier uses trusted Enter key activation", async () => {
@@ -686,6 +764,8 @@ test("review panel verifier returns sanitized success details", async () => {
         repoHeaderVisible: true,
         mainVisible: true,
         nativeReviewSourceVisible: true,
+        unstagedReviewSourceSelected: true,
+        reviewToolbarFailureVisible: false,
         nestedRepoVisible: true,
         strictNestedBranchPreload: true,
         nestedBranchPickerCount: 2,
@@ -698,7 +778,10 @@ test("review panel verifier returns sanitized success details", async () => {
           { kind: "configured", path: "repos/beta-module", branchCount: 3, currentBranch: "main", branchLoadState: "loaded", branchLoadError: "" },
         ],
         rawNestedDiffFallbackCount: 0,
-        reviewDiffCardCount: 2,
+        reviewDiffCardCount: 3,
+        nestedDiffCardCount: 2,
+        nestedDiffDisclosureExpanded: true,
+        nestedDiffDisclosureCollapsed: true,
         reviewTabCount: 1,
       });
     },
@@ -710,7 +793,9 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.deepEqual(result.nestedBranchPickerOptionCounts, [3, 3]);
   assert.deepEqual(result.nestedBranchPickerDetails.map((detail) => detail.branchLoadState), ["loaded", "loaded"]);
   assert.equal(result.rawNestedDiffFallbackCount, 0);
-  assert.equal(result.reviewDiffCardCount, 2);
+  assert.equal(result.reviewDiffCardCount, 3);
+  assert.equal(result.nestedDiffDisclosureExpanded, true);
+  assert.equal(result.nestedDiffDisclosureCollapsed, true);
   assert.equal(result.message, undefined);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "title"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "path"), false);
@@ -750,6 +835,51 @@ test("review panel verifier rejects raw nested repository diffs", async () => {
   assert.equal(result.reviewDiffCardCount, 0);
   assert.deepEqual(result.nestedBranchPickerDetails.map((detail) => detail.branchLoadState), ["error", "empty"]);
   assert.equal(result.message, "Review panel did not render nested repository content");
+});
+
+test("review panel verifier rejects Branch proof and nested toolbar failures", async () => {
+  const base = {
+    candidateCount: 3,
+    attemptedCandidates: 1,
+    reviewControlFound: true,
+    clickedReview: true,
+    selectedReview: true,
+    boundaryVisible: false,
+    boundaryEverVisible: false,
+    tryAgainVisible: false,
+    repoHeaderVisible: true,
+    mainVisible: true,
+    nativeReviewSourceVisible: true,
+    nestedRepoVisible: true,
+    strictNestedBranchPreload: true,
+    nestedBranchPickerCount: 2,
+    nestedBranchPickerPreloadBeforeOpen: true,
+    nestedBranchPickerPreloadComplete: true,
+    nestedBranchPickerPopulated: true,
+    nestedBranchPickerOptionCounts: [3, 3],
+    rawNestedDiffFallbackCount: 0,
+    reviewDiffCardCount: 3,
+    nestedDiffCardCount: 2,
+    nestedDiffDisclosureExpanded: true,
+    nestedDiffDisclosureCollapsed: true,
+  };
+  const branch = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: false, reviewToolbarFailureVisible: false }) });
+  const toolbarFailure = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: true }) });
+
+  assert.equal(branch.ok, false);
+  assert.equal(toolbarFailure.ok, false);
+});
+
+test("review panel verifier scopes Unstaged selection to the native Branch menu", () => {
+  const source = verifyReviewPanelRender.toString();
+
+  assert.match(source, /getAttribute\("aria-controls"\)/);
+  assert.match(source, /initialExpanded = toggle\.getAttribute\("data-app-action-review-file-expanded"\) === "true"/);
+  assert.match(source, /toggledExpanded !== initialExpanded && restoredExpanded === initialExpanded/);
+  assert.match(source, /Math\.max\(initialHeight, toggledHeight\)/);
+  assert.match(source, /Math\.min\(initialHeight, toggledHeight\)/);
+  assert.doesNotMatch(source, /selectUnstagedReviewSource/);
+  assert.doesNotMatch(source, /loadNestedBranchPickers/);
 });
 
 test("review panel verifier fails when no review-capable thread exists", async () => {
@@ -1131,7 +1261,7 @@ test("runAudit fails when the Mermaid viewer cannot render standalone", async ()
   assert.equal(progressEvents.some(([kind, text]) => kind === "succeed" && text === "Mermaid viewer rendered"), false);
 });
 
-test("runAudit progress fails when the project selector verifier returns not ok", async () => {
+test("runAudit progress fails when the required project selector verifier returns not ok on every source family", async () => {
   const progressEvents = [];
   class FakeCdpSession {
     connect() { return Promise.resolve(); }
@@ -1148,7 +1278,7 @@ test("runAudit progress fails when the project selector verifier returns not ok"
           },
         },
         registeredPlugins: ["projectSelectorShortcut"],
-        runtimeStatus: { config: { sourceFamily: "chatgpt" } },
+        runtimeStatus: { config: { sourceFamily: "codex" } },
         startedPlugins: ["projectSelectorShortcut"],
       });
     }
@@ -1214,6 +1344,7 @@ test("runAudit progress fails when the project selector verifier returns not ok"
 });
 
 test("runAudit fails when the Review panel live probe cannot find a review thread", async () => {
+  const fixtureActivations = [];
   class FakeCdpSession {
     connect() { return Promise.resolve(); }
     send() { return Promise.resolve(); }
@@ -1263,7 +1394,10 @@ test("runAudit fails when the Review panel live probe cannot find a review threa
         CdpSession: FakeCdpSession,
         reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
         closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
-        activateFixtureThread: async () => ({ ok: true }),
+        activateFixtureThread: async (_cdp, options = {}) => {
+          fixtureActivations.push(options);
+          return { ok: true };
+        },
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ hasErrorBoundary: false, hasNewChatText: true }); },
         verifyReviewPanelRender() {
@@ -1294,6 +1428,7 @@ test("runAudit fails when the Review panel live probe cannot find a review threa
     plugin: "nestedRepositories",
     message: "No review-capable thread was found",
   }]);
+  assert.equal(fixtureActivations.some((options) => options.nested === true), true);
   assert.equal(JSON.stringify(result.pluginResults.nestedRepositories.reviewPanel).includes("/"), false);
 });
 
@@ -1392,6 +1527,7 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
             bodyTextSampleLength: 42,
           });
         },
+        auditRequiredHostAdapters() { return Promise.resolve({ ok: true, missing: [], bindings: { mount: true, openFile: true } }); },
         dismissStartupDialogs() { return Promise.resolve({ present: false, dismissed: false }); },
         verifyMermaidViewerRender() {
           return Promise.resolve({ ok: true, svgLength: 1200 });
@@ -1753,6 +1889,7 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
           calls.push(["shellTimeoutMs", timeoutMs]);
           return Promise.resolve({ readyState: "complete", hasStartupLoader: false });
         },
+        auditRequiredHostAdapters() { return Promise.resolve({ ok: true, missing: [], bindings: { mount: true, openFile: true } }); },
         dismissStartupDialogs() {
           calls.push("dismissStartupDialogs");
           return Promise.resolve({ present: true, dismissed: true, cleared: true });
@@ -1844,6 +1981,7 @@ test("runAudit manual no-launch mode attaches without launching or probing", asy
         closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
         waitForLiveRuntime() { return Promise.resolve({ registered: 1, started: 1 }); },
         waitForAppShellMounted() { return Promise.resolve({ readyState: "complete", hasStartupLoader: false }); },
+        auditRequiredHostAdapters() { return Promise.resolve({ ok: true, missing: [], bindings: { mount: true, openFile: true } }); },
         dismissStartupDialogs() { return Promise.resolve({ present: false, dismissed: false }); },
         cleanupLaunchedAuditApp() {
           throw new Error("manual no-launch mode must not cleanup");
@@ -2680,8 +2818,10 @@ test("visual contract writes screenshots and compact readbacks", async () => {
     const png = Buffer.from("png").toString("base64");
     const cdp = {
       async send(method) {
-        assert.match(method, /^Page\.(captureScreenshot|navigate)$/);
+        assert.match(method, /^(Page\.(bringToFront|captureScreenshot|navigate)|Input\.dispatchKeyEvent)$/);
         if (method === "Page.navigate") return {};
+        if (method === "Page.bringToFront") return {};
+        if (method === "Input.dispatchKeyEvent") return {};
         return { data: png };
       },
       async evaluate(expression) {
@@ -2691,7 +2831,7 @@ test("visual contract writes screenshots and compact readbacks", async () => {
           shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects General" },
           sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
           review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, rawDiffFallbackCount: 0 },
-          commandPalette: { sidebarBlurred: true },
+          commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
           settings: { generalVisible: true, backToAppVisible: true, blank: false },
         };
       },
@@ -2713,6 +2853,9 @@ test("visual contract writes screenshots and compact readbacks", async () => {
         pluginResults: {},
       },
       wait() {},
+      activateFixture: async () => ({ ok: true }),
+      verifyReview: async () => ({ ok: true }),
+      verifyCommand: async () => ({ ok: true }),
     });
 
     assert.equal(contract.ok, true);
@@ -2722,6 +2865,52 @@ test("visual contract writes screenshots and compact readbacks", async () => {
     const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
     assert.equal(readback.settings.generalVisible, true);
     assert.equal(readback.review.diffCardCount, 2);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("visual contract waits for General settings before capturing the settings screenshot", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-settings-ready-"));
+  try {
+    const png = Buffer.from("png").toString("base64");
+    let evaluations = 0;
+    let settingsCaptureEvaluation = null;
+    const readback = (settingsReady) => ({
+      url: "app://-/index.html",
+      title: "Codex Plus",
+      shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects" },
+      sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
+      review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, rawDiffFallbackCount: 0 },
+      commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
+      settings: { generalVisible: settingsReady, backToAppVisible: settingsReady, blank: !settingsReady },
+    });
+    const cdp = {
+      async send(method) {
+        if (method === "Page.captureScreenshot") {
+          if (settingsCaptureEvaluation == null && evaluations >= 6) settingsCaptureEvaluation = evaluations;
+          return { data: png };
+        }
+        return {};
+      },
+      async evaluate() {
+        evaluations += 1;
+        return readback(evaluations >= 6);
+      },
+    };
+
+    const contract = await captureVisualContract(cdp, {
+      artifactDir: tmpDir,
+      result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
+      wait() {},
+      activateFixture: async () => ({ ok: true }),
+      verifyReview: async () => ({ ok: true }),
+      verifyCommand: async () => ({ ok: true }),
+    });
+
+    assert.equal(contract.ok, true);
+    assert.equal(contract.settings.generalVisible, true);
+    assert.equal(settingsCaptureEvaluation, 6);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

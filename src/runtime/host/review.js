@@ -1,5 +1,12 @@
 (function () {
   const globalObject = typeof window !== "undefined" ? window : globalThis;
+  let boundDeps = null;
+
+  function required(name) {
+    const value = boundDeps?.[name];
+    if (typeof value !== "function") throw new Error(`Review adapter is missing host dependency: ${name}`);
+    return value;
+  }
 
   function renderBodyFromHost(props, hostDeps) {
     const [
@@ -21,7 +28,7 @@
       Dropdown,
       DropdownMenu,
       BranchPickerDropdownContent,
-      ReviewToolbar,
+      ,
       parseDiff,
       DiffCard,
     ] = hostDeps;
@@ -47,16 +54,34 @@
       Dropdown,
       DropdownMenu,
       BranchPickerDropdownContent,
-      ReviewToolbar,
       parseDiff,
       DiffCard,
     };
+    boundDeps = deps;
+    for (const name of ["gitRequest", "pathValue", "parseDiff", "DiffCard"]) required(name);
+    const { mainReviewContent: hostBody, ...pluginProps } = props;
     return globalObject.CodexPlus.ui.review.renderBody({
-      props,
+      props: { ...pluginProps, hostBody },
       deps,
-      defaultBody: props.mainReviewContent ?? deps.jsx(DefaultReview, props),
+      defaultBody: hostBody,
     });
   }
 
-  globalObject.CodexPlusHost.adapters.review = { renderBodyFromHost };
+  function context() {
+    return globalObject.CodexPlusHost.adapters.context.active();
+  }
+
+  function gitRequest(...args) {
+    return required("gitRequest")(...args);
+  }
+
+  function pathValue(...args) {
+    return required("pathValue")(...args);
+  }
+
+  function renderDiff(props) {
+    return required("createElement")(required("DiffCard"), props);
+  }
+
+  globalObject.CodexPlusHost.adapters.review = { context, gitRequest, pathValue, renderBodyFromHost, renderDiff };
 })();

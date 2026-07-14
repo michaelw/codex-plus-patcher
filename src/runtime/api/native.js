@@ -2,11 +2,11 @@
   const globalObject = typeof window !== "undefined" ? window : globalThis;
 
   async function request(method, params) {
-    return globalObject.codexPlusNative?.request?.(method, params) ?? globalObject.CodexPlusHost?.nativeRequest?.(method, params);
+    return globalObject.CodexPlusHost.adapters.native.request(method, params);
   }
 
   function registerNativeMenuItem(item) {
-    return globalObject.CodexPlus.native.request("native-menu/register-item", item).catch(() => ({ ok: false }));
+    return globalObject.CodexPlusHost.adapters.native.request("native-menu/register-item", item);
   }
 
   globalObject.CodexPlus.native = { request };

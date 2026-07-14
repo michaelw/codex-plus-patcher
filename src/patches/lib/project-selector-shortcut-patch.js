@@ -29,6 +29,12 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     );
     patched = replaceOnce(
       patched,
+      "L=c??g,R=e=>{b(e),l?.(e)},Ce=n&&s===`home`",
+      "L=c??g,R=e=>{b(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{R(!0);return!0}),Ce=n&&s===`home`",
+      "project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
       "triggerButton:u,contentWidth:`menu`",
       "triggerButton:CPXPST(u,s),contentWidth:`menu`",
       "project selector empty trigger anchor",
@@ -53,7 +59,7 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     patched = replaceOnce(
       patched,
       "Q=Ye(),_a=`icon-xs shrink-0 opacity-75 group-focus:opacity-100 group-hover:opacity-100`,va=(0,ga.memo)(function(e){let t=(0,ha.c)(177),",
-      "Q=Ye(),_a=`icon-xs shrink-0 opacity-75 group-focus:opacity-100 group-hover:opacity-100`,CPXP=window.CodexPlusHost.adapters.projectSelector,CPXPST=(e,t)=>CPXP.trigger(e,t,Q),va=(0,ga.memo)(function(e){let t=(0,ha.c)(177),",
+      "Q=Ye(),_a=`icon-xs shrink-0 opacity-75 group-focus:opacity-100 group-hover:opacity-100`,CPXP=window.CodexPlusHost.adapters.projectSelector,CPXPST=(e,t)=>CPXP.trigger(e,t,ga),va=(0,ga.memo)(function(e){let t=(0,ha.c)(177),",
       "project selector shortcut helper insertion anchor",
     );
     return replaceOnce(
@@ -144,6 +150,24 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     );
     patched = replaceOnce(
       patched,
+      "Ie=l??x,Re=e=>{e&&O(!1),T(e),p?.(e)},Be=n&&c===`home`&&P.length===0&&!F;",
+      "Ie=l??x,Re=e=>{e&&O(!1),T(e),p?.(e)},CPXOH=CPXP.setOpenHandler(c,()=>{Re(!0);return!0}),Be=n&&c===`home`&&P.length===0&&!F;",
+      "project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(Be)return(0,$.jsxs)(m,{open:l,onOpenChange:Re",
+      "if(Be)return(0,$.jsxs)(m,{open:Ie,onOpenChange:Re",
+      "project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let $e=(0,$.jsx)(m,{open:l,onOpenChange:Re",
+      "let $e=(0,$.jsx)(m,{open:Ie,onOpenChange:Re",
+      "project selector workspace controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
       "triggerButton:h??J(),contentWidth:`menu`",
       "triggerButton:CPXPST(h??J(),c),contentWidth:`menu`",
       "project selector empty trigger anchor",
@@ -191,8 +215,26 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     patched = replaceOnce(
       patched,
       "function yV({activeProjectIdOverride:e,",
-      `${projectSelectorTriggerHook("SV")}function yV({activeProjectIdOverride:e,`,
+      `${projectSelectorTriggerHook("xV")}function yV({activeProjectIdOverride:e,`,
       "project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "le=D&&oe!=null,ue=c??p,z=e=>{e&&g(!1),m(e),l?.(e)},de=n&&s===`home`&&S.length===0&&!C;",
+      "le=D&&oe!=null,ue=c??p,z=e=>{e&&g(!1),m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{z(!0);return!0}),de=n&&s===`home`&&S.length===0&&!C;",
+      "project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(de)return(0,SV.jsxs)(wc,{open:c,onOpenChange:z",
+      "if(de)return(0,SV.jsxs)(wc,{open:ue,onOpenChange:z",
+      "project selector empty dropdown normalized open state anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let Te=(0,SV.jsx)(wc,{open:c,onOpenChange:z",
+      "let Te=(0,SV.jsx)(wc,{open:ue,onOpenChange:z",
+      "project selector dropdown normalized open state anchor",
     );
     patched = replaceOnce(
       patched,
@@ -235,8 +277,26 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     patched = replaceOnce(
       patched,
       "function gt({activeProjectIdOverride:e,",
-      `${projectSelectorTriggerHook("$")}function gt({activeProjectIdOverride:e,`,
+      `${projectSelectorTriggerHook("vt")}function gt({activeProjectIdOverride:e,`,
       "project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "Ie=h??S,Le=e=>{e&&E(!1),w(e),_?.(e)},Re=n&&d===`home`",
+      "Ie=h??S,Le=e=>{e&&E(!1),w(e),_?.(e)},CPXOH=CPXP.setOpenHandler(d,()=>{Le(!0);return!0}),Re=n&&d===`home`",
+      "project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(Re)return(0,$.jsxs)(re,{open:h,onOpenChange:Le",
+      "if(Re)return(0,$.jsxs)(re,{open:Ie,onOpenChange:Le",
+      "project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let X=(0,$.jsx)(re,{open:h,onOpenChange:Le",
+      "let X=(0,$.jsx)(re,{open:Ie,onOpenChange:Le",
+      "project selector workspace controlled open anchor",
     );
     patched = replaceOnce(
       patched,
@@ -281,15 +341,65 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
     `${projectSelectorTriggerHook()}function Ie(e){let t=(0,Ne.c)(81),`,
     "project selector shortcut helper insertion anchor",
   );
+  patched = replaceOnce(
+    patched,
+    "triggerButton:E}=e,",
+    "triggerButton:E}=e,[CPXO,CPXS]=(0,Me.useState)(!1);f??=CPXO;let CPXN=g;g=e=>{CPXS(e),CPXN?.(e)};let CPXOH=CPXP.setOpenHandler(ee??`default`,()=>{g(!0);return!0}),",
+    "project selector controlled open handler anchor",
+  );
   return replaceOnce(
     patched,
-    "at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$})",
-    "at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:CPXPST(X,k),contentWidth:`workspace`,contentMaxHeight:`tall`,children:$})",
+    "t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:X,contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80]",
+    "t[73]!==O||t[74]!==f||t[75]!==g||t[76]!==Y||t[77]!==tt||t[78]!==X||t[79]!==$?(at=(0,H.jsx)(ye,{open:f,onOpenChange:g,onCloseAutoFocus:Y,align:tt,disabled:O,triggerButton:CPXPST(X,k),contentWidth:`workspace`,contentMaxHeight:`tall`,children:$}),t[73]=O,t[74]=f,t[75]=g,t[76]=Y,t[77]=tt,t[78]=X,t[79]=$,t[80]=at):at=t[80]",
     "project selector shortcut final dropdown trigger anchor",
   );
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text) {
+  if (text.includes("function XY(e){let t=(0,ZY.c)(44),") && text.includes("function rX({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function XY(e){let t=(0,ZY.c)(44),",
+      `${projectSelectorSearchHook()}function XY(e){let t=(0,ZY.c)(44),`,
+      "home project selector fuzzy search adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "b=CPXP.fuzzyFilter(r,_);",
+      "home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "w=(0,$Y.jsx)(mee,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "w=(0,$Y.jsx)(mee,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,b,o,_),placeholder:c,className:`mb-1`})",
+      "home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,$Y.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,$Y.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,$Y.jsx)})",
+      "home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function rX({activeProjectIdOverride:e,",
+      `${projectSelectorTriggerHook("aX")}function rX({activeProjectIdOverride:e,`,
+      "home project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "W=c??p,te=e=>{m(e),l?.(e)},ne=n&&s===`home`",
+      "W=c??p,te=e=>{m(e),l?.(e)},CPX_openHandler=CPXP.setOpenHandler(s,()=>{te(!0);return!0}),ne=n&&s===`home`",
+      "home project selector controlled open handler anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:u??(s===`hero`?pe():de()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:me})",
+      "triggerButton:CPXPST(u??(s===`hero`?pe():de()),s),contentWidth:`workspace`,contentMaxHeight:`tall`,children:me})",
+      "home project selector workspace trigger anchor",
+    );
+  }
   if (text.includes("function MZ({activeProjectIdOverride:e,")) {
     let patched = replaceOnce(
       text,
@@ -332,6 +442,12 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
       "pe=()=>(0,PZ.jsxs)(`button`,{className:wi(`heading-xl text-token-text-tertiary",
       "pe=()=>(0,PZ.jsxs)(`button`,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:wi(`heading-xl text-token-text-tertiary",
       "home project selector native hero trigger anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(s===`home`&&u==null)return",
+      "CPXP.setOpenHandler(s,()=>{ne(!0);return!0});if(s===`home`&&u==null)return",
+      "home project selector controlled open handler anchor",
     );
     return replaceOnce(
       patched,
@@ -392,6 +508,24 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
     );
     patched = replaceOnce(
       patched,
+      "V=c??p,ue=e=>{e&&g(!1),m(e),l?.(e)},de=n&&s===`home`",
+      "V=c??p,ue=e=>{e&&g(!1),m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{ue(!0);return!0}),de=n&&s===`home`",
+      "home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(de)return(0,sV.jsxs)(Fl,{open:c,onOpenChange:ue",
+      "if(de)return(0,sV.jsxs)(Fl,{open:V,onOpenChange:ue",
+      "home project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let we=(0,sV.jsx)(Fl,{open:c,onOpenChange:ue",
+      "let we=(0,sV.jsx)(Fl,{open:V,onOpenChange:ue",
+      "home project selector workspace controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
       "triggerButton:u??Se(),contentWidth:`menu`",
       "triggerButton:CPXPST(u??Se(),s),contentWidth:`menu`",
       "home project selector empty trigger anchor",
@@ -448,6 +582,24 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
     );
     patched = replaceOnce(
       patched,
+      "le=c??p,ue=e=>{e&&g(!1),m(e),l?.(e)},de=n&&s===`home`",
+      "le=c??p,ue=e=>{e&&g(!1),m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{ue(!0);return!0}),de=n&&s===`home`",
+      "home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(de)return(0,XH.jsxs)(_o,{open:c,onOpenChange:ue",
+      "if(de)return(0,XH.jsxs)(_o,{open:le,onOpenChange:ue",
+      "home project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let we=(0,XH.jsx)(_o,{open:c,onOpenChange:ue",
+      "let we=(0,XH.jsx)(_o,{open:le,onOpenChange:ue",
+      "home project selector workspace controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
       "triggerButton:u??Se(),contentWidth:`menu`",
       "triggerButton:CPXPST(u??Se(),s),contentWidth:`menu`",
       "home project selector empty trigger anchor",
@@ -463,7 +615,7 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
     let patched = replaceOnce(
       text,
       "function zn(e){let t=(0,Bn.c)(44),",
-      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("$")}function zn(e){let t=(0,Bn.c)(44),`,
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("sr")}function zn(e){let t=(0,Bn.c)(44),`,
       "home project selector shortcut helper insertion anchor",
     );
     patched = replaceOnce(
@@ -504,6 +656,24 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
     );
     patched = replaceOnce(
       patched,
+      "Ee=d??_,De=e=>{e&&x(!1),v(e),f?.(e)},Oe=n&&u===`home`",
+      "Ee=d??_,De=e=>{e&&x(!1),v(e),f?.(e)},CPXOH=CPXP.setOpenHandler(u,()=>{De(!0);return!0}),Oe=n&&u===`home`",
+      "home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(Oe)return(0,$.jsxs)(it,{open:d,onOpenChange:De",
+      "if(Oe)return(0,$.jsxs)(it,{open:Ee,onOpenChange:De",
+      "home project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let Be=(0,$.jsx)(it,{open:d,onOpenChange:De",
+      "let Be=(0,$.jsx)(it,{open:Ee,onOpenChange:De",
+      "home project selector workspace controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
       "triggerButton:p??G(),contentWidth:`menu`",
       "triggerButton:CPXPST(p??G(),u),contentWidth:`menu`",
       "home project selector empty trigger anchor",
@@ -537,11 +707,47 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
       "O=(0,Z.jsx)(et,{value:b,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,C,o,b),placeholder:c,className:`mb-1`})",
       "home project selector accept first match keydown anchor",
     );
-    return replaceOnce(
+    patched = replaceOnce(
       patched,
       "(0,Z.jsx)(`span`,{className:`truncate`,children:e.label})",
       "(0,Z.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,b,Z.jsx)})",
       "home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function tr({activeProjectIdOverride:e,",
+      `${projectSelectorTriggerHook("rr")}function tr({activeProjectIdOverride:e,`,
+      "81905 home project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "Ne=l??x,Fe=e=>{e&&T(!1),C(e),p?.(e)},z=n&&c===`home`",
+      "Ne=l??x,Fe=e=>{e&&T(!1),C(e),p?.(e)},CPXOH=CPXP.setOpenHandler(c,()=>{Fe(!0);return!0}),z=n&&c===`home`",
+      "81905 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "if(z)return(0,$.jsxs)(he,{open:l,onOpenChange:Fe",
+      "if(z)return(0,$.jsxs)(he,{open:Ne,onOpenChange:Fe",
+      "81905 home project selector empty controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let Xe=(0,$.jsx)(he,{open:l,onOpenChange:Fe",
+      "let Xe=(0,$.jsx)(he,{open:Ne,onOpenChange:Fe",
+      "81905 home project selector workspace controlled open anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "triggerButton:_??Je(),contentWidth:`menu`",
+      "triggerButton:CPXPST(_??Je(),c),contentWidth:`menu`",
+      "81905 home project selector empty trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:_??(c===`hero`?Ye():c===`home`?Je():We()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(_??(c===`hero`?Ye():c===`home`?Je():We()),c),contentWidth:`workspace`",
+      "81905 home project selector workspace trigger anchor",
     );
   }
   if (!text.includes("function St({activeProjectIdOverride:e,")) {
@@ -591,6 +797,24 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
   );
   patched = replaceOnce(
     patched,
+    "Pe=l??S,U=e=>{e&&A(!1),C(e),m?.(e)},Re=n&&c===`home`",
+    "Pe=l??S,U=e=>{e&&A(!1),C(e),m?.(e)},CPXOH=CPXP.setOpenHandler(c,()=>{U(!0);return!0}),Re=n&&c===`home`",
+    "home project selector controlled open handler anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "if(Re)return(0,$.jsxs)(ce,{open:l,onOpenChange:U",
+    "if(Re)return(0,$.jsxs)(ce,{open:Pe,onOpenChange:U",
+    "home project selector empty controlled open anchor",
+  );
+  patched = replaceOnce(
+    patched,
+    "let $e=(0,$.jsx)(ce,{open:l,onOpenChange:U",
+    "let $e=(0,$.jsx)(ce,{open:Pe,onOpenChange:U",
+    "home project selector workspace controlled open anchor",
+  );
+  patched = replaceOnce(
+    patched,
     "triggerButton:_??J(),contentWidth:`menu`",
     "triggerButton:CPXPST(_??J(),c),contentWidth:`menu`",
     "home project selector empty trigger anchor",
@@ -605,9 +829,9 @@ function patchHomeProjectDropdownProjectSelectorShortcut(text) {
 
 function patchRunCommandProjectSelectorShortcut(text) {
   const staticRuntimeCommandIds = "[`codexPlus.focusProjectSelector`,`codexPlusToggleSidebarNameBlur`]";
-  const runtimeCommandEntries = `...${staticRuntimeCommandIds}.map(e=>[e,()=>window.CodexPlus?.commands?.run?.(e)]),...(window.CodexPlus?.commands?.all?.()??[]).map(e=>[e.id,()=>window.CodexPlus?.commands?.run?.(e.id)])`;
+  const runtimeCommandEntries = `...${staticRuntimeCommandIds}.map(e=>[e,()=>window.CodexPlusHost.adapters.commands.dispatch(e)]),...(window.CodexPlus.commands.all()).map(e=>[e.id,()=>window.CodexPlusHost.adapters.commands.dispatch(e.id)])`;
   const registerStaticRuntimeCommands = (name) =>
-    `(()=>{for(let e of ${staticRuntimeCommandIds})${name}(e,()=>window.CodexPlus?.commands?.run?.(e));for(let e of window.CodexPlus?.commands?.all?.()??[])${name}(e.id,()=>window.CodexPlus?.commands?.run?.(e.id))})()`;
+    `(()=>{for(let e of ${staticRuntimeCommandIds})${name}(e,()=>window.CodexPlusHost.adapters.commands.dispatch(e));for(let e of window.CodexPlus.commands.all())${name}(e.id,()=>window.CodexPlusHost.adapters.commands.dispatch(e.id))})()`;
   if (text.includes("Fi(`newThread`,S),")) {
     return replaceOnce(
       text,
