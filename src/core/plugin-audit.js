@@ -773,6 +773,14 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       selectedUnstagedFallback: Boolean(extra.selectedUnstagedFallback),
       selectedReview: reviewSelected(),
       boundaryVisible: containsVisibleText("Tab content couldn't render"),
+      boundaryText: visibleElements("div, section, article")
+        .map((element) => normalize(element.textContent))
+        .filter((text) => text.includes("Tab content couldn't render"))
+        .sort((left, right) => left.length - right.length)[0] || "",
+      boundaryDiagnostics: visibleElements("pre, code")
+        .map((element) => normalize(element.textContent))
+        .filter(Boolean)
+        .slice(0, 4),
       tryAgainVisible: exactVisibleText("Try again"),
       repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
       mainVisible: containsVisibleText("Main"),
@@ -1239,6 +1247,7 @@ class CdpSession {
     }
     this.nextId = 1;
     this.pending = new Map();
+    this.events = [];
     this.socket = new WebSocket(webSocketDebuggerUrl);
   }
 
@@ -1253,7 +1262,12 @@ class CdpSession {
       });
       this.socket.addEventListener("message", (event) => {
         const message = JSON.parse(event.data);
-        if (!message.id) return;
+        if (!message.id) {
+          if (["Log.entryAdded", "Runtime.consoleAPICalled", "Runtime.exceptionThrown"].includes(message.method)) {
+            this.events.push(message);
+          }
+          return;
+        }
         const pending = this.pending.get(message.id);
         if (!pending) return;
         this.pending.delete(message.id);
@@ -1305,6 +1319,41 @@ class CdpSession {
       // Nothing useful to do while finishing JSON output.
     }
   }
+}
+
+function summarizeCdpEvents(events, limit = 12) {
+  return (Array.isArray(events) ? events : []).slice(-limit).map((event) => {
+    if (event?.method === "Runtime.exceptionThrown") {
+      const details = event.params?.exceptionDetails;
+      return {
+        method: event.method,
+        type: "exception",
+        text: String(details?.exception?.description || details?.text || "Runtime exception").slice(0, 2000),
+      };
+    }
+    if (event?.method === "Runtime.consoleAPICalled") {
+      const args = (event.params?.args || []).map((arg) => {
+        if (arg?.value != null) return typeof arg.value === "string" ? arg.value : JSON.stringify(arg.value);
+        return arg?.description || arg?.unserializableValue || arg?.type || "";
+      }).filter(Boolean);
+      return {
+        method: event.method,
+        type: event.params?.type || "console",
+        text: args.join(" | ").slice(0, 2000),
+      };
+    }
+    if (event?.method === "Log.entryAdded") {
+      const entry = event.params?.entry || {};
+      return {
+        method: event.method,
+        type: entry.level || "log",
+        text: String(entry.text || "").slice(0, 2000),
+        ...(entry.url ? { url: entry.url } : {}),
+        ...(Number.isFinite(entry.lineNumber) ? { line: entry.lineNumber } : {}),
+      };
+    }
+    return null;
+  }).filter(Boolean);
 }
 
 async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
@@ -2088,8 +2137,7 @@ async function cleanupLaunchedAuditApp(launchResult, {
 } = {}) {
   const pid = launchResult?.pid;
   if (keepOpen) return { attempted: false, keptOpen: true, ok: true, pid };
-  if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
-  if (launchResult.command === "/usr/bin/open" && launchResult.targetApp && launchResult.electronUserDataPath) {
+  if (launchResult?.targetApp && launchResult.electronUserDataPath) {
     const apps = listRunningApps({
       targetApp: launchResult.targetApp,
       devHome: launchResult.devHome,
@@ -2104,6 +2152,7 @@ async function cleanupLaunchedAuditApp(launchResult, {
     }
     if (apps.length > 0) await wait(500);
   }
+  if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
   const signals = ["SIGTERM", "SIGKILL"];
   for (const signal of signals) {
     try {
@@ -3873,9 +3922,22 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const artifactButton = artifact.querySelector("[data-codex-plus-aharness-artifact-open]");
       if (!artifactButton) throw new Error("Aharness artifact open button did not render");
       const nativeFileAlerts = [];
+      const nativeFileOpenCalls = [];
       const previousAlert = window.alert;
+      const nativeFileAdapter = window.CodexPlusHost.adapters.threadSidePanel;
+      const previousOpenFile = nativeFileAdapter.openFile;
       window.alert = (message) => {
         nativeFileAlerts.push(String(message || ""));
+      };
+      nativeFileAdapter.openFile = async (...args) => {
+        try {
+          const result = await previousOpenFile(...args);
+          nativeFileOpenCalls.push({ args, result });
+          return result;
+        } catch (error) {
+          nativeFileOpenCalls.push({ args, error: error?.message || String(error) });
+          throw error;
+        }
       };
       const nativeFileTabsBeforeArtifact = Array.from(new Set(Array.from(document.querySelectorAll("[role='tab']"))
         .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "")
@@ -3897,7 +3959,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
             .filter(visible)
             .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || normalize(tab.textContent || ""))
             .filter(Boolean)));
-          throw new Error(`Aharness artifact did not open as a native file tab: ${JSON.stringify({ nativeFileAlerts, visibleTabs })}`);
+          throw new Error(`Aharness artifact did not open as a native file tab: ${JSON.stringify({ nativeFileAlerts, nativeFileOpenCalls, visibleTabs })}`);
         }
         artifactTabId = artifactTab.getAttribute("data-tab-id") || artifactTab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || "";
         const artifactTabUsesNativeFileViewer =
@@ -3966,6 +4028,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (document.querySelector("[data-codex-plus-thread-file-panel]")) throw new Error("Aharness artifact opened in a plugin-owned file panel");
       } finally {
         window.alert = previousAlert;
+        nativeFileAdapter.openFile = previousOpenFile;
       }
       const routeAfterArtifact = await waitForAharness("[data-codex-plus-aharness-route]", 10000);
       if (!routeAfterArtifact) throw new Error("Aharness artifact open displaced the virtual chat route");
@@ -4198,6 +4261,7 @@ async function runAudit(args, {
   const buildFixture = operations.buildAuditFixture || buildAuditFixture;
   const seedFixtureBrowserState = operations.seedAuditFixtureBrowserState || seedAuditFixtureBrowserState;
   const launchApp = operations.launchDevApp || launchDevApp;
+  const waitForLaunchRetry = operations.waitForLaunchRetry || delay;
   const waitRenderer = operations.waitForRendererTarget || waitForRendererTarget;
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
@@ -4285,28 +4349,54 @@ async function runAudit(args, {
       }
     }
     if (preflight.launch) {
+      const launchOptions = {
+        targetApp: args.target,
+        devHome: args.devHome,
+        electronUserDataPath: args.electronUserDataPath,
+        remoteDebuggingPort: port,
+        devInstanceId: args.devInstanceId,
+      };
       launchResult = await withAuditProgress(
         progress,
         `Launching Codex Plus on port ${port}`,
         `Launched app on port ${port}`,
-        () => launchApp({
-          targetApp: args.target,
-          devHome: args.devHome,
-          electronUserDataPath: args.electronUserDataPath,
-          remoteDebuggingPort: port,
-          devInstanceId: args.devInstanceId,
-        }),
+        () => launchApp(launchOptions),
+      );
+      if (launchResult.instanceIdentity?.bundleIdentifier?.startsWith("com.openai.chatgpt-plus.")) {
+        for (let retry = 1; retry <= 2 && !target; retry += 1) {
+          try {
+            target = await waitRenderer(port, 30000);
+          } catch {
+            await withAuditProgress(
+              progress,
+              `Cleaning failed ChatGPT start ${retry}/2 on port ${port}`,
+              `Cleaned failed ChatGPT start ${retry}/2 on port ${port}`,
+              () => cleanupApp(launchResult, { keepOpen: false }),
+            );
+            await waitForLaunchRetry(2000);
+            launchResult = await withAuditProgress(
+              progress,
+              `Retrying ChatGPT start ${retry}/2 on port ${port}`,
+              `Retried ChatGPT start ${retry}/2 on port ${port}`,
+              () => launchApp(launchOptions),
+            );
+          }
+        }
+        if (!target && launchResult.relaunchError) throw new Error(launchResult.relaunchError);
+      }
+    }
+    if (!target) {
+      target = await withAuditProgress(
+        progress,
+        "Waiting for app://-/index.html",
+        "Found app://-/index.html",
+        () => waitRenderer(port),
       );
     }
-    target = await withAuditProgress(
-      progress,
-      "Waiting for app://-/index.html",
-      "Found app://-/index.html",
-      () => waitRenderer(port),
-    );
     cdp = new Session(target.webSocketDebuggerUrl);
     await cdp.connect();
     await cdp.send("Runtime.enable");
+    await cdp.send("Log.enable");
     runtimeStatus = await withAuditProgress(
       progress,
       "Waiting for Codex Plus runtime",
@@ -4569,6 +4659,7 @@ async function runAudit(args, {
         };
       }
       if (!reviewPanel.ok) {
+        reviewPanel.cdpDiagnostics = summarizeCdpEvents(cdp.events);
         live.ok = false;
         live.pluginResults.nestedRepositories.ok = false;
         live.failures.push({
@@ -4596,6 +4687,7 @@ async function runAudit(args, {
       if (preparedCommandContract) preparedCommandContract.state = commandPalette;
       live.pluginResults.sidebarNameBlur.commandPalette = commandPalette;
       if (!commandPalette.ok) {
+        commandPalette.cdpDiagnostics = summarizeCdpEvents(cdp.events);
         live.ok = false;
         live.pluginResults.sidebarNameBlur.ok = false;
         live.failures.push({
@@ -4768,6 +4860,7 @@ async function runAudit(args, {
         included: Boolean(args.includeNativeOpenProbes),
       },
       preflight,
+      cdpDiagnostics: summarizeCdpEvents(cdp?.events),
     };
     if (visualContractResult) result.visualContract = visualContractResult;
     return result;
@@ -4882,6 +4975,7 @@ module.exports = {
   processIsAlive,
   reloadAuditRenderer,
   runAudit,
+  summarizeCdpEvents,
   shouldShowAuditProgress,
   waitForAppShellMounted,
   waitForLiveRuntime,

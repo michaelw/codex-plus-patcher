@@ -281,6 +281,8 @@ test("regression sources runs supported sources and continues after failures", a
     assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "electron-user-data"));
     assert.equal(calls[0].remoteDebuggingPort, 9410);
     assert.equal(calls[1].remoteDebuggingPort, 9411);
+    assert.equal(calls[0].devInstanceId, "reg-2662370822");
+    assert.ok(calls[0].devInstanceId.length <= 24);
     assert.equal(calls[0].includeNativeOpenProbes, true);
     assert.equal(calls[0].useLiveSourceHome, false);
     assert.equal(calls[0].visualContract, true);

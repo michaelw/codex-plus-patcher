@@ -47,12 +47,27 @@ const {
   listRunningAuditApps,
   pluginAuditExpression,
   runAudit,
+  summarizeCdpEvents,
   verifyProjectSelectorShortcutKey,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("CDP diagnostics keep concise exception and console evidence", () => {
+  const events = [
+    { method: "Runtime.exceptionThrown", params: { exceptionDetails: { exception: { description: "TypeError: broken\n    at host.js:1:2" } } } },
+    { method: "Runtime.consoleAPICalled", params: { type: "error", args: [{ value: "command failed" }, { description: "Error: detail\n    at plugin.js:3:4" }] } },
+    { method: "Log.entryAdded", params: { entry: { level: "error", text: "renderer crashed", url: "app://-/host.js", lineNumber: 8 } } },
+  ];
+
+  assert.deepEqual(summarizeCdpEvents(events), [
+    { method: "Runtime.exceptionThrown", type: "exception", text: "TypeError: broken\n    at host.js:1:2" },
+    { method: "Runtime.consoleAPICalled", type: "error", text: "command failed | Error: detail\n    at plugin.js:3:4" },
+    { method: "Log.entryAdded", type: "error", text: "renderer crashed", url: "app://-/host.js", line: 8 },
+  ]);
+});
 
 test("required adapter bootstrap audit defers native side-panel binding until a thread mounts", async () => {
   const cdp = {
@@ -1793,6 +1808,8 @@ test("runAudit no-launch mode attaches to the requested port", async () => {
 test("runAudit manual mode launches and skips plugin probes and cleanup", async () => {
   const progressEvents = [];
   const calls = [];
+  let launchCount = 0;
+  let rendererWaitCount = 0;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-chatgpt-audit-"));
   const chatgptSource = path.join(tmpDir, "ChatGPT.app");
   fs.mkdirSync(path.join(chatgptSource, "Contents"), { recursive: true });
@@ -1868,10 +1885,21 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
         },
         launchDevApp() {
           calls.push("launch");
-          return Promise.resolve({ pid: 123, command: "Codex", args: ["--remote-debugging-port=9234"] });
+          launchCount += 1;
+          return Promise.resolve({
+            pid: 122 + launchCount,
+            command: "/repo/work/Codex Plus.app/Contents/MacOS/ChatGPT",
+            args: ["--remote-debugging-port=9234"],
+            instanceIdentity: { bundleIdentifier: "com.openai.chatgpt-plus.reg-2670771524" },
+          });
         },
-        waitForRendererTarget() {
+        waitForRendererTarget(_port, timeoutMs) {
           calls.push("waitRenderer");
+          calls.push(["rendererTimeout", timeoutMs]);
+          rendererWaitCount += 1;
+          if (rendererWaitCount <= 2) {
+            return Promise.reject(new Error(`ChatGPT start ${rendererWaitCount} exited before renderer startup`));
+          }
           return Promise.resolve({
             url: "app://-/index.html",
             webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1",
@@ -1895,7 +1923,13 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
           return Promise.resolve({ present: true, dismissed: true, cleared: true });
         },
         cleanupLaunchedAuditApp() {
-          throw new Error("manual mode must not cleanup the launched app");
+          calls.push("cleanupRetry");
+          return Promise.resolve({ attempted: true, keptOpen: false, ok: true });
+        },
+        waitForLaunchRetry(ms) {
+          assert.equal(ms, 2000);
+          calls.push("waitRetry");
+          return Promise.resolve();
         },
         checkKeepOpenAppStability() {
           throw new Error("manual mode must not run post-probe stability checks");
@@ -1916,15 +1950,20 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
   assert.equal(result.probesSkipped, true);
   assert.equal(result.devToolsUrl, "http://127.0.0.1:9234/json/list");
   assert.deepEqual(result.pluginResults, {});
-  assert.equal(result.launchResult.pid, 123);
+  assert.equal(result.launchResult.pid, 125);
   assert.equal(result.fixtureResult.browserStateReadback.seeded, true);
   assert.equal(result.visualContract.ok, true);
-  assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: true, ok: true, pid: 123 });
+  assert.deepEqual(result.cleanupResult, { attempted: false, keptOpen: true, ok: true, pid: 125 });
   assert.deepEqual(
     calls.filter((call) => typeof call === "string"),
-    ["preflight", "patch", "fixture", "launch", "waitRenderer", "connect", "runtime", "shell", "dismissStartupDialogs", "seed", "close"],
+    ["preflight", "patch", "fixture", "launch", "waitRenderer", "cleanupRetry", "waitRetry", "launch", "waitRenderer", "cleanupRetry", "waitRetry", "launch", "waitRenderer", "connect", "runtime", "shell", "dismissStartupDialogs", "seed", "close"],
   );
   assert.deepEqual(calls.find((call) => call[0] === "captureVisualContract"), ["captureVisualContract", false]);
+  assert.deepEqual(calls.filter((call) => Array.isArray(call) && call[0] === "rendererTimeout"), [
+    ["rendererTimeout", 30000],
+    ["rendererTimeout", 30000],
+    ["rendererTimeout", undefined],
+  ]);
   assert.deepEqual(calls.find((call) => call[0] === "shellTimeoutMs"), ["shellTimeoutMs", 180000]);
   assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
     runtimePluginsDisabled: ["projectColors"],
@@ -2277,6 +2316,36 @@ test("launch-dev falls back to the ChatGPT executable and dev identity for ChatG
     displayName: "ChatGPT Plus (audit)",
     name: "ChatGPT Plus audit",
   });
+
+  const calls = [];
+  const launched = launchDevApp({
+    targetApp,
+    devHome: path.join(tmpDir, "dev-home"),
+    electronUserDataPath: path.join(tmpDir, "electron-user-data"),
+    remoteDebuggingPort: 9234,
+    platform: "darwin",
+    markDevRuntimeConfigImpl: () => ({ patchedAsarSha: "dev-sha" }),
+    markDevBundleIdentityImpl: () => result.instanceIdentity,
+    signDevAppImpl: () => ({ signed: true }),
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return { pid: 1357, unref() {} };
+    },
+  });
+
+  assert.equal(launched.command, "/usr/bin/open");
+  assert.deepEqual(launched.args, [
+    "-n",
+    "--env", `CODEX_HOME=${path.join(tmpDir, "dev-home")}`,
+    "--env", `CODEX_ELECTRON_USER_DATA_PATH=${path.join(tmpDir, "electron-user-data")}`,
+    targetApp,
+    "--args",
+    `--user-data-dir=${path.join(tmpDir, "electron-user-data")}`,
+    "--use-mock-keychain",
+    "--remote-debugging-port=9234",
+  ]);
+  assert.deepEqual(calls[0].args, launched.args);
+
 });
 
 test("launch-dev directly launches the executable with isolated state on macOS", () => {
@@ -2356,11 +2425,11 @@ test("audit cleanup handles launched, kept-open, missing, and failed process cle
   assert.match(failed.message, /no permission/);
 });
 
-test("audit cleanup stops a LaunchServices app before its waiting open process", async () => {
+test("audit cleanup stops matching app helpers for a direct launch", async () => {
   const killed = [];
   const result = await cleanupLaunchedAuditApp(
     {
-      command: "/usr/bin/open",
+      command: "/repo/work/ChatGPT Plus.app/Contents/MacOS/ChatGPT",
       pid: 2468,
       targetApp: "/repo/work/ChatGPT Plus.app",
       devHome: "/repo/work/dev-home",

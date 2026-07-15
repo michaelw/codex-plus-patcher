@@ -317,7 +317,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
   const auditArgs = {
     apply: true,
     devHome: paths.devHome,
-    devInstanceId: `regression-${source.version.replaceAll(".", "-")}`,
+    devInstanceId: `reg-${source.version.replaceAll(".", "")}`,
     electronUserDataPath: paths.electronUserDataPath,
     includeNativeOpenProbes: args.includeNativeOpenProbes,
     json: args.json,

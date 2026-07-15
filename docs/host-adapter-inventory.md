@@ -26,6 +26,16 @@ The migration started with 15 supported patch sets and 10 cached live sources.
 `26.616.81150`, `26.616.71553`, `26.616.51431`, and `26.616.41845`. Final live
 acceptance therefore covered all 15 patch sets.
 
+The July port added four exact identities without changing the adapter
+manifest:
+
+| Version | Build | Source ASAR SHA-256 |
+| --- | ---: | --- |
+| 26.707.72221 | 5307 | `b5da51e5df6e996076e4cb19045cec46dd4c08cf61c19cdbc5cb426b8413b73c` |
+| 26.707.71524 | 5263 | `d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84` |
+| 26.707.62119 | 5211 | `165db3a1d32009724fcb91427a73926fe8de2a1e24141d5f1e24951d120424f7` |
+| 26.707.61608 | 5200 | `7cd7f277d4d4b6221eb2121fd36d2238c28f203875c62f8abd36f3f12898cb86` |
+
 ## Action log
 
 - Inventoried the dirty worktree, registered versions, source cache, adapter
@@ -79,6 +89,33 @@ acceptance therefore covered all 15 patch sets.
   path chip, main and nested Review content, the command result, and complete
   Settings. Final evidence is under
   `work/regression/contracts/2026-07-14T15-21-35-591Z/`.
+- Ported 26.707.72221, 26.707.71524, 26.707.62119, and 26.707.61608 from their
+  real ASARs. The two July builds use the newer `src-HagpvBpE.js` Electron
+  family; each patch keeps its moved chunk names and single-match anchors in
+  the versioned producer.
+- Kept the required adapter manifest unchanged. Version-specific producers
+  bind the moved selector, composer, title, Review, command, and native seams;
+  no consumer fallback or broadened old anchor was added.
+- Fixed 26.707.62119's missing composer surface binding, wrong Review parser
+  alias, and plugin-command metadata being passed through the native FormatJS
+  command list. Focused tests now cover each exact producer shape.
+- Fixed 26.707.61608's selector transform returning unchanged, wrong title
+  React namespace, wrong Review parser (`Ci` instead of native `hg`), native
+  FormatJS command collision, and missing exact composer primitive chunk.
+- Validated the transforms in registered execution order. This caught a
+  command-palette transform that passed alone but failed after the earlier
+  native-dispatch transform had modified the same module.
+- Restarted 26.707.72221 after every shared-code fix. Final focused evidence is
+  under `work/regression/contracts/2026-07-15T01-16-49-799Z/` (72221),
+  `2026-07-15T01-23-17-852Z/` (71524),
+  `2026-07-15T01-27-05-972Z/` (62119), and
+  `2026-07-15T01-19-57-664Z/` (61608).
+- Ran the complete 19-version newest-first live sweep with generated fixtures.
+  All 19 versions passed with zero failures or skips. Readback confirmed every
+  plugin audit, nested branch preload, two nested DiffCards, command action,
+  and Settings capture. Manual inspection accepted all 76 fully painted final
+  screenshots. Final evidence is under
+  `work/regression/contracts/2026-07-15T01-34-46-812Z/`.
 
 ## Process improvements
 
@@ -91,3 +128,15 @@ acceptance therefore covered all 15 patch sets.
 - Run real-source transformed-module syntax checks, adapter matrix readback,
   architecture lint, negative fixtures, live probes, raster-region checks, and
   manual review as separate layers so each failure has a precise owner.
+- Require every expected transform to insert its version marker. A no-throw
+  transform that returns unchanged is not a successful port.
+- Test version transforms both alone and in registered execution order so
+  overlapping exact edits cannot invalidate a later producer unnoticed.
+- Record the native role of every minified symbol from its call sites before
+  binding it. This would have prevented the 61608 `Ci`/`hg` parser mistake.
+- Cache copied and signed regression targets by source ASAR plus patch digest.
+  This can shorten focused iteration without reusing evidence after code
+  changes.
+- Preserve failed `audit-summary.json` diagnostics even when auto-clean removes
+  a failed visual-contract directory, so triage does not depend on truncated
+  terminal output.

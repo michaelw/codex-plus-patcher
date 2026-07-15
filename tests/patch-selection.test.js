@@ -239,8 +239,21 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.707.51957-5175");
-  assert.equal(chatgptPatchSets.length, 3);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.707.72221-5307");
+  assert.equal(chatgptPatchSets.length, 7);
+
+  for (const identity of [
+    ["26.707.72221", "5307", "b5da51e5df6e996076e4cb19045cec46dd4c08cf61c19cdbc5cb426b8413b73c"],
+    ["26.707.71524", "5263", "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84"],
+    ["26.707.62119", "5211", "165db3a1d32009724fcb91427a73926fe8de2a1e24141d5f1e24951d120424f7"],
+    ["26.707.61608", "5200", "7cd7f277d4d4b6221eb2121fd36d2238c28f203875c62f8abd36f3f12898cb86"],
+  ]) {
+    const [version, bundleVersion, asarSha256] = identity;
+    assert.equal(
+      selectPatch(patchSets, { version, bundleVersion, asarSha256 }).id,
+      `chatgpt-${version}-${bundleVersion}`,
+    );
+  }
 
   const chatgptPatchSet = selectPatch(patchSets, {
     version: "26.707.41301",
@@ -2007,7 +2020,6 @@ test("ChatGPT patch set uses ChatGPT Plus branding with stable CodexPlus runtime
     "about-codex-plus-metadata",
     "nested-repository-worker",
     "multi-repository-review",
-    "thread-side-panel-native-context",
     "diagnostic-error-boundary",
     "user-message-bubble-colors",
     "project-colors",
@@ -2723,7 +2735,11 @@ test("header patch renders project path accessories from thread context", () => 
       continue;
     }
 
-    if (patchSet.id === "chatgpt-26.707.31428-5059") continue;
+    if (
+      patchSet.id === "chatgpt-26.707.31428-5059" ||
+      patchSet.id === "chatgpt-26.707.62119-5211" ||
+      patchSet.id === "chatgpt-26.707.61608-5200"
+    ) continue;
 
     const transform = collectFileTransforms(patchSet)
       .find(([, candidate]) => candidate.name === "patchHeader")?.[1];
@@ -2736,6 +2752,10 @@ test("header patch renders project path accessories from thread context", () => 
           ? "app-initial~app-main~hotkey-window-thread-page~keyboard-shortcuts-settings~thread-app-shell~cf704xib-Do6EGhkP.js"
           : patchSet.id === "chatgpt-26.707.51957-5175"
             ? "app-initial~app-main~hotkey-window-thread-page~thread-app-shell-chrome~header~remote-conver~h59fr3q5-D_BrXX6W.js"
+          : patchSet.id === "chatgpt-26.707.71524-5263"
+            ? "app-initial~app-main~hotkey-window-thread-page~thread-app-shell-chrome~header~remote-conver~h59fr3q5-ByNuXnmY.js"
+          : patchSet.id === "chatgpt-26.707.72221-5307"
+            ? "app-initial~app-main~onboarding-page-CIkoyvFz.js"
           : "app-initial~app-main~hotkey-window-thread-page~thread-app-shell-chrome~header~remote-conver~h59fr3q5-DhcrijQk.js";
       const escapedThreadContextFile = expectedThreadContextFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(transformed, new RegExp(`from"\\.\\/${escapedThreadContextFile}"`));
@@ -4739,6 +4759,415 @@ test("ChatGPT composer project colors attach to the native composer surface", ()
   assert.doesNotMatch(transformed, /"data-codex-composer-root":``,\.\.\.CPXSurfaceProps\(\{\}\),children/);
   assert.doesNotMatch(transformed, /CPX_localThreadKey/);
   assert.doesNotMatch(transformed, /CPX_threadProjectId/);
+});
+
+test("72221 binds moved host seams without changing consumer contracts", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.72221-5307");
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-C6gAAJlL.js");
+  const transforms = new Map(collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]));
+
+  const appShell = transforms.get("patchAppShell")([
+    "function Ome(){let e=(0,Yj.c)(3),t,n;",
+    "children:[t,n,(0,Xj.jsx)(so,{onClick:kme,children:(0,Xj.jsx)($,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+    "function ZJ(){let e=(0,QJ.c)(23),t=af(q),n=N(KJ),r=Ul(`open-file`),i=N(CT),a=N(Cy),o=a!=null,s;",
+  ].join(""));
+  assert.match(appShell, /CPXDiagnosticDetails\(\{jsx:Xj\.jsx,error:null\}\)/);
+  assert.match(appShell, /CodexPlusHost\.adapters\.threadSidePanel/);
+  assert.match(appShell, /bindOpenFile\(\(e,n=\{\}\)=>\{let CPXPC=.*return \$Xe\(t,e,\{hostId:n\.hostId\|\|CPXPC\?\.hostId\|\|i\.id\|\|`local`,.*target:n\.target\?\?`right`/);
+  assert.doesNotMatch(appShell, /bindOpenFile\([^;]+return XC\(/);
+
+  const localTaskRow = transforms.get("patchLocalTaskRow")([
+    "function hSe(e){let t=(0,yW.c)(128),",
+    "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+    "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+    "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+  ].join(""));
+  assert.match(localTaskRow, /CPXPR=e=>CPXS\.projectRowProps\(e\);function hSe\(e\)\{let t=\(0,yW\.c\)\(128\),/);
+  assert.match(localTaskRow, /threadId:n,title:t\.label/);
+  assert.match(localTaskRow, /hostId:null,threadId:t,title:e\.task\.title\?\?``/);
+  assert.match(localTaskRow, /projectId:ve,label:_e,path:E,cwd:E,hostId:p,threadId:l,title:x/);
+
+  const composer = transforms.get("patchComposerProjectColors")([
+    "function qY({aboveComposerHeaderContent:e,activeCollaborationMode:t,",
+    "clientThreadId:j,interactionsDisabled:M}){let N=ia(Db),",
+    "):(0,QY.jsx)(JY,{className:w,utilityBarVariant:C,hasDropTargetPortal:kc,",
+  ].join(""));
+  assert.match(composer, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(composer, /codexPlusProps:CPX_composerSurfaceProps/);
+
+  const commandMenu = transforms.get("patchCommandMenuRuntimeCommands")([
+    "function TRe(e){let t=(0,M5.c)(126),P=lO.filter(e=>true);t[16]=O,t[17]=P):P=t[17];let F=P,I;",
+    "!i&&c!=null&&K.push(c),t[29]=L,",
+    "function NRe(e){let t=(0,M5.c)(13),{close:n,command:r,description:i,title:a}=e,o=rze[r.id],s;",
+    "c=()=>{IC(r.id,`command_menu`),n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandMenu, /function CPXCommandPaletteItem\(\{command:e,close:t\}\)/);
+  assert.match(commandMenu, /K\.push\(\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)\.map\(e=>\(0,P5\.jsx\)\(CPXCommandPaletteItem,\{command:e,close:n\},e\.id\)\)\)/);
+  assert.match(commandMenu, /t\[16\]=O,t\[17\]=P\):P=t\[17\];let F=P,I/);
+  assert.doesNotMatch(commandMenu, /let F=\[\.\.\.P,\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata/);
+  assert.match(commandMenu, /bindNativeDispatch\(e=>\(IC\(e,`command_menu`\),!0\)\),e\.dispatch\(r\.id\),n\(\)/);
+  assert.doesNotMatch(commandMenu, /c=\(\)=>\{IC\(r\.id,`command_menu`\),n\(\)\}/);
+
+  const announcements = transforms.get("patchChatGptStartupAnnouncements")([
+    "function $me({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Hu.ChatGPT&&t!=null&&t!==tg.Agent&&t!==tg.Dev}",
+    "function VN(e){let t=(0,HN.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join(""));
+  assert.match(announcements, /function \$me\([^)]*\)\{return false\}/);
+  assert.match(announcements, /function VN\(e\)\{return null;/);
+});
+
+test("71524 binds its moved UI producers to the strict host adapters", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.71524-5263");
+  assert.equal(collectFileTransforms(patchSet).some(([, transform]) => transform.name === "patchLocalConversationPageHeader"), false);
+  const transforms = new Map(collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]));
+
+  const errorBoundary = transforms.get("patchErrorBoundary")([
+    "function d_n(e){let t=(0,f_n.c)(9),{resetError:n}=e,r=kR(),i,a;",
+    "children:[i,a,(0,N$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,N$.jsx)(p_,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,N$.jsx)(d_n,{resetError:()=>e.resetError()}));",
+  ].join(""));
+  assert.match(errorBoundary, /CPXDiagnosticDetails\(\{jsx:N\$\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
+
+  const messageBubble = transforms.get("patchUserMessageAttachmentsBubbleColors")([
+    "function _Qe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+    "return(0,yB.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "me=B?(0,CB.jsx)(`div`,{className:`w-full p-px`,children:(0,CB.jsx)(_Qe,{cwd:b??null,hostId:x,initialMessage:z.trim(),onCancel:()=>{re(null)},onDraftChange:e=>{re(e)},onSubmit:ae})}):ee?(0,CB.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,tabIndex:0,className:X(",
+  ].join(""));
+  assert.match(messageBubble, /data-codex-plus-user-entry/);
+  assert.match(messageBubble, /CPXBubbleProps\(\{\}\)/);
+
+  const composer = transforms.get("patchComposerProjectColors")([
+    "function l5({aboveComposerHeaderContent:e,activeCollaborationMode:t,localWorkspaceMaterialization:L,clientThreadId:R,interactionsDisabled:B}){let V=ri(No),",
+    "bs=(e,t=Hr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ki({path:n,line:r,column:r==null?void 0:1,cwd:Mn,hostId:t,openFile:un.mutate})},xs=e=>",
+    "):(0,m5.jsx)(u5,{className:E,utilityBarVariant:T,hasDropTargetPortal:zc,",
+  ].join(""));
+  assert.match(composer, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(composer, /codexPlusProps:CPX_composerSurfaceProps/);
+  assert.match(composer, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
+  assert.match(composer, /CPXSP\.bindMount\(\(\)=>\(\{scope:V\}\)\)/);
+  assert.match(composer, /CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>ki\(\{scope:V,path:e,cwd:t\.workspaceRoot\?\?Mn,hostConfig:Ur,hostId:t\.hostId\?\?Hr,line:t\.line,endLine:t\.endLine,isPreview:t\.isPreview,title:t\.title,openFile:un\.mutate,openInSidePanel:!0\}\)\)/);
+
+  const projectRow = transforms.get("patchAppMainProjectColors")([
+    "function _R(e){let t=(0,vR.c)(57),{ref:n,className:r,actions:i,collapsed:a,contentClassName:o,label:g,projectId:b,rowAttributes:x}=e;",
+    "A=dn.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+  ].join(""));
+  assert.match(projectRow, /CPXPR=e=>CPXS\.projectRowProps\(e\);function _R/);
+  assert.match(projectRow, /A=\{\.\.\.dn\.sidebarProjectRow\([^)]*\),\.\.\.CPXPR\(\{projectId:b,label:g\}\)\}/);
+
+  const localTaskRow = transforms.get("patchLocalTaskRow")([
+    "function qW(e){let t=(0,$W.c)(128),",
+    "dataAttributes:dn.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+    "dataAttributes:dn.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+    "dataAttributes:dn.sidebarThreadRow({active:s,hostId:m,id:l,kind:`local`,pinned:r,title:S})",
+  ].join(""));
+  assert.match(localTaskRow, /CPXPR=e=>CPXS\.projectRowProps\(e\);function qW/);
+  assert.match(localTaskRow, /threadId:n,title:t\.label/);
+  assert.match(localTaskRow, /hostId:null,threadId:t,title:e\.task\.title\?\?``/);
+  assert.match(localTaskRow, /projectId:xe,label:be,path:O,cwd:O,hostId:m,threadId:l,title:S/);
+
+  const announcements = transforms.get("patchChatGptStartupAnnouncements")([
+    "function qde({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ec.ChatGPT&&t!=null&&t!==gs.Agent&&t!==gs.Dev}",
+    "function qA(e){let t=(0,JA.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join(""));
+  assert.match(announcements, /function qde\([^)]*\)\{return false\}/);
+  assert.match(announcements, /function qA\(e\)\{return null;/);
+
+  const commandMenu = transforms.get("patchCommandMenuRuntimeCommands")([
+    "function ube(e){let t=(0,b2.c)(126),{close:n}=e;",
+    "!i&&c!=null&&re.push(c),t[29]=I,",
+    "function vbe(e){let t=(0,b2.c)(13),{close:n,command:r,description:i,title:a}=e;",
+    "c=()=>{au(r.id,`command_menu`),n()},",
+  ].join(""));
+  assert.match(commandMenu, /function CPXCommandPaletteItem/);
+  assert.match(commandMenu, /adapters\.commands\.metadata\(\)/);
+  assert.match(commandMenu, /bindNativeDispatch\(e=>\(au\(e,`command_menu`\),!0\)\)/);
+});
+
+test("72221 review producer binds the strict review adapter at the moved host body", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.72221-5307");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadSidePanelTabs")?.[1];
+  const source = [
+    'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";',
+    "function Vzt(e){let t=(0,Hzt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "s=(0,mY.jsx)(jie,{children:(0,mY.jsx)(zMt,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.match(transformed, /CPXBranchPickerDropdownContent/);
+  assert.match(transformed, /CPXParseDiff/);
+  assert.match(transformed, /import\{zF as CPXPathValue\}from"\.\/app-initial~app-main~hotkey-window-new-thread-page~hotkey-window-home-page~composer-utility-bar-D9zyQF1n\.js"/);
+  assert.match(transformed, /CodexPlusHost\.adapters\.review\.renderBodyFromHost\(e,\[mY,Mzt,rl,I,null,null,null,Em,null,Dl,CPXPathValue,zMt,zi,No,Pt,kl,dc,CPXBranchPickerDropdownContent,null,CPXParseDiff,qAt\]\)/);
+  assert.match(transformed, /mainReviewContent:\(0,mY\.jsx\)\(zMt/);
+  assert.doesNotMatch(transformed, /typeof [A-Za-z_$]+!==`undefined`/);
+});
+
+test("62119 review producer binds the native diff parser used by its host review", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.62119-5211");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadSidePanelTabs")?.[1];
+  const source = [
+    'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";',
+    "function gMe(e){let t=(0,KN.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "s=(0,qN.jsx)(Aue,{children:(0,qN.jsx)(Gke,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.match(transformed, /renderBodyFromHost\(e,\[qN,Jz,null,null,null,null,null,null,null,Tn,ae,Gke,null,null,null,null,null,CPXBranchPickerDropdownContent,null,sp,iD\]\)/);
+  assert.doesNotMatch(transformed, /CPXBranchPickerDropdownContent,null,ri,iD/);
+});
+
+test("61608 review producer binds the native diff parser used by its host review", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.61608-5200");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadSidePanelTabs")?.[1];
+  const source = [
+    'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";',
+    "function PCt(e){let t=(0,FCt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "s=(0,bW.jsx)(lue,{children:(0,bW.jsx)(_gt,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.match(transformed, /renderBodyFromHost\(e,\[bW,HY,null,null,null,null,null,null,null,Oc,kt,_gt,null,null,null,null,null,CPXBranchPickerDropdownContent,null,hg,cce\]\)/);
+  assert.doesNotMatch(transformed, /CPXBranchPickerDropdownContent,null,Ci,cce/);
+});
+
+test("62119 command palette renders plugin metadata outside the native FormatJS command list", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.62119-5211");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchCommandMenuRuntimeCommands")?.[1];
+  const source = [
+    "function Ppe(e){let t=(0,V0.c)(126),{close:n}=e;",
+    "let f=se?P.filter(zpe):P,p;",
+    "!i&&c!=null&&oe.push(c),t[29]=I,",
+    "function Hpe(e){let t=(0,V0.c)(13),{close:n,command:r,description:i,title:a}=e;",
+    "c=()=>{Bf(r.id,`command_menu`),n()},",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.match(transformed, /function CPXCommandPaletteItem\(\{command:e,close:t\}\)/);
+  assert.match(transformed, /oe\.push\(\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)\.map\(e=>\(0,U0\.jsx\)\(CPXCommandPaletteItem,\{command:e,close:n\},e\.id\)\)\)/);
+  assert.doesNotMatch(transformed, /let f=\[\.\.\.\(se\?P\.filter\(zpe\):P\),\.\.\.\(globalThis\.CodexPlusHost\.adapters\.commands\.metadata/);
+  assert.match(transformed, /bindNativeDispatch\(e=>\(Bf\(e,`command_menu`\),!0\)\),e\.dispatch\(r\.id\),n\(\)/);
+});
+
+test("61608 command palette renders plugin metadata outside the native FormatJS command list", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.61608-5200");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchCommandMenuRuntimeCommands")?.[1];
+  const source = [
+    "function aJe(e){let t=(0,a8.c)(126),{close:n}=e;",
+    "let f=ne?P.filter(uJe):P,p;",
+    "!i&&c!=null&&K.push(c),t[29]=I,",
+    "function pJe(e){let t=(0,a8.c)(13),{close:n,command:r,description:i,title:a}=e;",
+    "c=()=>{xf(r.id,`command_menu`),n()},",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.match(transformed, /function CPXCommandPaletteItem\(\{command:e,close:t\}\)/);
+  assert.match(transformed, /K\.push\(\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)\.map\(e=>\(0,s8\.jsx\)\(CPXCommandPaletteItem,\{command:e,close:n\},e\.id\)\)\)/);
+  assert.doesNotMatch(transformed, /let f=\[\.\.\.\(ne\?P\.filter\(uJe\):P\),\.\.\.\(globalThis\.CodexPlusHost\.adapters\.commands\.metadata/);
+  assert.match(transformed, /bindNativeDispatch\(e=>\(xf\(e,`command_menu`\),!0\)\),e\.dispatch\(r\.id\),n\(\)/);
+});
+
+test("72221 project selector patches the moved composer utility producer", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.72221-5307");
+  const filePath = findTransformPath(patchSet, "home-project-dropdown");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const source = [
+    "function CNt(e){let t=(0,wNt.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,onSelectProjectId:o,keepOpenOnSelect:s,projectlessActionLabel:c,onSelectProjectless:l,footerItems:u,onAddLocalProject:d,onAddRemoteProject:f,emptyMessage:p}=e,m=s===void 0?!1:s,h=Xg(),g=l!=null&&c!=null,[_,v]=(0,TNt.useState)(``),y,b,x,S,C,w;if(t[0]!==g){let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});w=(0,W9.jsx)(Z7,{value:_,onChange:s,placeholder:c,className:`mb-1`});C=b.map(e=>(0,W9.jsx)(`span`,{className:`truncate`,children:e.label}))}",
+    "function zNt({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:i=!1,hideLabel:a=!1,onWorkspaceRootSelected:o,variant:s=`default`,isOpen:c,onOpenChange:l,triggerButton:u}){let d=Hr(Z),f=Xg(),[p,m]=(0,Q9.useState)(!1),se=c??p,ce=e=>{m(e),l?.(e)},le=n&&s===`home`;if(!e)return null;let ve=()=>(0,$9.jsx)(zj,{children:(0,$9.jsx)(F9,{className:`min-w-0`,children:`Project`})}),be=()=>(0,$9.jsxs)(`button`,{className:`heading-xl`,children:[]});if(le)return(0,$9.jsx)(Q7,{open:c,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,triggerButton:u,contentWidth:`menu`,children:e});let Se=(0,$9.jsx)(Q7,{open:c,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?be():ve()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:e});return Se}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~hotkey-window-new-thread-page~hotkey-window-home-page~composer-utility-bar-D9zyQF1n.js");
+  const transformed = transform(source);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,_\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,b,o,_\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,_,W9\.jsx\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(s,\(\)=>\{ce\(!0\);return!0\}\)/);
+  assert.match(transformed, /open:se/);
+  assert.match(transformed, /CPXPST\(u\?\?\(s===`hero`\?be\(\):ve\(\)\),s\)/);
+});
+
+test("71524 project selector patches the mounted RX producer", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.71524-5263");
+  const filePath = findTransformPath(patchSet, "home-project-dropdown");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const source = [
+    "function Sge(e){let t=(0,PX.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,onSelectProjectId:o}=e,[v,y]=(0,FX.useState)(``),x,T;let e=v.trim().toLowerCase();x=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});T=(0,IX.jsx)(zu,{value:v,onChange:s,placeholder:c,className:`mb-1`});x.map(e=>(0,IX.jsx)(`span`,{className:`truncate`,children:e.label}))}",
+    "function RX({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:i=!1,hideLabel:a=!1,onWorkspaceRootSelected:o,variant:s=`default`,isOpen:c,onOpenChange:l,triggerButton:u}){let[p,m]=(0,zX.useState)(!1),W=c??p,ne=e=>{m(e),l?.(e)},re=n&&s===`home`;if(re)return(0,BX.jsx)(Ja,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,triggerButton:u,contentWidth:`menu`,children:e});if(s===`home`&&u==null)return(0,BX.jsx)(zD,{menuOpen:W,onOpenChange:ne,children:he});let ge=(0,BX.jsx)(Ja,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?me():fe()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:he});return ge}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~page-kMhXWEru.js");
+  const transformed = transform(source);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,v\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,x,o,v\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,v,IX\.jsx\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(s,\(\)=>\{ne\(!0\);return!0\}\)/);
+  assert.match(transformed, /open:W/);
+  assert.match(transformed, /CPXPST\(u\?\?\(s===`hero`\?me\(\):fe\(\)\),s\)/);
+});
+
+test("62119 project selector patches the mounted composer utility producer", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.62119-5211");
+  const filePath = findTransformPath(patchSet, "home-project-dropdown");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const source = [
+    "function _t(e){let t=(0,vt.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,onSelectProjectId:c}=e,[x,te]=(0,yt.useState)(``),S,C,w,T,E,D;if(t[0]!==x){let e=x.trim().toLowerCase();C=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});let o=e=>{te(e.target.value)},s=`Search projects`;D=(0,Q.jsx)(b,{value:x,onChange:o,placeholder:s,className:`mb-1`});E=C.map(e=>(0,Q.jsx)(`span`,{className:`truncate`,children:e.label}))}return D}",
+    "var vt,yt,Q,bt=e((()=>{vt=n(),yt=t(l(),1),Q=i()}));",
+    "function Ct({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:i=!0,disabled:c=!1,hideLabel:l=!1,onWorkspaceRootSelected:u,variant:f=`default`,isOpen:p,onOpenChange:m,triggerButton:h}){let[ee,x]=(0,Tt.useState)(!1),H=p??ee,U=e=>{x(e),m?.(e)},je=n&&f===`home`;if(je)return(0,$.jsx)(D,{open:p,onOpenChange:U,onCloseAutoFocus:I,side:`top`,triggerButton:h,contentWidth:`menu`,children:e});let Ge=(0,$.jsx)(D,{open:p,onOpenChange:U,onCloseAutoFocus:I,side:`top`,align:f===`hero`?`center`:`start`,disabled:c,triggerButton:h??(f===`hero`?He():Ve()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:e});return Ge}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~hotkey-window-new-thread-page~hotkey-window-home-page~composer-utility-bar-BrySP-wf.js");
+  const transformed = transform(source);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,x\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,C,c,x\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,x,Q\.jsx\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(f,\(\)=>\{U\(!0\);return!0\}\)/);
+  assert.match(transformed, /open:H/);
+  assert.match(transformed, /triggerButton:CPXPST\(h,f\)/);
+  assert.match(transformed, /CPXPST\(h\?\?\(f===`hero`\?He\(\):Ve\(\)\),f\)/);
+});
+
+test("61608 project selector patches its mounted app-main producer", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.61608-5200");
+  const filePath = findTransformPath(patchSet, "home-project-dropdown");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const source = [
+    "function DWe(e){let t=(0,r0.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,onSelectProjectId:o}=e,[_,v]=(0,i0.useState)(``);let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+    "w=(0,a0.jsx)(mde,{value:_,onChange:s,placeholder:c,className:`mb-1`});C=b.map(e=>(0,a0.jsx)(`span`,{className:`truncate`,children:e.label}))}",
+    "function s0({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:i=!1,hideLabel:a=!1,onWorkspaceRootSelected:o,variant:s=`default`,isOpen:c,onOpenChange:l,triggerButton:u}){let[p,m]=(0,c0.useState)(!1),G=c??p,ee=e=>{m(e),l?.(e)},te=n&&s===`home`;",
+    "return(0,l0.jsx)(Ov,{open:c,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,triggerButton:u,contentWidth:`menu`,children:e});",
+    "let fe=(0,l0.jsx)(Ov,{open:c,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?ue():ce()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:de});return fe}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~page-CMpPiY3-.js");
+  const transformed = transform(source);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,_\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,b,o,_\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,_,a0\.jsx\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(s,\(\)=>\{ee\(!0\);return!0\}\)/);
+  assert.match(transformed, /open:G/);
+  assert.match(transformed, /CPXPST\(u\?\?\(s===`hero`\?ue\(\):ce\(\)\),s\)/);
+});
+
+test("71524 thread title producer binds the normalized active context", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.71524-5263");
+  const [filePath, transform] = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadTitle");
+  const source = "function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,getConversationMarkdown:i,markdownParentConversationId:a,pendingWorktree:o,projectIcon:s,projectIconInteractive:c,projectHoverCardContent:u,projectName:p,title:h,titleSuffix:g,cwd:_,canPin:v,hideForkActions:y}=e,b=c===void 0?!1:c,x=v===void 0?!0:v,S=Nn(),C=R(l),w=ve(),T=d(Ve),E;t[0]===_?E=t[1]:(E=_?Ln(_):null,t[0]=_,t[1]=E);let D=E,O=W(rn,n),k=so(D,f(r??O).id),A;return h}";
+
+  assert.equal(filePath, "webview/assets/local-conversation-page-DuL7_S51.js");
+  const transformed = transform(source);
+  assert.match(transformed, /CPXBindThreadHeaderContext/);
+  assert.match(transformed, /routeId:n,threadId:n,cwd:_,workspaceRoot:_,gitRoot:D\?\?_,hostId:f\(r\?\?O\)\.id/);
+  assert.match(transformed, /sourceProject:\{id:_,label:typeof p==`string`\?p:``,cwd:_\}/);
+  assert.match(transformed, /h=CPXThreadHeaderTitle\(CPX_nativeTitle\)/);
+});
+
+test("62119 thread title producer uses the mounted React namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.62119-5211");
+  const [filePath, transform] = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadTitle");
+  const source = [
+    "var ll,ul=e((()=>{ll=t(u(),1),Ki(),sl(),$r(),Vi()}));",
+    "function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,getConversationMarkdown:a,markdownParentConversationId:s,pendingWorktree:c,projectIcon:l,projectIconInteractive:u,projectHoverCardContent:d,projectName:f,title:p,titleSuffix:h,cwd:g,canPin:_,hideForkActions:v}=e,y=u===void 0?!1:u,b=_===void 0?!0:_,x=o(),S=U(It),C=Sn(),w=on(ji),T;t[0]===g?T=t[1]:(T=g?m(g):null,t[0]=g,t[1]=T);let E=T,D=H(Lt,n),O=so(E,Re(r??D).id),k;return p}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/local-conversation-page-BVVhqMj0.js");
+  const transformed = transform(source);
+  assert.match(transformed, /ll\.useSyncExternalStore/);
+  assert.match(transformed, /p=CPXThreadHeaderTitle\(CPX_nativeTitle\)/);
+});
+
+test("61608 thread title producer uses the mounted React namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.61608-5200");
+  const [filePath, transform] = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadTitle");
+  const source = [
+    "var ll,ul=e((()=>{ll=t(n(),1),rt(),sl(),ot(),fi()}));",
+    "function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,getConversationMarkdown:i,markdownParentConversationId:a,pendingWorktree:o,projectIcon:s,projectIconInteractive:c,projectHoverCardContent:u,projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,v=c===void 0?!1:c,b=g===void 0?!0:g,x=Ur(),S=y(nr),C=d(),w=l(Di),E;t[0]===h?E=t[1]:(E=h?k(h):null,t[0]=h,t[1]=E);let D=E,O=L(Rn,n),ee=so(D,It(r??O).id),A;return p}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/local-conversation-page-Brl_y7Vr.js");
+  const transformed = transform(source);
+  assert.match(transformed, /ll\.useSyncExternalStore/);
+  assert.doesNotMatch(transformed, /t\(E\(\),1\)\.useSyncExternalStore/);
+  assert.match(transformed, /p=CPXThreadHeaderTitle\(CPX_nativeTitle\)/);
+});
+
+test("61608 composer primitive forwards strict surface adapter props", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.61608-5200");
+  const entry = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchComposerPrimitiveSurface");
+  assert.ok(entry, "61608 should register its mounted composer primitive producer");
+  const [filePath, transform] = entry;
+  const source = [
+    "function h(e){let t=(0,A.c)(18),{children:n,className:r,utilityBarVariant:i,inert:o,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,",
+    "t[10]!==n||t[11]!==o||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M?",
+    "(N=(0,j.jsx)(s.div,{inert:o,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=o,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N)",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~pull-request-route~new-thread-panel-page~onboarding-page~projects-inde~oqn7zfcy-D76dsKXO.js");
+  const transformed = transform(source);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /\.\.\.CPX_resolvedSurfaceProps,className:M/);
+  assert.match(transformed, /t\[18\]=CPX_resolvedSurfaceProps/);
+});
+
+test("71524 header mounts the path accessory in the native action registry", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.71524-5263");
+  const filePath = findTransformPath(patchSet, "header");
+  const transform = findTransform(patchSet, "header");
+  const source = "function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,r=u(Me),i=u(mt),a=G(he,n),o;t[0]===i.cwd?o=t[1]:(o=i.cwd==null?null:lt(i.cwd),t[0]=i.cwd,t[1]=o);let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let c;return t[2]!==s||t[3]!==r?(c=(0,or.jsx)(q.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,or.jsx)(qn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],c}";
+
+  assert.equal(filePath, "webview/assets/thread-app-shell-chrome-DxhbktFF.js");
+  const transformed = transform(source);
+  assert.match(transformed, /function CPXThreadHeaderAccessories/);
+  assert.match(transformed, /CPX_headerContext=\{cwd:i\.cwd,hostId:r\?\.id\?\?null/);
+  assert.match(transformed, /actionId:`codex-plus-project-path`,align:`start`,order:90/);
+  assert.match(transformed, /children:\[CPX_headerAction,c\]/);
+});
+
+test("71524 native composer primitive forwards the stable surface props", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.71524-5263");
+  const filePath = findTransformPath(patchSet, "composerPrimitive");
+  const transform = findTransform(patchSet, "composerPrimitive");
+  const source = "function h(e){let t=(0,A.c)(18),{children:n,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,_=o===void 0?`default`:o;let N;return t[10]!==n||t[11]!==s||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M?(N=(0,j.jsx)(r.div,{inert:s,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=s,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N):N=t[17],N}";
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~pull-request-route~new-thread-panel-page~onboarding-page~projects-inde~oqn7zfcy-D5V72FKd.js");
+  const transformed = transform(source);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+  assert.match(transformed, /r\.div,\{inert:s,\.\.\.CPX_resolvedSurfaceProps,className:M/);
+  assert.match(transformed, /t\[18\]!==CPX_resolvedSurfaceProps/);
+  assert.match(transformed, /t\[18\]=CPX_resolvedSurfaceProps/);
+});
+
+test("62119 native composer primitive forwards the stable surface props", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.62119-5211");
+  const filePath = findTransformPath(patchSet, "composerPrimitive");
+  const transform = findTransform(patchSet, "composerPrimitive");
+  const source = "function Mln(e){let t=(0,x9.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceVariant:l,onDragEnter:u,onDragLeave:d,onDragOver:f,onDrop:p}=e,m=i===void 0?`default`:i;let D;return t[10]!==n||t[11]!==a||t[12]!==u||t[13]!==d||t[14]!==f||t[15]!==p||t[16]!==E?(D=(0,S9.jsx)(rp.div,{inert:a,className:E,onMouseDown:Kln,onDragEnter:u,onDragOver:f,onDragLeave:d,onDrop:p,children:n}),t[10]=n,t[11]=a,t[12]=u,t[13]=d,t[14]=f,t[15]=p,t[16]=E,t[17]=D):D=t[17],D}";
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~quick-chat-window-page~work-home-page~chatgpt-conversation-page-BqLP6EDd.js");
+  const transformed = transform(source);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+  assert.match(transformed, /rp\.div,\{inert:a,\.\.\.CPX_resolvedSurfaceProps,className:E/);
+  assert.match(transformed, /t\[18\]!==CPX_resolvedSurfaceProps/);
+  assert.match(transformed, /t\[18\]=CPX_resolvedSurfaceProps/);
+});
+
+test("72221 native composer primitive forwards the stable surface props", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.72221-5307");
+  const filePath = findTransformPath(patchSet, "composerPrimitive");
+  const transform = findTransform(patchSet, "composerPrimitive");
+  const source = "function h(e){let n=(0,A.c)(18),{children:r,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,_=o===void 0?`default`:o;let N;return n[10]!==r||n[11]!==s||n[12]!==f||n[13]!==m||n[14]!==h||n[15]!==g||n[16]!==M?(N=(0,j.jsx)(t.div,{inert:s,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:r}),n[10]=r,n[11]=s,n[12]=f,n[13]=m,n[14]=h,n[15]=g,n[16]=M,n[17]=N):N=n[17],N}";
+
+  assert.equal(filePath, "webview/assets/app-initial~app-main~pull-request-route~new-thread-panel-page~onboarding-page~projects-inde~oqn7zfcy-CHcBauGK.js");
+  const transformed = transform(source);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /CPX_resolvedSurfaceProps=CPX_surfaceProps\?\?CPXSurfaceProps\(\{\}\)/);
+  assert.match(transformed, /t\.div,\{inert:s,\.\.\.CPX_resolvedSurfaceProps,className:M/);
+  assert.match(transformed, /n\[18\]!==CPX_resolvedSurfaceProps/);
+  assert.match(transformed, /n\[18\]=CPX_resolvedSurfaceProps/);
 });
 
 test("41301 native composer primitive forwards calculated surface props to its DOM root", () => {

@@ -83,7 +83,7 @@ test("runtime capability consumers do not contain rejected fallback implementati
 });
 
 test("all registered patch sets package the same required manifest", () => {
-  assert.equal(patchSets.length, 15);
+  assert.equal(patchSets.length, 19);
   for (const patchSet of patchSets) {
     const assets = new Map(codexPlusRuntimeAssets(patchSet.runtimeConfig));
     const manifest = assets.get("webview/assets/codex-plus/api/hostAdapters.js");

@@ -356,6 +356,194 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text) {
+  if (text.includes("function DWe(e){let t=(0,r0.c)(44),") && text.includes("function s0({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function DWe(e){let t=(0,r0.c)(44),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("c0")}function DWe(e){let t=(0,r0.c)(44),`,
+      "61608 home project selector helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "b=CPXP.fuzzyFilter(r,_);",
+      "61608 home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "w=(0,a0.jsx)(mde,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "w=(0,a0.jsx)(mde,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,b,o,_),placeholder:c,className:`mb-1`})",
+      "61608 home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,a0.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,a0.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,a0.jsx)})",
+      "61608 home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "G=c??p,ee=e=>{m(e),l?.(e)},te=n&&s===`home`",
+      "G=c??p,ee=e=>{m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{ee(!0);return!0}),te=n&&s===`home`",
+      "61608 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,l0.jsx)(Ov,{open:c,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,triggerButton:u,contentWidth:`menu`,",
+      "(0,l0.jsx)(Ov,{open:G,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,triggerButton:CPXPST(u,s),contentWidth:`menu`,",
+      "61608 home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let fe=(0,l0.jsx)(Ov,{open:c,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?ue():ce()),contentWidth:`workspace`,",
+      "let fe=(0,l0.jsx)(Ov,{open:G,onOpenChange:ee,onCloseAutoFocus:L,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:CPXPST(u??(s===`hero`?ue():ce()),s),contentWidth:`workspace`,",
+      "61608 home project selector workspace controlled trigger anchor",
+    );
+  }
+  if (text.includes("function _t(e){let t=(0,vt.c)(44),") && text.includes("function Ct({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function _t(e){let t=(0,vt.c)(44),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("Tt")}function _t(e){let t=(0,vt.c)(44),`,
+      "62119 home project selector helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=x.trim().toLowerCase();C=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "C=CPXP.fuzzyFilter(r,x);",
+      "62119 home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "D=(0,Q.jsx)(b,{value:x,onChange:o,placeholder:s,className:`mb-1`})",
+      "D=(0,Q.jsx)(b,{value:x,onChange:o,onKeyDown:e=>CPXP.acceptFirst(e,C,c,x),placeholder:s,className:`mb-1`})",
+      "62119 home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,Q.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,Q.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,x,Q.jsx)})",
+      "62119 home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "H=p??ee,U=e=>{x(e),m?.(e)},je=n&&f===`home`",
+      "H=p??ee,U=e=>{x(e),m?.(e)},CPXOH=CPXP.setOpenHandler(f,()=>{U(!0);return!0}),je=n&&f===`home`",
+      "62119 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,$.jsx)(D,{open:p,onOpenChange:U,onCloseAutoFocus:I,side:`top`,triggerButton:h,contentWidth:`menu`,",
+      "(0,$.jsx)(D,{open:H,onOpenChange:U,onCloseAutoFocus:I,side:`top`,triggerButton:CPXPST(h,f),contentWidth:`menu`,",
+      "62119 home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let Ge=(0,$.jsx)(D,{open:p,onOpenChange:U,onCloseAutoFocus:I,side:`top`,align:f===`hero`?`center`:`start`,disabled:c,triggerButton:h??(f===`hero`?He():Ve()),contentWidth:`workspace`,",
+      "let Ge=(0,$.jsx)(D,{open:H,onOpenChange:U,onCloseAutoFocus:I,side:`top`,align:f===`hero`?`center`:`start`,disabled:c,triggerButton:CPXPST(h??(f===`hero`?He():Ve()),f),contentWidth:`workspace`,",
+      "62119 home project selector workspace controlled trigger anchor",
+    );
+  }
+  if (text.includes("function Sge(e){let t=(0,PX.c)(44),") && text.includes("function RX({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function Sge(e){let t=(0,PX.c)(44),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("FX")}function Sge(e){let t=(0,PX.c)(44),`,
+      "71524 home project selector helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=v.trim().toLowerCase();x=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "x=CPXP.fuzzyFilter(r,v);",
+      "71524 home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "T=(0,IX.jsx)(zu,{value:v,onChange:s,placeholder:c,className:`mb-1`})",
+      "T=(0,IX.jsx)(zu,{value:v,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,x,o,v),placeholder:c,className:`mb-1`})",
+      "71524 home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,IX.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,IX.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,v,IX.jsx)})",
+      "71524 home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "W=c??p,ne=e=>{m(e),l?.(e)},re=n&&s===`home`",
+      "W=c??p,ne=e=>{m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{ne(!0);return!0}),re=n&&s===`home`",
+      "71524 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,BX.jsx)(Ja,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,triggerButton:u,contentWidth:`menu`,",
+      "(0,BX.jsx)(Ja,{open:W,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,triggerButton:CPXPST(u,s),contentWidth:`menu`,",
+      "71524 home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,BX.jsx)(Ja,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?me():fe()),contentWidth:`workspace`,",
+      "(0,BX.jsx)(Ja,{open:W,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:CPXPST(u??(s===`hero`?me():fe()),s),contentWidth:`workspace`,",
+      "71524 home project selector workspace controlled trigger anchor",
+    );
+  }
+  if (text.includes("function CNt(e){let t=(0,wNt.c)(44),") && text.includes("function zNt({activeProjectIdOverride:e,")) {
+    let patched = replaceOnce(
+      text,
+      "function CNt(e){let t=(0,wNt.c)(44),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("Q9")}function CNt(e){let t=(0,wNt.c)(44),`,
+      "home project selector shortcut helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+      "b=CPXP.fuzzyFilter(r,_);",
+      "home project selector fuzzy search filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "w=(0,W9.jsx)(Z7,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+      "w=(0,W9.jsx)(Z7,{value:_,onChange:s,onKeyDown:e=>CPXP.acceptFirst(e,b,o,_),placeholder:c,className:`mb-1`})",
+      "home project selector accept first match keydown anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,W9.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,W9.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,_,W9.jsx)})",
+      "home project selector fuzzy search highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "se=c??p,ce=e=>{m(e),l?.(e)},le=n&&s===`home`",
+      "se=c??p,ce=e=>{m(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{ce(!0);return!0}),le=n&&s===`home`",
+      "home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,$9.jsx)(F9,{className:`min-w-0`,",
+      "children:(0,$9.jsx)(F9,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:`min-w-0`,",
+      "home project selector native utility trigger anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "be=()=>(0,$9.jsxs)(`button`,{className:",
+      "be=()=>(0,$9.jsxs)(`button`,{\"data-codex-plus-project-selector-trigger\":!0,\"data-codex-plus-project-selector-variant\":s,className:",
+      "home project selector native hero trigger anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,$9.jsx)(Q7,{open:c,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,triggerButton:u,contentWidth:`menu`,",
+      "(0,$9.jsx)(Q7,{open:se,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,triggerButton:CPXPST(u,s),contentWidth:`menu`,",
+      "home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,$9.jsx)(Q7,{open:c,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?be():ve()),contentWidth:`workspace`,",
+      "(0,$9.jsx)(Q7,{open:se,onOpenChange:ce,onCloseAutoFocus:I,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:CPXPST(u??(s===`hero`?be():ve()),s),contentWidth:`workspace`,",
+      "home project selector workspace controlled trigger anchor",
+    );
+  }
   if (text.includes("function XY(e){let t=(0,ZY.c)(44),") && text.includes("function rX({activeProjectIdOverride:e,")) {
     let patched = replaceOnce(
       text,

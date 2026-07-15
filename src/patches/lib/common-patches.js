@@ -65,6 +65,7 @@ function buildCodexPlusPatchSet(config) {
   const sidebarThreadKeysFile = files.sidebarThreadKeys;
   const sidebarThreadRowSignalsFile = files.sidebarThreadRowSignals;
   const branchPickerDropdownContentFile = files.branchPickerDropdownContent;
+  const reviewDiffRuntimeFile = files.reviewDiffRuntime;
   const statsigStartupFile = files.statsigStartup;
   const localThreadCatalogStateFile = files.localThreadCatalogState;
   const chatGptStartupAnnouncementsFile = files.chatGptStartupAnnouncements;
@@ -395,6 +396,32 @@ function patchAboutDialog(text, context = {}) {
 }
 
 function patchWorker(text) {
+  if (text.includes("function G0({requestKind:e,source:t}){return W0.has(e??``)||K0(t)}")) {
+    let patched = replaceOnce(
+      text,
+      "var q0=`/usr/bin/git`,",
+      `${workerHook()}var q0=\`/usr/bin/git\`,`,
+      "72221 worker helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function G0({requestKind:e,source:t}){return W0.has(e??``)||K0(t)}",
+      "function G0({requestKind:e,source:t}){return W0.has(e??``)||K0(t)||CPXW.isReadOnlyBranchRequest(e,t)}",
+      "72221 branch picker git allowlist anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "case`commit-message-diff`:o=Z(await a7(ooe(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`submodule-paths`:o=Z({paths:await Coe(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+      "case`commit-message-diff`:o=Z(await a7(ooe(e.params.cwd,e.params.includeUnstaged,this.gitManager,r),t.signal));break;case`codex-plus-trace`:o=Z(CPXW.traceRequest(e.params));break;case`repository-targets`:o=Z(await CPXW.repositoryTargetsFromHost(this.gitManager,e.params,r,t.signal,Coe));break;case`codex-plus-branches`:o=Z(await CPXW.listBranches(e.params,t.signal));break;case`codex-plus-current-branch`:o=Z(await CPXW.currentBranch(e.params,t.signal));break;case`submodule-paths`:o=Z({paths:await Coe(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,r),t.signal)});break;",
+      "72221 repository-targets worker switch anchor",
+    );
+    return replaceOnce(
+      patched,
+      "case`commit-message-diff`:case`submodule-paths`:case`cat-file`:",
+      "case`commit-message-diff`:case`codex-plus-trace`:case`repository-targets`:case`codex-plus-branches`:case`codex-plus-current-branch`:case`submodule-paths`:case`cat-file`:",
+      "72221 repository-targets worker readonly method anchor",
+    );
+  }
   if (text.includes("function L0({requestKind:e,source:t}){return I0.has(e??``)||R0(t)}")) {
     let patched = replaceOnce(
       text,
@@ -470,6 +497,85 @@ function patchWorker(text) {
 function patchThreadSidePanelTabs(text) {
   const originalText = text;
   text = patchThreadSidePanelNativeProjectContext(text);
+  if (text.includes("function PCt(e){let t=(0,FCt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    const importAnchor = 'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";';
+    let patched = replaceOnce(text, importAnchor, `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`, "61608 branch picker content import anchor");
+    patched = replaceOnce(
+      patched,
+      "function PCt(e){let t=(0,FCt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[bW,HY,null,null,null,null,null,null,null,Oc,kt,_gt,null,null,null,null,null,CPXBranchPickerDropdownContent,null,hg,cce]")}function PCt(e){let t=(0,FCt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "61608 review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,bW.jsx)(lue,{children:(0,bW.jsx)(_gt,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,bW.jsx)(lue,{children:(0,bW.jsx)(CPXRM,{mainReviewContent:(0,bW.jsx)(_gt,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "61608 review body mux anchor",
+    );
+  }
+  if (text.includes("function gMe(e){let t=(0,KN.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    const importAnchor = 'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";';
+    let patched = replaceOnce(
+      text,
+      importAnchor,
+      `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`,
+      "62119 branch picker content import anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function gMe(e){let t=(0,KN.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[qN,Jz,null,null,null,null,null,null,null,Tn,ae,Gke,null,null,null,null,null,CPXBranchPickerDropdownContent,null,sp,iD]")}function gMe(e){let t=(0,KN.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "62119 review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,qN.jsx)(Aue,{children:(0,qN.jsx)(Gke,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,qN.jsx)(Aue,{children:(0,qN.jsx)(CPXRM,{mainReviewContent:(0,qN.jsx)(Gke,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "62119 review body mux anchor",
+    );
+  }
+  if (text.includes("function lVe(e){let t=(0,_P.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    const importAnchor = 'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";';
+    let patched = replaceOnce(
+      text,
+      importAnchor,
+      `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`,
+      "71524 branch picker content import anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function lVe(e){let t=(0,_P.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[vP,QE,ki,J,se,null,null,null,null,Ll,uu,DLe,zr,Ze,oa,Gi,ot,CPXBranchPickerDropdownContent,null,Tu,GT]")}function lVe(e){let t=(0,_P.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "71524 review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,vP.jsx)(Hpe,{children:(0,vP.jsx)(DLe,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,vP.jsx)(Hpe,{children:(0,vP.jsx)(CPXRM,{mainReviewContent:(0,vP.jsx)(DLe,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "71524 review body mux anchor",
+    );
+  }
+  if (text.includes("function Vzt(e){let t=(0,Hzt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    const importAnchor = 'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";';
+    let patched = replaceOnce(
+      text,
+      importAnchor,
+      `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";import{op as CPXParseDiff}from"./${reviewDiffRuntimeFile}";import{zF as CPXPathValue}from"./app-initial~app-main~hotkey-window-new-thread-page~hotkey-window-home-page~composer-utility-bar-D9zyQF1n.js";`,
+      "72221 review dependency import anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function Vzt(e){let t=(0,Hzt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[mY,Mzt,rl,I,null,null,null,Em,null,Dl,CPXPathValue,zMt,zi,No,Pt,kl,dc,CPXBranchPickerDropdownContent,null,CPXParseDiff,qAt]")}function Vzt(e){let t=(0,Hzt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "72221 review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,mY.jsx)(jie,{children:(0,mY.jsx)(zMt,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,mY.jsx)(jie,{children:(0,mY.jsx)(CPXRM,{mainReviewContent:(0,mY.jsx)(zMt,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "72221 review body mux anchor",
+    );
+  }
   if (text.includes("function r6t(e){let t=(0,i6t.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
     let patched = replaceOnce(
       text,
@@ -1020,6 +1126,63 @@ function patchLocalThreadCatalogBootstrap(text) {
 
 function patchAppShell(text) {
   text = patchLocalThreadCatalogBootstrap(text);
+  if (text.includes("function JSe(){let e=(0,kk.c)(3),t,n;")) {
+    let patched = replaceOnce(text, "function JSe(){let e=(0,kk.c)(3),t,n;", `${diagnosticDetailsHook()}function JSe(){let e=(0,kk.c)(3),t,n;`, "61608 app shell error fallback prop anchor");
+    return replaceOnce(
+      patched,
+      "children:[t,n,(0,Ak.jsx)(Ng,{onClick:YSe,children:(0,Ak.jsx)($,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:Ak.jsx,error:null}),(0,Ak.jsx)(Ng,{onClick:YSe,children:(0,Ak.jsx)($,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "61608 app shell error detail insertion anchor",
+    );
+  }
+  if (text.includes("function ble(){let e=(0,xA.c)(3),t,n;")) {
+    let patched = replaceOnce(
+      text,
+      "function ble(){let e=(0,xA.c)(3),t,n;",
+      `${diagnosticDetailsHook()}function ble(){let e=(0,xA.c)(3),t,n;`,
+      "62119 app shell error fallback prop anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[t,n,(0,SA.jsx)(wu,{onClick:xle,children:(0,SA.jsx)(z,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:SA.jsx,error:null}),(0,SA.jsx)(wu,{onClick:xle,children:(0,SA.jsx)(z,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "62119 app shell error detail insertion anchor",
+    );
+  }
+  if (text.includes("function Sde(){let e=(0,$O.c)(3),t,n;")) {
+    let patched = replaceOnce(
+      text,
+      "function Sde(){let e=(0,$O.c)(3),t,n;",
+      `${diagnosticDetailsHook()}function Sde(){let e=(0,$O.c)(3),t,n;`,
+      "71524 app shell error fallback prop anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[t,n,(0,ek.jsx)(Qr,{onClick:Cde,children:(0,ek.jsx)(Y,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:ek.jsx,error:null}),(0,ek.jsx)(Qr,{onClick:Cde,children:(0,ek.jsx)(Y,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "71524 app shell error detail insertion anchor",
+    );
+  }
+  if (text.includes("function Ome(){let e=(0,Yj.c)(3),t,n;")) {
+    let patched = replaceOnce(
+      text,
+      "function Ome(){let e=(0,Yj.c)(3),t,n;",
+      `${diagnosticDetailsHook()}function Ome(){let e=(0,Yj.c)(3),t,n;`,
+      "72221 app shell error fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[t,n,(0,Xj.jsx)(so,{onClick:kme,children:(0,Xj.jsx)($,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:Xj.jsx,error:null}),(0,Xj.jsx)(so,{onClick:kme,children:(0,Xj.jsx)($,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "72221 app shell error detail insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "function ZJ(){let e=(0,QJ.c)(23),t=af(q),n=N(KJ),r=Ul(`open-file`),i=N(CT),a=N(Cy),o=a!=null,s;",
+      "function ZJ(){let e=(0,QJ.c)(23),t=af(q),CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:t})),CPXO=CPXSP.bindOpenFile((e,n={})=>{let CPXPC=globalThis.CodexPlusHost.adapters.context.active();return $Xe(t,e,{hostId:n.hostId||CPXPC?.hostId||i.id||`local`,line:n.line,endLine:n.endLine,isPreview:n.isPreview,title:n.title,target:n.target??`right`})}),n=N(KJ),r=Ul(`open-file`),i=N(CT),a=N(Cy),o=a!=null,s;",
+      "72221 route-scoped native file opener anchor",
+    );
+  }
   if (text.includes("function Yue(){let e=(0,aj.c)(3),t,n;")) {
     let patched = replaceOnce(
       text,
@@ -1220,6 +1383,76 @@ function patchAppShell(text) {
 }
 
 function patchErrorBoundary(text) {
+  if (text.includes("function SPe(e){let t=(0,CPe.c)(9),{resetError:n}=e,r=Yn(),i,a;")) {
+    let patched = replaceOnce(text, "function SPe(e){let t=(0,CPe.c)(9),{resetError:n}=e,r=Yn(),i,a;", `${diagnosticDetailsHook()}function SPe(e){let t=(0,CPe.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=Yn(),i,a;`, "61608 webview error boundary fallback prop anchor");
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,fY.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,fY.jsx)(so,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:fY.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,fY.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,fY.jsx)(so,{onClick:s,children:c})]})]",
+      "61608 webview error boundary detail anchor",
+    );
+    return replaceOnce(patched, "r=e??(e=>(0,fY.jsx)(SPe,{resetError:()=>e.resetError()}));", "r=e??(e=>(0,fY.jsx)(SPe,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));", "61608 webview error boundary error prop anchor");
+  }
+  if (text.includes("function hA(e){let t=(0,gA.c)(9),{resetError:n}=e,r=ye(),i,a;")) {
+    let patched = replaceOnce(
+      text,
+      "function hA(e){let t=(0,gA.c)(9),{resetError:n}=e,r=ye(),i,a;",
+      `${diagnosticDetailsHook()}function hA(e){let t=(0,gA.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=ye(),i,a;`,
+      "62119 webview error boundary fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,vA.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,vA.jsx)(Ln,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:vA.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,vA.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,vA.jsx)(Ln,{onClick:s,children:c})]})]",
+      "62119 webview error boundary detail anchor",
+    );
+    return replaceOnce(
+      patched,
+      "r=e??(e=>(0,vA.jsx)(hA,{resetError:()=>e.resetError()}));",
+      "r=e??(e=>(0,vA.jsx)(hA,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));",
+      "62119 webview error boundary error prop anchor",
+    );
+  }
+  if (text.includes("function d_n(e){let t=(0,f_n.c)(9),{resetError:n}=e,r=kR(),i,a;")) {
+    let patched = replaceOnce(
+      text,
+      "function d_n(e){let t=(0,f_n.c)(9),{resetError:n}=e,r=kR(),i,a;",
+      `${diagnosticDetailsHook()}function d_n(e){let t=(0,f_n.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=kR(),i,a;`,
+      "71524 webview error boundary fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,N$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,N$.jsx)(p_,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:N$.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,N$.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,N$.jsx)(p_,{onClick:s,children:c})]})]",
+      "71524 webview error boundary detail anchor",
+    );
+    return replaceOnce(
+      patched,
+      "r=e??(e=>(0,N$.jsx)(d_n,{resetError:()=>e.resetError()}));",
+      "r=e??(e=>(0,N$.jsx)(d_n,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));",
+      "71524 webview error boundary error prop anchor",
+    );
+  }
+  if (text.includes("function ORe(e){let t=(0,kRe.c)(9),{resetError:n}=e,r=dr(),i,a;")) {
+    let patched = replaceOnce(
+      text,
+      "function ORe(e){let t=(0,kRe.c)(9),{resetError:n}=e,r=dr(),i,a;",
+      `${diagnosticDetailsHook()}function ORe(e){let t=(0,kRe.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=dr(),i,a;`,
+      "72221 webview error boundary fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,VK.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,VK.jsx)(dn,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:VK.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,VK.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,VK.jsx)(dn,{onClick:s,children:c})]})]",
+      "72221 webview error boundary detail anchor",
+    );
+    return replaceOnce(
+      patched,
+      "r=e??(e=>(0,VK.jsx)(ORe,{resetError:()=>e.resetError()}));",
+      "r=e??(e=>(0,VK.jsx)(ORe,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));",
+      "72221 webview error boundary error prop anchor",
+    );
+  }
   if (text.includes("function qZn(e){let t=(0,JZn.c)(9),{resetError:n}=e,r=qT(),i,a;")) {
     let patched = replaceOnce(
       text,
@@ -1365,6 +1598,52 @@ function patchErrorBoundary(text) {
 }
 
 function patchAppMainProjectColors(text) {
+  if (text.includes("function Kf(e){let t=(0,qf.c)(57),")) {
+    let patched = replaceOnce(text, "function Kf(e){let t=(0,qf.c)(57),", `${projectColorHook()}function Kf(e){let t=(0,qf.c)(57),`, "61608 project color app main helper insertion anchor");
+    return replaceOnce(patched, "A=ki.sidebarProjectRow({collapsed:a,label:g,projectId:b})", "A={...ki.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}", "61608 project header row color attributes anchor");
+  }
+  if (text.includes("function Ju(e){let t=(0,Yu.c)(57),")) {
+    let patched = replaceOnce(
+      text,
+      "function Ju(e){let t=(0,Yu.c)(57),",
+      `${projectColorHook()}function Ju(e){let t=(0,Yu.c)(57),`,
+      "62119 project color app main helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "j=ci.sidebarProjectRow({collapsed:a,label:_,projectId:x})",
+      "j={...ci.sidebarProjectRow({collapsed:a,label:_,projectId:x}),...CPXPR({projectId:x,label:_})}",
+      "62119 project header row color attributes anchor",
+    );
+  }
+  if (text.includes("function _R(e){let t=(0,vR.c)(57),")) {
+    let patched = replaceOnce(
+      text,
+      "function _R(e){let t=(0,vR.c)(57),",
+      `${projectColorHook()}function _R(e){let t=(0,vR.c)(57),`,
+      "71524 project color app main helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "A=dn.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+      "A={...dn.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}",
+      "71524 project header row color attributes anchor",
+    );
+  }
+  if (text.includes("function Oz(e){let t=(0,kz.c)(57),")) {
+    let patched = replaceOnce(
+      text,
+      "function Oz(e){let t=(0,kz.c)(57),",
+      `${projectColorHook()}function Oz(e){let t=(0,kz.c)(57),`,
+      "72221 project color app main helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "A=Ka.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+      "A={...Ka.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}",
+      "72221 project header row color attributes anchor",
+    );
+  }
   if (text.includes("function yl(e){let t=(0,bl.c)(57),{ref:n,className:r,actions:i,collapsed:a,contentClassName:o,")) {
     let patched = replaceOnce(
       text,
@@ -1622,6 +1901,33 @@ function patchAppMainProjectColors(text) {
 }
 
 function patchAppMainSidebarBlur(text) {
+  if (text.includes("function Kf(e){let t=(0,qf.c)(57),")) {
+    return replaceOnce(text, "U=(0,Jf.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:g})", "U=(0,Jf.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:g})", "61608 project header sidebar blur label anchor");
+  }
+  if (text.includes("function Ju(e){let t=(0,Yu.c)(57),")) {
+    return replaceOnce(
+      text,
+      "W=(0,Xu.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:_})",
+      "W=(0,Xu.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:_})",
+      "62119 project header sidebar blur label anchor",
+    );
+  }
+  if (text.includes("function _R(e){let t=(0,vR.c)(57),")) {
+    return replaceOnce(
+      text,
+      "H=(0,yR.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:g})",
+      "H=(0,yR.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:g})",
+      "71524 project header sidebar blur label anchor",
+    );
+  }
+  if (text.includes("function Oz(e){let t=(0,kz.c)(57),")) {
+    return replaceOnce(
+      text,
+      "U=(0,Az.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:g})",
+      "U=(0,Az.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:g})",
+      "72221 project header sidebar blur label anchor",
+    );
+  }
   if (text.includes("function yl(e){let t=(0,bl.c)(57),")) {
     return replaceOnce(
       text,
@@ -1733,6 +2039,36 @@ function patchAppMainSidebarBlur(text) {
 
 function patchHeader(text) {
   if (
+    text.includes("function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,") &&
+    text.includes("(0,sr.jsx)(H.HeaderAction,{actionId:`thread-local-project-actions`")
+  ) {
+    let patched = replaceOnce(text, "function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,", `${threadHeaderHook()}function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,`, "61608 thread shell header accessory helper insertion anchor");
+    return replaceOnce(
+      patched,
+      "let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let l;return t[2]!==s||t[3]!==r?(l=(0,sr.jsx)(H.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=l):l=t[4],l}",
+      "let s=o,CPX_headerContext={cwd:i.cwd,hostId:r?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:sr.jsx,jsxs:sr.jsxs,useSyncExternalStore:nr.useSyncExternalStore}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,sr.jsx)(H.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return CPX_headerAction;let l;return t[2]!==s||t[3]!==r?(l=(0,sr.jsx)(H.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=l):l=t[4],CPX_headerAction==null?l:(0,sr.jsxs)(sr.Fragment,{children:[CPX_headerAction,l]})}",
+      "61608 thread shell header accessory mount anchor",
+    );
+  }
+  if (
+    text.includes("function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,") &&
+    text.includes("actionId:`thread-local-project-actions`,align:`end`,order:100") &&
+    text.includes("a.kind!==`git`")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,",
+      `${threadHeaderHook()}function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,`,
+      "72221 thread shell header accessory helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let c=s;if(c==null||!o||a.kind!==`git`||i.kind===`remote-control`)return null;let l;return t[2]!==c||t[3]!==i?(l=(0,sr.jsx)(W.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:c,hostConfig:i})}),t[2]=c,t[3]=i,t[4]=l):l=t[4],l}",
+      "let c=s,CPX_headerContext={cwd:a.cwd,hostId:i?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:sr.jsx,jsxs:sr.jsxs,useSyncExternalStore:nr.useSyncExternalStore}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,sr.jsx)(W.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(c==null||!o||a.kind!==`git`||i.kind===`remote-control`)return CPX_headerAction;let l;return t[2]!==c||t[3]!==i?(l=(0,sr.jsx)(W.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:c,hostConfig:i})}),t[2]=c,t[3]=i,t[4]=l):l=t[4],CPX_headerAction==null?l:(0,sr.jsxs)(sr.Fragment,{children:[CPX_headerAction,l]})}",
+      "72221 thread shell header accessory mount anchor",
+    );
+  }
+  if (
     text.includes("function Yn(e){let t=(0,er.c)(66),") &&
     text.includes("(0,$.jsx)(w,{color:`ghostActive`,type:`button`,onClick:u,") &&
     text.includes("let x;t[35]!==c||t[36]!==g||t[37]!==i?")
@@ -1774,6 +2110,24 @@ function patchHeader(text) {
       "let l=o;if(l==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let u;return t[2]!==l||t[3]!==r?(u=(0,sr.jsx)(I.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:l,hostConfig:r})}),t[2]=l,t[3]=r,t[4]=u):u=t[4],u}",
       "let l=o,CPX_headerContext={cwd:i.cwd,hostId:r?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:sr.jsx,jsxs:sr.jsxs,useSyncExternalStore:nr.useSyncExternalStore}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,sr.jsx)(I.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(l==null||!a||i.kind!==`git`||r.kind===`remote-control`)return CPX_headerAction;let u;return t[2]!==l||t[3]!==r?(u=(0,sr.jsx)(I.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:l,hostConfig:r})}),t[2]=l,t[3]=r,t[4]=u):u=t[4],CPX_headerAction==null?u:(0,sr.jsxs)(sr.Fragment,{children:[CPX_headerAction,u]})}",
       "51957 thread shell header accessory mount anchor",
+    );
+    return patched;
+  }
+  if (
+    text.includes("function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,") &&
+    text.includes("(0,or.jsx)(q.HeaderAction,{actionId:`thread-local-project-actions`")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,",
+      `${threadHeaderHook()}function ir(e){let t=(0,ar.c)(5),{conversationId:n}=e,`,
+      "71524 thread shell header accessory helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let c;return t[2]!==s||t[3]!==r?(c=(0,or.jsx)(q.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,or.jsx)(qn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],c}",
+      "let s=o,CPX_headerContext={cwd:i.cwd,hostId:r?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:or.jsx,jsxs:or.jsxs,useSyncExternalStore:tr.useSyncExternalStore}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,or.jsx)(q.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return CPX_headerAction;let c;return t[2]!==s||t[3]!==r?(c=(0,or.jsx)(q.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,or.jsx)(qn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],CPX_headerAction==null?c:(0,or.jsxs)(or.Fragment,{children:[CPX_headerAction,c]})}",
+      "71524 thread shell header accessory mount anchor",
     );
     return patched;
   }
@@ -2001,6 +2355,83 @@ function patchHeader(text) {
 
 function patchThreadTitle(text) {
   if (
+    text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
+    text.includes("projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e")
+  ) {
+    let patched = replaceOnce(text, "function Sl(e){let t=(0,Tl.c)(51),", `${threadHeaderContextHook()}${threadHeaderBoundTitleHook("ll")}function Sl(e){let t=(0,Tl.c)(51),`, "61608 thread title context helper insertion anchor");
+    patched = replaceOnce(patched, "projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,v=c===void 0?!1:c,", "projectName:f,title:CPX_nativeTitle,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,p=CPXThreadHeaderTitle(CPX_nativeTitle),v=c===void 0?!1:c,", "61608 thread title adapter mount anchor");
+    return replaceOnce(
+      patched,
+      "let D=E,O=L(Rn,n),ee=so(D,It(r??O).id),A;",
+      "let D=E,O=L(Rn,n),CPXC=CPXBindThreadHeaderContext({routeId:n,threadId:n,cwd:h,workspaceRoot:h,gitRoot:D??h,hostId:It(r??O).id,sourceProject:{id:h,label:typeof f==`string`?f:``,cwd:h}}),ee=so(D,It(r??O).id),A;",
+      "61608 thread title native context anchor",
+    );
+  }
+  if (
+    text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
+    text.includes("projectName:f,title:p,titleSuffix:h,cwd:g,canPin:_,hideForkActions:v}=e")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Sl(e){let t=(0,Tl.c)(51),",
+      `${threadHeaderContextHook()}${threadHeaderBoundTitleHook("ll")}function Sl(e){let t=(0,Tl.c)(51),`,
+      "62119 thread title context helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "projectName:f,title:p,titleSuffix:h,cwd:g,canPin:_,hideForkActions:v}=e,y=u===void 0?!1:u,",
+      "projectName:f,title:CPX_nativeTitle,titleSuffix:h,cwd:g,canPin:_,hideForkActions:v}=e,p=CPXThreadHeaderTitle(CPX_nativeTitle),y=u===void 0?!1:u,",
+      "62119 thread title adapter mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let E=T,D=H(Lt,n),O=so(E,Re(r??D).id),k;",
+      "let E=T,D=H(Lt,n),CPXC=CPXBindThreadHeaderContext({routeId:n,threadId:n,cwd:g,workspaceRoot:g,gitRoot:E??g,hostId:Re(r??D).id,sourceProject:{id:g,label:typeof f==`string`?f:``,cwd:g}}),O=so(E,Re(r??D).id),k;",
+      "62119 thread title native context anchor",
+    );
+  }
+  if (
+    text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
+    text.includes("projectName:d,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Sl(e){let t=(0,Tl.c)(51),",
+      `${threadHeaderTitleHook("t(P(),1)")}function Sl(e){let t=(0,Tl.c)(51),`,
+      "72221 thread title adapter helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "projectName:d,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,v=c===void 0?!1:c,",
+      "projectName:d,title:CPX_nativeTitle,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,p=CPXThreadHeaderTitle(CPX_nativeTitle),v=c===void 0?!1:c,",
+      "72221 thread title adapter mount anchor",
+    );
+  }
+  if (
+    text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
+    text.includes("pendingWorktree:o,projectIcon:s,projectIconInteractive:c,projectHoverCardContent:u,projectName:p,title:h,titleSuffix:g,cwd:_,canPin:v,hideForkActions:y}=e") &&
+    text.includes("let D=E,O=W(rn,n),k=so(D,f(r??O).id),A;")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Sl(e){let t=(0,Tl.c)(51),",
+      `${threadHeaderContextHook()}${threadHeaderBoundTitleHook("t(I(),1)")}function Sl(e){let t=(0,Tl.c)(51),`,
+      "71524 thread title context helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "projectName:p,title:h,titleSuffix:g,cwd:_,canPin:v,hideForkActions:y}=e,b=c===void 0?!1:c,",
+      "projectName:p,title:CPX_nativeTitle,titleSuffix:g,cwd:_,canPin:v,hideForkActions:y}=e,h=CPXThreadHeaderTitle(CPX_nativeTitle),b=c===void 0?!1:c,",
+      "71524 thread title adapter mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let D=E,O=W(rn,n),k=so(D,f(r??O).id),A;",
+      "let D=E,O=W(rn,n),CPXC=CPXBindThreadHeaderContext({routeId:n,threadId:n,cwd:_,workspaceRoot:_,gitRoot:D??_,hostId:f(r??O).id,sourceProject:{id:_,label:typeof p==`string`?p:``,cwd:_}}),k=so(D,f(r??O).id),A;",
+      "71524 thread title native context anchor",
+    );
+  }
+  if (
     text.includes("function xl(e){let t=(0,wl.c)(51),{conversationId:n,hostIdOverride:r,") &&
     text.includes("projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e")
   ) {
@@ -2217,6 +2648,14 @@ function patchThreadHeaderActionShell(text) {
 
 function patchLocalConversationPageHeader(text) {
   text = patchThreadSidePanelNativeProjectContext(text);
+  if (text.includes("(0,$.jsx)(kf,{desktopDeepLinkConversationId:n,onBack:g,title:_,trailing:v})")) {
+    return replaceOnce(
+      text,
+      "(0,$.jsx)(kf,{desktopDeepLinkConversationId:n,onBack:g,title:_,trailing:v})",
+      "(0,$.jsx)(kf,{desktopDeepLinkConversationId:n,onBack:g,title:_,trailing:v,cwd:d})",
+      "62119 local conversation header cwd bridge anchor",
+    );
+  }
   if (text.includes("projectIcon:o,projectHoverCardContent:s,projectName:c,title:l,titleSuffix:u,cwd:p,canPin:m,hideForkActions:h")) {
     let patched = replaceOnce(
       text,
@@ -2562,6 +3001,52 @@ function patchLocalConversationPageHeader(text) {
 function patchGeneralSettingsUserBubbleColors(text) {
   if (
     text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
+    text.includes("children:[D.map(e=>(0,J.jsx)(L,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map")
+  ) {
+    let patched = replaceOnce(text, "function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){", `${appearanceSettingsHook("{React:Kr,jsx:J.jsx,SettingRow:L,ColorInput:Nr,Switch:G}")}function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`, "61608 user bubble settings helper insertion anchor");
+    return replaceOnce(
+      patched,
+      "children:[D.map(e=>(0,J.jsx)(L,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map",
+      "children:[D.map(e=>(0,J.jsx)(L,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),...CPXAppearanceRows(n),O.map",
+      "61608 user bubble settings row anchor",
+    );
+  }
+  if (
+    text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
+    text.includes("children:[D.map(e=>(0,J.jsx)(V,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+      `${appearanceSettingsHook("{React:Kr,jsx:J.jsx,SettingRow:V,ColorInput:Nr,Switch:H}")}function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+      "62119 user bubble settings helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[D.map(e=>(0,J.jsx)(V,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map",
+      "children:[D.map(e=>(0,J.jsx)(V,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),...CPXAppearanceRows(n),O.map",
+      "62119 user bubble settings row anchor",
+    );
+  }
+  if (
+    text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
+    text.includes("children:[T.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:y[e.role],onChange:t=>{D(e.role,t)}}),label:e.label},e.role)),E.map")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+      `${appearanceSettingsHook("{React:Kr,jsx:J.jsx,SettingRow:H,ColorInput:Nr,Switch:G}")}function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+      "72221 user bubble settings helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[T.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:y[e.role],onChange:t=>{D(e.role,t)}}),label:e.label},e.role)),E.map",
+      "children:[T.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:y[e.role],onChange:t=>{D(e.role,t)}}),label:e.label},e.role)),...CPXAppearanceRows(n),E.map",
+      "72221 user bubble settings row anchor",
+    );
+  }
+  if (
+    text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
     text.includes("children:[D.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:b[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map")
   ) {
     let patched = replaceOnce(
@@ -2742,6 +3227,81 @@ function patchGeneralSettingsUserBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsBubbleColors(text) {
+  if (text.includes("function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
+    let patched = replaceOnce(text, "function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){", `${messageComposerHook()}function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`, "61608 user bubble helper insertion anchor");
+    patched = replaceOnce(
+      patched,
+      "return(0,UY.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "return(0,UY.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "61608 edit user message entry marker anchor",
+    );
+    return replaceOnce(
+      patched,
+      "de=V?(0,qY.jsx)(`div`,{className:`w-full p-px`,children:(0,qY.jsx)(FNt,{cwd:b??null,hostId:x,initialMessage:B.trim(),onCancel:()=>{te(null)},onDraftChange:e=>{te(e)},onSubmit:re})}):q?(0,qY.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,",
+      "de=V?(0,qY.jsx)(`div`,{className:`w-full p-px`,children:(0,qY.jsx)(FNt,{cwd:b??null,hostId:x,initialMessage:B.trim(),onCancel:()=>{te(null)},onDraftChange:e=>{te(e)},onSubmit:re})}):q?(0,qY.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,",
+      "61608 user bubble marker attribute anchor",
+    );
+  }
+  if (text.includes("function TFe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
+    let patched = replaceOnce(
+      text,
+      "function TFe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+      `${messageComposerHook()}function TFe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`,
+      "62119 user bubble helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "return(0,Yz.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "return(0,Yz.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "62119 edit user message entry marker anchor",
+    );
+    return replaceOnce(
+      patched,
+      "de=U?(0,eB.jsx)(`div`,{className:`w-full p-px`,children:(0,eB.jsx)(TFe,{cwd:b??null,hostId:x,initialMessage:H.trim(),onCancel:()=>{re(null)},onDraftChange:e=>{re(e)},onSubmit:Z})}):Y?(0,eB.jsx)(`div`,{\"data-user-message-bubble\":!0,role:z?`button`:void 0,",
+      "de=U?(0,eB.jsx)(`div`,{className:`w-full p-px`,children:(0,eB.jsx)(TFe,{cwd:b??null,hostId:x,initialMessage:H.trim(),onCancel:()=>{re(null)},onDraftChange:e=>{re(e)},onSubmit:Z})}):Y?(0,eB.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:z?`button`:void 0,",
+      "62119 user bubble marker attribute anchor",
+    );
+  }
+  if (text.includes("function _Qe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
+    let patched = replaceOnce(
+      text,
+      "function _Qe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+      `${messageComposerHook()}function _Qe({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`,
+      "71524 user bubble helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "return(0,yB.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "return(0,yB.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "71524 edit user message entry marker anchor",
+    );
+    return replaceOnce(
+      patched,
+      "me=B?(0,CB.jsx)(`div`,{className:`w-full p-px`,children:(0,CB.jsx)(_Qe,{cwd:b??null,hostId:x,initialMessage:z.trim(),onCancel:()=>{re(null)},onDraftChange:e=>{re(e)},onSubmit:ae})}):ee?(0,CB.jsx)(`div`,{\"data-user-message-bubble\":!0,role:I?`button`:void 0,",
+      "me=B?(0,CB.jsx)(`div`,{className:`w-full p-px`,children:(0,CB.jsx)(_Qe,{cwd:b??null,hostId:x,initialMessage:z.trim(),onCancel:()=>{re(null)},onDraftChange:e=>{re(e)},onSubmit:ae})}):ee?(0,CB.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,",
+      "71524 user bubble marker attribute anchor",
+    );
+  }
+  if (text.includes("function DZt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
+    let patched = replaceOnce(
+      text,
+      "function DZt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+      `${messageComposerHook()}function DZt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`,
+      "72221 user bubble helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "return(0,GQ.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "return(0,GQ.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "72221 edit user message entry marker anchor",
+    );
+    return replaceOnce(
+      patched,
+      "me=V?(0,qQ.jsx)(`div`,{className:`w-full p-px`,children:(0,qQ.jsx)(DZt,{cwd:b??null,hostId:x,initialMessage:B.trim(),onCancel:()=>{ie(null)},onDraftChange:e=>{ie(e)},onSubmit:oe})}):q?(0,qQ.jsx)(`div`,{\"data-user-message-bubble\":!0,role:L?`button`:void 0,",
+      "me=V?(0,qQ.jsx)(`div`,{className:`w-full p-px`,children:(0,qQ.jsx)(DZt,{cwd:b??null,hostId:x,initialMessage:B.trim(),onCancel:()=>{ie(null)},onDraftChange:e=>{ie(e)},onSubmit:oe})}):q?(0,qQ.jsx)(`div`,{\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:L?`button`:void 0,",
+      "72221 user bubble marker attribute anchor",
+    );
+  }
   if (text.includes("function XO({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
     let patched = replaceOnce(
       text,
@@ -2980,6 +3540,28 @@ function patchUserMessageAttachmentsBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsProjectColors(text) {
+  if (
+    text.includes("function FNt(") &&
+    text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,")
+  ) {
+    return replaceOnce(text, "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,", "\"data-user-message-bubble\":!0,...CPXBubbleProps({project:{cwd:b,hostId:x}}),role:I?`button`:void 0,", "61608 user bubble project marker attribute anchor");
+  }
+  if (text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:z?`button`:void 0,")) {
+    return replaceOnce(
+      text,
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:z?`button`:void 0,",
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({project:{cwd:b,hostId:x}}),role:z?`button`:void 0,",
+      "62119 user bubble project marker attribute anchor",
+    );
+  }
+  if (text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:L?`button`:void 0,tabIndex:0,className:Q(")) {
+    return replaceOnce(
+      text,
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:L?`button`:void 0,",
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({project:{cwd:b,hostId:x}}),role:L?`button`:void 0,",
+      "72221 user bubble project marker attribute anchor",
+    );
+  }
   if (text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,tabIndex:0,className:X(")) {
     return replaceOnce(
       text,
@@ -3041,6 +3623,39 @@ function patchUserMessageAttachmentsProjectColors(text) {
 }
 
 function patchComposerBubbleColors(text) {
+  if (text.includes("function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,")) {
+    return replaceOnce(text, "function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,", `${messageComposerHook()}function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,`, "61608 composer helper insertion anchor");
+  }
+  if (text.includes("function xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,")) {
+    return replaceOnce(
+      text,
+      "function xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,",
+      `${messageComposerHook()}function xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,`,
+      "62119 composer helper insertion anchor",
+    );
+  }
+  if (text.includes("function l5({aboveComposerHeaderContent:e,activeCollaborationMode:t,")) {
+    return replaceOnce(
+      text,
+      "function l5({aboveComposerHeaderContent:e,activeCollaborationMode:t,",
+      `${messageComposerHook()}function l5({aboveComposerHeaderContent:e,activeCollaborationMode:t,`,
+      "71524 composer helper insertion anchor",
+    );
+  }
+  if (text.includes("function JY(e){let t=(0,YY.c)(30),")) {
+    let patched = replaceOnce(
+      text,
+      "function JY(e){let t=(0,YY.c)(30),",
+      `${messageComposerHook()}function JY(e){let t=(0,YY.c)(30),`,
+      "72221 composer surface helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "T=(0,QY.jsxs)(iS,{...f,className:_,inert:v,isDragActive:y,onDragEnter:b,onDragLeave:x,onDragOver:S,onDrop:C,children:[w,r]})",
+      "T=(0,QY.jsxs)(iS,{...f,...CPXSurfaceProps({}),className:_,inert:v,isDragActive:y,onDragEnter:b,onDragLeave:x,onDragOver:S,onDrop:C,children:[w,r]})",
+      "72221 composer user entry marker render anchor",
+    );
+  }
   if (text.includes("function mDa(e){let t=(0,s7.c)(18),")) {
     let patched = replaceOnce(
       text,
@@ -3289,6 +3904,86 @@ function patchComposerBubbleColors(text) {
 }
 
 function patchComposerPrimitiveSurface(text) {
+  if (text.includes("function h(e){let t=(0,A.c)(18),{children:n,className:r,utilityBarVariant:i,")) {
+    let patched = replaceOnce(
+      text,
+      "function h(e){let t=(0,A.c)(18),{children:n,className:r,utilityBarVariant:i,inert:o,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,",
+      `${messageComposerHook()}function h(e){let t=(0,A.c)(19),{children:n,className:r,utilityBarVariant:i,inert:o,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+      "61608 native composer primitive surface props anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[10]!==n||t[11]!==o||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M?",
+      "t[10]!==n||t[11]!==o||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M||t[18]!==CPX_resolvedSurfaceProps?",
+      "61608 native composer primitive surface cache anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(N=(0,j.jsx)(s.div,{inert:o,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=o,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N)",
+      "(N=(0,j.jsx)(s.div,{inert:o,...CPX_resolvedSurfaceProps,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=o,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N,t[18]=CPX_resolvedSurfaceProps)",
+      "61608 native composer primitive surface render anchor",
+    );
+  }
+  if (text.includes("function Mln(e){let t=(0,x9.c)(18),{children:n,className:r,utilityBarVariant:i,")) {
+    let patched = replaceOnce(
+      text,
+      "function Mln(e){let t=(0,x9.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceVariant:l,onDragEnter:u,onDragLeave:d,onDragOver:f,onDrop:p}=e,",
+      `${messageComposerHook()}function Mln(e){let t=(0,x9.c)(19),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceVariant:l,onDragEnter:u,onDragLeave:d,onDragOver:f,onDrop:p,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+      "62119 native composer primitive surface props anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[10]!==n||t[11]!==a||t[12]!==u||t[13]!==d||t[14]!==f||t[15]!==p||t[16]!==E?",
+      "t[10]!==n||t[11]!==a||t[12]!==u||t[13]!==d||t[14]!==f||t[15]!==p||t[16]!==E||t[18]!==CPX_resolvedSurfaceProps?",
+      "62119 native composer primitive surface cache anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(D=(0,S9.jsx)(rp.div,{inert:a,className:E,onMouseDown:Kln,onDragEnter:u,onDragOver:f,onDragLeave:d,onDrop:p,children:n}),t[10]=n,t[11]=a,t[12]=u,t[13]=d,t[14]=f,t[15]=p,t[16]=E,t[17]=D)",
+      "(D=(0,S9.jsx)(rp.div,{inert:a,...CPX_resolvedSurfaceProps,className:E,onMouseDown:Kln,onDragEnter:u,onDragOver:f,onDragLeave:d,onDrop:p,children:n}),t[10]=n,t[11]=a,t[12]=u,t[13]=d,t[14]=f,t[15]=p,t[16]=E,t[17]=D,t[18]=CPX_resolvedSurfaceProps)",
+      "62119 native composer primitive surface render anchor",
+    );
+  }
+  if (text.includes("function h(e){let t=(0,A.c)(18),{children:n,className:a,utilityBarVariant:o,")) {
+    let patched = replaceOnce(
+      text,
+      "function h(e){let t=(0,A.c)(18),{children:n,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,",
+      `${messageComposerHook()}function h(e){let t=(0,A.c)(19),{children:n,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+      "71524 native composer primitive surface props anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[10]!==n||t[11]!==s||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M?",
+      "t[10]!==n||t[11]!==s||t[12]!==f||t[13]!==m||t[14]!==h||t[15]!==g||t[16]!==M||t[18]!==CPX_resolvedSurfaceProps?",
+      "71524 native composer primitive surface cache anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(N=(0,j.jsx)(r.div,{inert:s,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=s,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N)",
+      "(N=(0,j.jsx)(r.div,{inert:s,...CPX_resolvedSurfaceProps,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:n}),t[10]=n,t[11]=s,t[12]=f,t[13]=m,t[14]=h,t[15]=g,t[16]=M,t[17]=N,t[18]=CPX_resolvedSurfaceProps)",
+      "71524 native composer primitive surface render anchor",
+    );
+  }
+  if (text.includes("function h(e){let n=(0,A.c)(18),{children:r,className:a,utilityBarVariant:o,")) {
+    let patched = replaceOnce(
+      text,
+      "function h(e){let n=(0,A.c)(18),{children:r,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g}=e,",
+      `${messageComposerHook()}function h(e){let n=(0,A.c)(19),{children:r,className:a,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:m,onDragOver:h,onDrop:g,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+      "72221 native composer primitive surface props anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "n[10]!==r||n[11]!==s||n[12]!==f||n[13]!==m||n[14]!==h||n[15]!==g||n[16]!==M?",
+      "n[10]!==r||n[11]!==s||n[12]!==f||n[13]!==m||n[14]!==h||n[15]!==g||n[16]!==M||n[18]!==CPX_resolvedSurfaceProps?",
+      "72221 native composer primitive surface cache anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(N=(0,j.jsx)(t.div,{inert:s,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:r}),n[10]=r,n[11]=s,n[12]=f,n[13]=m,n[14]=h,n[15]=g,n[16]=M,n[17]=N)",
+      "(N=(0,j.jsx)(t.div,{inert:s,...CPX_resolvedSurfaceProps,className:M,onMouseDown:k,onDragEnter:f,onDragOver:h,onDragLeave:m,onDrop:g,children:r}),n[10]=r,n[11]=s,n[12]=f,n[13]=m,n[14]=h,n[15]=g,n[16]=M,n[17]=N,n[18]=CPX_resolvedSurfaceProps)",
+      "72221 native composer primitive surface render anchor",
+    );
+  }
   if (!text.includes("function b(e){let t=(0,P.c)(18),{children:n,className:r,utilityBarVariant:o,inert:s,isDragActive:c,layout:l,radiusVariant:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,")) {
     return text;
   }
@@ -3307,6 +4002,81 @@ function patchComposerPrimitiveSurface(text) {
 }
 
 function patchComposerProjectColors(text) {
+  if (
+    text.includes("function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,") &&
+    text.includes("):(0,E$.jsx)(PUe,{className:C,utilityBarVariant:S,hasDropTargetPortal:_s,")
+  ) {
+    let patched = replaceOnce(text, "interactionsDisabled:M}){let N=Ke(yp),", "interactionsDisabled:M}){let CPX_composerSurfaceProps=CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()}),N=Ke(yp),", "61608 composer canonical project context anchor");
+    patched = replaceOnce(
+      patched,
+      "):(0,E$.jsx)(PUe,{className:C,utilityBarVariant:S,hasDropTargetPortal:_s,",
+      "):(0,E$.jsx)(PUe,{key:CPX_composerSurfaceProps?.[`data-codex-plus-project-color`]??``,...CPX_composerSurfaceProps,className:C,utilityBarVariant:S,hasDropTargetPortal:_s,",
+      "61608 composer project accent caller anchor",
+    );
+    return replaceOnce(
+      patched,
+      "ro=(e,t=lr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ib({path:n,line:r,column:r==null?void 0:1,cwd:an,hostId:t,openFile:It.mutate})},oee=e=>",
+      "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:N})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>ib({scope:N,path:e,cwd:t.workspaceRoot??an,hostConfig:ur,hostId:t.hostId??lr,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openFile:It.mutate,openInSidePanel:!0})),ro=(e,t=lr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ib({path:n,line:r,column:r==null?void 0:1,cwd:an,hostId:t,openFile:It.mutate})},oee=e=>",
+      "61608 composer-native file opener adapter anchor",
+    );
+  }
+  if (
+    text.includes("function xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,") &&
+    text.includes("):(0,Eq.jsx)(Sq,{className:k,utilityBarVariant:D,hasDropTargetPortal:Qc,")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "interactionsDisabled:z}){let B=Xn(Bs),",
+      "interactionsDisabled:z}){let CPX_composerSurfaceProps=CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()}),B=Xn(Bs),",
+      "62119 composer canonical project context anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "):(0,Eq.jsx)(Sq,{className:k,utilityBarVariant:D,hasDropTargetPortal:Qc,",
+      "):(0,Eq.jsx)(Sq,{key:CPX_composerSurfaceProps?.[`data-codex-plus-project-color`]??``,codexPlusProps:CPX_composerSurfaceProps,className:k,utilityBarVariant:D,hasDropTargetPortal:Qc,",
+      "62119 composer project accent caller anchor",
+    );
+    return replaceOnce(
+      patched,
+      "xs=(e,t=qr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;eg({path:n,line:r,column:r==null?void 0:1,cwd:Nn,hostId:t,openFile:en.mutate})},Ss=e=>",
+      "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:B})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>eg({scope:B,path:e,cwd:t.workspaceRoot??Nn,hostConfig:Jr,hostId:t.hostId??qr,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openFile:en.mutate,openInSidePanel:!0})),xs=(e,t=qr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;eg({path:n,line:r,column:r==null?void 0:1,cwd:Nn,hostId:t,openFile:en.mutate})},Ss=e=>",
+      "62119 composer-native file opener adapter anchor",
+    );
+  }
+  if (text.includes("clientThreadId:R,interactionsDisabled:B}){let V=ri(No),") && text.includes("):(0,m5.jsx)(u5,{className:E,utilityBarVariant:T,hasDropTargetPortal:zc,")) {
+    let patched = replaceOnce(
+      text,
+      "clientThreadId:R,interactionsDisabled:B}){let V=ri(No),",
+      "clientThreadId:R,interactionsDisabled:B}){let CPX_composerSurfaceProps=CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()}),V=ri(No),",
+      "71524 composer canonical project context anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "):(0,m5.jsx)(u5,{className:E,utilityBarVariant:T,hasDropTargetPortal:zc,",
+      "):(0,m5.jsx)(u5,{key:CPX_composerSurfaceProps?.[`data-codex-plus-project-color`]??``,codexPlusProps:CPX_composerSurfaceProps,className:E,utilityBarVariant:T,hasDropTargetPortal:zc,",
+      "71524 composer project accent caller anchor",
+    );
+    return replaceOnce(
+      patched,
+      "bs=(e,t=Hr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ki({path:n,line:r,column:r==null?void 0:1,cwd:Mn,hostId:t,openFile:un.mutate})},xs=e=>",
+      "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:V})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>ki({scope:V,path:e,cwd:t.workspaceRoot??Mn,hostConfig:Ur,hostId:t.hostId??Hr,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openFile:un.mutate,openInSidePanel:!0})),bs=(e,t=Hr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ki({path:n,line:r,column:r==null?void 0:1,cwd:Mn,hostId:t,openFile:un.mutate})},xs=e=>",
+      "71524 composer-native file opener adapter anchor",
+    );
+  }
+  if (text.includes("clientThreadId:j,interactionsDisabled:M}){let N=ia(Db),") && text.includes("):(0,QY.jsx)(JY,{className:w,utilityBarVariant:C,hasDropTargetPortal:kc,")) {
+    let patched = replaceOnce(
+      text,
+      "clientThreadId:j,interactionsDisabled:M}){let N=ia(Db),",
+      "clientThreadId:j,interactionsDisabled:M}){let CPX_composerSurfaceProps=CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()}),N=ia(Db),",
+      "72221 composer canonical project context anchor",
+    );
+    return replaceOnce(
+      patched,
+      "):(0,QY.jsx)(JY,{className:w,utilityBarVariant:C,hasDropTargetPortal:kc,",
+      "):(0,QY.jsx)(JY,{key:CPX_composerSurfaceProps?.[`data-codex-plus-project-color`]??``,codexPlusProps:CPX_composerSurfaceProps,className:w,utilityBarVariant:C,hasDropTargetPortal:kc,",
+      "72221 composer project accent caller anchor",
+    );
+  }
   if (text.includes("(0,Q9.jsx)(YGa,{className:S,utilityBarVariant:x,hasDropTargetPortal:oee,")) {
     return replaceOnce(
       text,
@@ -3533,6 +4303,66 @@ function patchKeyboardShortcutsSearchInput(text) {
 }
 
 function patchCommandMenuRuntimeCommands(text) {
+  if (text.includes("function CPXCommandPaletteItem") && text.includes("bindNativeDispatch")) return text;
+  if (text.includes("function aJe(e){let t=(0,a8.c)(126),") && text.includes("let f=ne?P.filter(uJe):P,p;")) {
+    let patched = replaceOnce(
+      text,
+      "function aJe(e){let t=(0,a8.c)(126),",
+      "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,s8.jsx)(pD,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function aJe(e){let t=(0,a8.c)(126),",
+      "61608 command palette plugin item anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "!i&&c!=null&&K.push(c),t[29]=I,",
+      "K.push(...globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,s8.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id))),!i&&c!=null&&K.push(c),t[29]=I,",
+      "61608 command palette plugin item mount anchor",
+    );
+    if (patched.includes("e.bindNativeDispatch(e=>(xf(e,`command_menu`),!0)),e.dispatch(r.id)")) return patched;
+    return replaceOnce(patched, "c=()=>{xf(r.id,`command_menu`),n()},", "c=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(xf(e,`command_menu`),!0)),e.dispatch(r.id),n()},", "61608 command menu stable dispatch anchor");
+  }
+  if (text.includes("function Ppe(e){let t=(0,V0.c)(126),") && text.includes("let f=se?P.filter(zpe):P,p;")) {
+    let patched = replaceOnce(
+      text,
+      "function Ppe(e){let t=(0,V0.c)(126),",
+      "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,U0.jsx)(Ba,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function Ppe(e){let t=(0,V0.c)(126),",
+      "62119 command palette plugin item anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "!i&&c!=null&&oe.push(c),t[29]=I,",
+      "oe.push(...globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,U0.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id))),!i&&c!=null&&oe.push(c),t[29]=I,",
+      "62119 command palette plugin item mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "c=()=>{Bf(r.id,`command_menu`),n()},",
+      "c=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(Bf(e,`command_menu`),!0)),e.dispatch(r.id),n()},",
+      "62119 command menu stable dispatch anchor",
+    );
+  }
+  if (text.includes("function Vhe(e){let t=(0,O4.c)(126),") || text.includes("function ube(e){let t=(0,b2.c)(126),")) {
+    return patchAppCommandPaletteRuntimeCommands(text);
+  }
+  if (text.includes("function TRe(e){let t=(0,M5.c)(126),") && text.includes("t[16]=O,t[17]=P):P=t[17];let F=P,I;")) {
+    let patched = replaceOnce(
+      text,
+      "function TRe(e){let t=(0,M5.c)(126),",
+      "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,P5.jsx)(hE,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function TRe(e){let t=(0,M5.c)(126),",
+      "72221 command palette plugin item anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "!i&&c!=null&&K.push(c),t[29]=L,",
+      "U||K.push(...globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,P5.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id))),!i&&c!=null&&K.push(c),t[29]=L,",
+      "72221 command palette plugin item mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "c=()=>{IC(r.id,`command_menu`),n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+      "c=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(IC(e,`command_menu`),!0)),e.dispatch(r.id),n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+      "72221 command menu stable dispatch anchor",
+    );
+  }
   if (text.includes("function yJ({commandId:e}){let t=bJ(fJ(e));return t?.menuTitle==null||t.menuTitleIntlId==null?null:{menuTitle:t.menuTitle,menuTitleIntlId:t.menuTitleIntlId}}")) {
     return replaceOnce(
       text,
@@ -3575,6 +4405,20 @@ function patchCommandMenuRuntimeCommands(text) {
 
 function patchAppCommandPaletteRuntimeCommands(text) {
   let patched = text;
+  if (patched.includes("function ube(e){let t=(0,b2.c)(126),") && !patched.includes("function CPXCommandPaletteItem")) {
+    patched = replaceOnce(
+      patched,
+      "function ube(e){let t=(0,b2.c)(126),",
+      "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,S2.jsx)(rO,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function ube(e){let t=(0,b2.c)(126),",
+      "71524 app command palette runtime item helper anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "!i&&c!=null&&re.push(c),t[29]=I,",
+      "re.push(...globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,S2.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id))),!i&&c!=null&&re.push(c),t[29]=I,",
+      "71524 app command palette runtime item mount anchor",
+    );
+  }
   if (patched.includes("function Vhe(e){let t=(0,O4.c)(126),") && !patched.includes("function CPXCommandPaletteItem")) {
     patched = replaceOnce(
       patched,
@@ -3623,10 +4467,50 @@ function patchAppCommandPaletteRuntimeCommands(text) {
       "app command palette runtime command dispatch anchor",
     );
   }
+  if (patched.includes("c=()=>{au(r.id,`command_menu`),n()},")) {
+    patched = replaceOnce(
+      patched,
+      "c=()=>{au(r.id,`command_menu`),n()},",
+      "c=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(au(e,`command_menu`),!0)),e.dispatch(r.id),n()},",
+      "71524 app command palette runtime command dispatch anchor",
+    );
+  }
   return patched;
 }
 
 function patchLocalTaskRow(text) {
+  if (text.includes("function ey(e){let t=(0,oy.c)(128),")) {
+    let patched = replaceOnce(text, "function ey(e){let t=(0,oy.c)(128),", `${projectColorHook()}function ey(e){let t=(0,oy.c)(128),`, "61608 local task row project color helper insertion anchor");
+    patched = replaceOnce(patched, "dataAttributes:ki.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})", "dataAttributes:{...ki.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}", "61608 local pending task row project color attributes anchor");
+    patched = replaceOnce(patched, "dataAttributes:ki.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})", "dataAttributes:{...ki.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),...CPXPR({hostId:null,threadId:t,title:e.task.title??``})}", "61608 remote sidebar row project color attributes anchor");
+    return replaceOnce(patched, "dataAttributes:ki.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})", "dataAttributes:{...ki.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:_e,label:ge,path:O,cwd:O,hostId:p,threadId:l,title:x,projectKind:_e||O?void 0:u,projectless:f||u===`projectless`})}", "61608 local sidebar row project color attributes anchor");
+  }
+  if (text.includes("function Fg(e){let t=(0,Vg.c)(128),")) {
+    let patched = replaceOnce(
+      text,
+      "function Fg(e){let t=(0,Vg.c)(128),",
+      `${projectColorHook()}function Fg(e){let t=(0,Vg.c)(128),`,
+      "62119 local task row project color helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:ci.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+      "dataAttributes:{...ci.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}",
+      "62119 local pending task row project color attributes anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:ci.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+      "dataAttributes:{...ci.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),...CPXPR({hostId:null,threadId:t,title:e.task.title??``})}",
+      "62119 remote sidebar row project color attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "dataAttributes:ci.sidebarThreadRow({active:s,hostId:f,id:l,kind:`local`,pinned:r,title:S})",
+      "dataAttributes:{...ci.sidebarThreadRow({active:s,hostId:f,id:l,kind:`local`,pinned:r,title:S}),...CPXPR({projectId:ye,label:ve,path:k,cwd:k,hostId:f,threadId:l,title:S,projectKind:ye||k?void 0:u,projectless:m||u===`projectless`})}",
+      "62119 local sidebar row project color attributes anchor",
+    );
+  }
   if (text.includes("...CPXPR({projectId:b,label:g}),ref:n,className:N,role:`button`,") && !text.includes("function fm(e){let t=(0,vm.c)(128),")) {
     return text;
   }
@@ -3649,6 +4533,58 @@ function patchLocalTaskRow(text) {
       "dataAttributes:Hn.sidebarThreadRow({active:s,hostId:m,id:u,kind:`local`,pinned:r,title:S})",
       "dataAttributes:{...Hn.sidebarThreadRow({active:s,hostId:m,id:u,kind:`local`,pinned:r,title:S}),...CPXPR({projectId:Se,label:xe,path:A,cwd:A,hostId:m,threadId:u,title:S,projectKind:Se||A?void 0:`chat`,projectless:p})}",
       "local sidebar row project color attributes anchor",
+    );
+  }
+  if (text.includes("function hSe(e){let t=(0,yW.c)(128),")) {
+    let patched = replaceOnce(
+      text,
+      "function hSe(e){let t=(0,yW.c)(128),",
+      `${projectColorHook()}function hSe(e){let t=(0,yW.c)(128),`,
+      "72221 local task row project color helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+      "dataAttributes:{...Ka.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}",
+      "72221 local pending task row project color attributes anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+      "dataAttributes:{...Ka.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),...CPXPR({hostId:null,threadId:t,title:e.task.title??``})}",
+      "72221 remote sidebar row project color attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "dataAttributes:Ka.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x})",
+      "dataAttributes:{...Ka.sidebarThreadRow({active:s,hostId:p,id:l,kind:`local`,pinned:r,title:x}),...CPXPR({projectId:ve,label:_e,path:E,cwd:E,hostId:p,threadId:l,title:x,projectKind:ve||E?void 0:u,projectless:u===`projectless`})}",
+      "72221 local sidebar row project color attributes anchor",
+    );
+  }
+  if (text.includes("function qW(e){let t=(0,$W.c)(128),")) {
+    let patched = replaceOnce(
+      text,
+      "function qW(e){let t=(0,$W.c)(128),",
+      `${projectColorHook()}function qW(e){let t=(0,$W.c)(128),`,
+      "71524 local task row project color helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:dn.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})",
+      "dataAttributes:{...dn.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}",
+      "71524 local pending task row project color attributes anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "dataAttributes:dn.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``})",
+      "dataAttributes:{...dn.sidebarThreadRow({active:s,hostId:null,id:t,kind:`remote`,pinned:r,title:e.task.title??``}),...CPXPR({hostId:null,threadId:t,title:e.task.title??``})}",
+      "71524 remote sidebar row project color attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "dataAttributes:dn.sidebarThreadRow({active:s,hostId:m,id:l,kind:`local`,pinned:r,title:S})",
+      "dataAttributes:{...dn.sidebarThreadRow({active:s,hostId:m,id:l,kind:`local`,pinned:r,title:S}),...CPXPR({projectId:xe,label:be,path:O,cwd:O,hostId:m,threadId:l,title:S,projectKind:xe||O?void 0:u,projectless:p||u===`projectless`})}",
+      "71524 local sidebar row project color attributes anchor",
     );
   }
   if (text.includes("function lg(e){let t=(0,hg.c)(128),")) {
@@ -3890,6 +4826,52 @@ function patchLocalTaskRow(text) {
 }
 
 function patchMermaidDiagramShell(text) {
+  if (text.includes("function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){")) {
+    let patched = replaceOnce(text, "function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){", `${mermaidDiagramHook()}function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){`, "61608 mermaid diagram shell helper insertion anchor");
+    return replaceOnce(patched, "(0,X.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[", "(0,X.jsxs)(`div`,{...CPXMermaidDiagramProps({code:t}),className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[", "61608 mermaid diagram shell host props anchor");
+  }
+  if (text.includes("function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:c,onRendered:l,renderKey:u}){")) {
+    let patched = replaceOnce(
+      text,
+      "function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:c,onRendered:l,renderKey:u}){",
+      `${mermaidDiagramHook()}function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:c,onRendered:l,renderKey:u}){`,
+      "62119 mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,X.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[",
+      "(0,X.jsxs)(`div`,{...CPXMermaidDiagramProps({code:t}),className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[",
+      "62119 mermaid diagram shell host props anchor",
+    );
+  }
+  if (text.includes("function QVn(e){let t=(0,$Vn.c)(19),")) {
+    let patched = replaceOnce(
+      text,
+      "function QVn(e){let t=(0,$Vn.c)(19),",
+      `${mermaidDiagramHook()}function QVn(e){let t=(0,$Vn.c)(19),`,
+      "71524 mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      'E=(0,x3.jsx)(`div`,{ref:d,className:C,"data-wide-markdown-block":w,"data-wide-markdown-block-kind":c,children:T})',
+      'E=(0,x3.jsx)(`div`,{ref:d,...CPXMermaidDiagramProps({code:a}),className:C,"data-wide-markdown-block":w,"data-wide-markdown-block-kind":c,children:T})',
+      "71524 mermaid diagram shell host props anchor",
+    );
+  }
+  if (text.includes("function NQe(e){let t=(0,PQe.c)(19),")) {
+    let patched = replaceOnce(
+      text,
+      "function NQe(e){let t=(0,PQe.c)(19),",
+      `${mermaidDiagramHook()}function NQe(e){let t=(0,PQe.c)(19),`,
+      "72221 mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      'E=(0,a$.jsx)(`div`,{ref:d,className:C,"data-wide-markdown-block":w,"data-wide-markdown-block-kind":c,children:T})',
+      'E=(0,a$.jsx)(`div`,{ref:d,...CPXMermaidDiagramProps({code:a}),className:C,"data-wide-markdown-block":w,"data-wide-markdown-block-kind":c,children:T})',
+      "72221 mermaid diagram shell host props anchor",
+    );
+  }
   if (text.includes("function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:l}){")) {
     let patched = replaceOnce(
       text,
@@ -4271,6 +5253,52 @@ function patchLocalThreadCatalogEnabled(text) {
 }
 
 function patchChatGptStartupAnnouncements(text) {
+  if (text.includes("function SCe({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===xn.ChatGPT&&t!=null&&t!==Zt.Agent&&t!==Zt.Dev}")) {
+    let patched = replaceOnce(text, "function SCe({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===xn.ChatGPT&&t!=null&&t!==Zt.Agent&&t!==Zt.Dev}", "function SCe({appBrand:e,buildFlavor:t,platform:n}){return false}", "61608 ChatGPT migration announcement eligibility anchor");
+    return replaceOnce(patched, "function Fj(e){let t=(0,Ij.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,", "function Fj(e){return null;let t=(0,Ij.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,", "61608 ChatGPT model upgrade announcement modal anchor");
+  }
+  if (text.includes("function Wle({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===w.ChatGPT&&t!=null&&t!==gt.Agent&&t!==gt.Dev}")) {
+    let patched = replaceOnce(
+      text,
+      "function Wle({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===w.ChatGPT&&t!=null&&t!==gt.Agent&&t!==gt.Dev}",
+      "function Wle({appBrand:e,buildFlavor:t,platform:n}){return false}",
+      "62119 ChatGPT migration announcement eligibility anchor",
+    );
+    return replaceOnce(
+      patched,
+      "function cM(e){let t=(0,lM.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "function cM(e){return null;let t=(0,lM.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "62119 ChatGPT model upgrade announcement modal anchor",
+    );
+  }
+  if (text.includes("function qde({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ec.ChatGPT&&t!=null&&t!==gs.Agent&&t!==gs.Dev}")) {
+    let patched = replaceOnce(
+      text,
+      "function qde({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ec.ChatGPT&&t!=null&&t!==gs.Agent&&t!==gs.Dev}",
+      "function qde({appBrand:e,buildFlavor:t,platform:n}){return false}",
+      "71524 ChatGPT migration announcement eligibility anchor",
+    );
+    return replaceOnce(
+      patched,
+      "function qA(e){let t=(0,JA.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "function qA(e){return null;let t=(0,JA.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "71524 ChatGPT model upgrade announcement modal anchor",
+    );
+  }
+  if (text.includes("function $me({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Hu.ChatGPT&&t!=null&&t!==tg.Agent&&t!==tg.Dev}")) {
+    let patched = replaceOnce(
+      text,
+      "function $me({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Hu.ChatGPT&&t!=null&&t!==tg.Agent&&t!==tg.Dev}",
+      "function $me({appBrand:e,buildFlavor:t,platform:n}){return false}",
+      "72221 ChatGPT migration announcement eligibility anchor",
+    );
+    return replaceOnce(
+      patched,
+      "function VN(e){let t=(0,HN.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "function VN(e){return null;let t=(0,HN.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "72221 ChatGPT model upgrade announcement modal anchor",
+    );
+  }
   if (text.includes("function Cde({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===E.ChatGPT&&t!=null&&t!==U.Agent&&t!==U.Dev}")) {
     let patched = replaceOnce(
       text,
