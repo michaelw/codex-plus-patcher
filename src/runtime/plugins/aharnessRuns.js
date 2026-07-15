@@ -26,14 +26,7 @@
   let composerBoundsTarget = null;
 
   function request(method, params) {
-    return CodexPlus.native.request(method, params).then((result) => result || {
-      ok: false,
-      error: "native-request-empty",
-    }).catch((error) => ({
-      ok: false,
-      error: "native-request-failed",
-      message: error?.message || String(error),
-    }));
+    return window.CodexPlusHost.adapters.native.request(method, params);
   }
 
   function routeId(runId) {
@@ -893,13 +886,16 @@
   async function openRunFile(run, filePath) {
     const cwd = run?.cwd || run?.project?.cwd || "";
     const absolutePath = isAbsolutePath(filePath) ? filePath : cwd ? `${cwd.replace(/\/+$/, "")}/${filePath}` : filePath;
-    const opened = await CodexPlus.ui.threadSidePanel?.openFile?.({
-      path: absolutePath,
-      cwd,
-      name: pathBasename(absolutePath),
-      content: "",
-    });
-    if (!opened?.ok) window.alert?.(opened?.message || opened?.error || "Failed to open aharness file");
+    try {
+      await window.CodexPlusHost.adapters.threadSidePanel.openFile(absolutePath, {
+        openInSidePanel: true,
+        target: "right",
+        title: pathBasename(absolutePath),
+        workspaceRoot: cwd,
+      });
+    } catch (error) {
+      window.alert?.(`Failed to open aharness file: ${error?.message || String(error)}`);
+    }
   }
 
   function dedupeFileChangeInfos(rows, run) {
@@ -1061,8 +1057,16 @@
       cwd: run.cwd || run.project?.cwd,
       content: result.artifact?.content || "",
     };
-    const opened = await CodexPlus.ui.threadSidePanel?.openFile?.(file);
-    if (!opened?.ok) window.alert?.(opened?.message || opened?.error || "Codex side panel is not available");
+    try {
+      await window.CodexPlusHost.adapters.threadSidePanel.openFile(file.path, {
+        openInSidePanel: true,
+        target: "right",
+        title: file.name,
+        workspaceRoot: file.cwd,
+      });
+    } catch (error) {
+      window.alert?.(`Codex side panel is not available: ${error?.message || String(error)}`);
+    }
   }
 
   function renderRunView({ routeId: activeRoute, container }) {
@@ -1085,7 +1089,7 @@
       return;
     }
     configureComposerForRun(run);
-    CodexPlus.ui.routeContext?.set?.({
+    window.CodexPlusHost.adapters.context.set({
       routeId: activeRoute,
       sourceProject: run.project ? {
         id: run.project.id || run.project.cwd || "",

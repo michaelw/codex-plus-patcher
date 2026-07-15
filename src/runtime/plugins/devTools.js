@@ -15,7 +15,7 @@
           palette: { enabled: true, keywords: ["devtools", "developer", "console"] },
           shortcut: { defaultKeybindings: [] },
           run() {
-            return CodexPlus.native.request("devtools/open").catch(() => ({ ok: false }));
+            return window.CodexPlusHost.adapters.native.request("devtools/open");
           },
         },
       ],

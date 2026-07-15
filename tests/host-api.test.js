@@ -259,6 +259,17 @@ test("virtual conversations render through host slots without hiding outer contr
     return main.querySelectorAll(selector);
   };
   vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
+  const clearedRoutes = [];
+  window.CodexPlusHost = {
+    adapters: {
+      context: {
+        clear(routeId) {
+          clearedRoutes.push(routeId);
+          return window.CodexPlus.ui.routeContext.clear(routeId);
+        },
+      },
+    },
+  };
   vm.runInNewContext(runtimeFile("api/composer.js"), context, { filename: "api/composer.js" });
   vm.runInNewContext(runtimeFile("api/virtualConversations.js"), context, { filename: "api/virtualConversations.js" });
 
@@ -282,6 +293,7 @@ test("virtual conversations render through host slots without hiding outer contr
   assert.equal(host.querySelector('[data-codex-plus-virtual-slot="transcript"]').textContent, "Transcript");
   window.CodexPlus.ui.virtualConversations.close();
   assert.equal(stale.hidden, false);
+  assert.deepEqual(clearedRoutes, ["virtual:test"]);
 });
 
 test("virtual conversations close and restore native content on app deep routes", () => {
@@ -296,6 +308,13 @@ test("virtual conversations close and restore native content on app deep routes"
   };
   document.querySelectorAll = (selector) => selector.includes("main") ? [host] : main.querySelectorAll(selector);
   vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
+  window.CodexPlusHost = {
+    adapters: {
+      context: {
+        clear: (routeId) => window.CodexPlus.ui.routeContext.clear(routeId),
+      },
+    },
+  };
   vm.runInNewContext(runtimeFile("api/virtualConversations.js"), context, { filename: "api/virtualConversations.js" });
   window.CodexPlus.ui.virtualConversations.registerProvider({
     id: "test",
@@ -444,32 +463,22 @@ test("composer control exposes input, waiting, stop, and release behavior", () =
   assert.equal(form.getAttribute("data-codex-plus-composer-mode"), null);
 });
 
-test("thread side panel openFile uses route context cwd and native opener", async () => {
-  const { context, window, body } = createContext();
+test("thread side panel openFile uses canonical context and the required host adapter", async () => {
+  const { context, window } = createContext();
   vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
+  vm.runInNewContext(runtimeFile("api/hostAdapters.js"), context, { filename: "api/hostAdapters.js" });
+  vm.runInNewContext(runtimeFile("host/coreAdapters.js"), context, { filename: "host/coreAdapters.js" });
+  vm.runInNewContext(runtimeFile("host/threadSidePanel.js"), context, { filename: "host/threadSidePanel.js" });
   vm.runInNewContext(runtimeFile("api/threadSidePanel.js"), context, { filename: "api/threadSidePanel.js" });
-  const aside = createElement("aside");
-  const shell = createElement("div");
-  shell.setAttribute("data-app-shell-tabs", "true");
-  const tablist = createElement("div");
-  tablist.setAttribute("role", "tablist");
-  const tabpanel = createElement("div");
-  tabpanel.setAttribute("role", "tabpanel");
-  body.appendChild(aside);
-  aside.appendChild(shell);
-  shell.appendChild(tablist);
-  shell.appendChild(tabpanel);
   const opened = [];
-  window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
+  window.CodexPlusHost.adapters.threadSidePanel.bindOpenFile((filePath, options) => {
     opened.push({ filePath, options });
-    tabpanel.setAttribute("data-tab-id", `file:local:${filePath}`);
-    tabpanel.textContent = "README.md";
     return { viewer: "reviewFileSource", status: "opened", placement: "right" };
-  };
+  });
   window.CodexPlus.ui.routeContext.set({
     routeId: "virtual:file",
     sourceProject: { id: "repo", label: "Repo", cwd: "/repo" },
-    activeCwd: "/repo/work",
+    cwd: "/repo/work",
     workspaceRoot: "/repo/work",
     source: "test",
   });
@@ -484,6 +493,7 @@ test("thread side panel openFile uses route context cwd and native opener", asyn
     options: {
       activate: true,
       isPreview: false,
+      openInSidePanel: true,
       resetTabState: true,
       target: "right",
       workspaceRoot: "/repo/work",
@@ -491,32 +501,70 @@ test("thread side panel openFile uses route context cwd and native opener", asyn
   }]);
 });
 
-test("thread side panel openFile returns structured failure when native opener fails", async () => {
+test("thread side panel openFile propagates missing and failed required adapters", async () => {
   const { context, window } = createContext();
-  let now = 0;
-  context.Date = { now: () => { now += 10000; return now; } };
+  vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
+  vm.runInNewContext(runtimeFile("api/hostAdapters.js"), context, { filename: "api/hostAdapters.js" });
+  vm.runInNewContext(runtimeFile("host/coreAdapters.js"), context, { filename: "host/coreAdapters.js" });
+  vm.runInNewContext(runtimeFile("host/threadSidePanel.js"), context, { filename: "host/threadSidePanel.js" });
   vm.runInNewContext(runtimeFile("api/threadSidePanel.js"), context, { filename: "api/threadSidePanel.js" });
 
-  const missing = await window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" });
-  assert.deepEqual(plain(missing), {
-    ok: false,
-    native: false,
-    error: "native-file-opener-unavailable",
-    message: "native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab",
-    path: "README.md",
-    cwd: "",
+  await assert.rejects(
+    () => window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" }),
+    /file opener was not bound/,
+  );
+
+  window.CodexPlusHost.adapters.threadSidePanel.bindOpenFile(() => {
+    throw new Error("Missing scope instance");
+  });
+  await assert.rejects(
+    () => window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" }),
+    /Missing scope instance/,
+  );
+});
+
+test("thread header reacts to canonical native and virtual context for title and accessories", async () => {
+  const { context, window } = createContext();
+  vm.runInNewContext(runtimeFile("api/routeContext.js"), context, { filename: "api/routeContext.js" });
+  vm.runInNewContext(runtimeFile("api/hostAdapters.js"), context, { filename: "api/hostAdapters.js" });
+  vm.runInNewContext(runtimeFile("host/coreAdapters.js"), context, { filename: "host/coreAdapters.js" });
+  vm.runInNewContext(runtimeFile("api/threadHeader.js"), context, { filename: "api/threadHeader.js" });
+  vm.runInNewContext(runtimeFile("host/threadHeader.js"), context, { filename: "host/threadHeader.js" });
+  window.CodexPlus.diagnostics = { log() {} };
+  const versions = [];
+  const unsubscribe = window.CodexPlusHost.adapters.threadHeader.subscribe(() => {
+    versions.push(window.CodexPlusHost.adapters.threadHeader.snapshot());
   });
 
-  window.CodexPlusHost.adapters.threadSidePanel.openFile = () => {
-    throw new Error("Missing scope instance");
+  window.CodexPlusHost.adapters.context.bindActive({ cwd: "/native", threadId: "native-thread" });
+  await Promise.resolve();
+  assert.deepEqual(versions, [1]);
+  window.CodexPlusHost.adapters.context.bindActive({ cwd: "/native", threadId: "native-thread" });
+  await Promise.resolve();
+  assert.deepEqual(versions, [1]);
+  assert.equal(window.CodexPlusHost.adapters.threadHeader.title("Native title"), "Native title");
+  window.CodexPlus.ui.threadHeader.addAccessory(({ context: active }) => active.cwd);
+  const deps = {
+    jsx(type, props) {
+      return { type, props };
+    },
+    useSyncExternalStore() {},
   };
-  const failed = await window.CodexPlus.ui.threadSidePanel.openFile({ path: "README.md" });
-  assert.deepEqual(plain(failed), {
-    ok: false,
-    native: false,
-    error: "native-file-opener-failed",
-    message: "Missing scope instance",
-    path: "README.md",
-    cwd: "",
+  const accessoryHost = window.CodexPlusHost.adapters.threadHeader.accessories(null, deps);
+
+  window.CodexPlusHost.adapters.context.set({
+    routeId: "cpx-aharness-run:one",
+    cwd: "/projects/aharness-examples",
+    workspaceRoot: "/projects/aharness-examples",
+    title: "Color funnel · one",
   });
+  assert.equal(window.CodexPlusHost.adapters.threadHeader.title("Native title"), "Color funnel · one");
+  assert.equal(window.CodexPlusHost.adapters.context.active().cwd, "/projects/aharness-examples");
+  const [accessory] = accessoryHost.type(accessoryHost.props);
+  assert.equal(accessory.type(accessory.props), "/projects/aharness-examples");
+
+  window.CodexPlusHost.adapters.context.clear("cpx-aharness-run:one");
+  assert.equal(window.CodexPlusHost.adapters.threadHeader.title("Native title"), "Native title");
+  assert.deepEqual(versions, [1, 2, 3, 4]);
+  unsubscribe();
 });

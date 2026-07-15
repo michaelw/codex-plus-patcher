@@ -14,6 +14,7 @@ module.exports = buildCodexPlusPatchSet({
     errorBoundary: "webview/assets/app-initial~app-main~worktree-init-v2-page~appgen-settings-page~page~appgen-page~remote-con~di269h6j-CR8hKLtm.js",
     generalSettings: "webview/assets/general-settings-BMV5mko2.js",
     header: "webview/assets/header-Pxps5Pkw.js",
+    threadHeaderActionShell: "webview/assets/app-initial~app-main~onboarding-page-DewXrzLR.js",
     threadPageHeader: null,
     localConversationPage: "webview/assets/local-conversation-page-CCMgYby1.js",
     threadContext: null,

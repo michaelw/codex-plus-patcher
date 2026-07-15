@@ -326,9 +326,21 @@ function launchDevApp({
   ...options
 } = {}) {
   const directLaunch = buildLaunchDev(options);
-  // Launch the signed executable directly. LaunchServices' open --env path
-  // does not consistently propagate CODEX_HOME into the Electron process.
-  const launch = directLaunch;
+  const useLaunchServices = directLaunch.instanceIdentity?.bundleIdentifier?.startsWith("com.openai.chatgpt-plus.");
+  const launch = useLaunchServices
+    ? {
+      ...directLaunch,
+      command: "/usr/bin/open",
+      args: [
+        "-n",
+        "--env", `CODEX_HOME=${directLaunch.env.CODEX_HOME}`,
+        "--env", `CODEX_ELECTRON_USER_DATA_PATH=${directLaunch.env.CODEX_ELECTRON_USER_DATA_PATH}`,
+        path.resolve(options.targetApp),
+        "--args",
+        ...directLaunch.args,
+      ],
+    }
+    : directLaunch;
   fs.mkdirSync(launch.env.CODEX_HOME, { recursive: true });
   fs.mkdirSync(launch.env.CODEX_ELECTRON_USER_DATA_PATH, { recursive: true });
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);

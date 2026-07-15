@@ -292,30 +292,48 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
 }
 
 async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 30000 } = {}) {
-  const setup = await cdp.evaluate(`new Promise((resolve) => {
-    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
-    const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
-      const rect = button.getBoundingClientRect();
-      const text = button.innerText || "";
-      return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
-    });
-    newChatButton?.click?.();
-    let attempts = 0;
-    const check = () => {
-      const triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
-      if (triggerCount > 0 || attempts >= 300) {
-        resolve({ triggerCount, clickedNewChat: Boolean(newChatButton) });
-        return;
-      }
-      attempts += 1;
-      setTimeout(check, 100);
+  const selectorSetup = async () => cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
     };
-    check();
-  })`);
-  if (!setup?.triggerCount) {
-    return { ok: false, ...setup, message: "Project selector trigger is missing from the main composer" };
+    const newTask = Array.from(document.querySelectorAll("button,[role='button'],a"))
+      .find((element) => {
+        const text = String(element.textContent || "").trim();
+        return visible(element) && (text.startsWith("New task") || text.startsWith("New chat"));
+      });
+    const rect = newTask?.getBoundingClientRect?.();
+    return {
+      triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
+      newTask: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null,
+    };
+  })()`);
+  let setup = await selectorSetup();
+  if (setup.triggerCount === 0 && setup.newTask) {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...setup.newTask, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...setup.newTask, button: "left", clickCount: 1 });
+    const setupDeadline = Date.now() + Math.min(timeoutMs, 10000);
+    while (Date.now() < setupDeadline) {
+      setup = await selectorSetup();
+      if (setup.triggerCount > 0) break;
+      await wait(100);
+    }
   }
-
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 53,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 53,
+  });
   await cdp.send("Input.dispatchKeyEvent", {
     type: "keyDown",
     key: ".",
@@ -472,34 +490,70 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
       path: row.getAttribute("data-codex-plus-project-path") || "",
-      title: String(row.textContent || "").replace(/\s+/g, " ").trim(),
+      title: row.getAttribute("data-app-action-sidebar-thread-title") || String(row.textContent || "").trim(),
     };
   })()`);
   if (!target) return { ok: false, message: "Fixture thread row was not visible" };
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  const clickTarget = async () => {
+    const point = await cdp.evaluate(`(() => {
+      const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
+        .find((element) => element.getAttribute("data-app-action-sidebar-thread-title") === ${JSON.stringify(target.title)} &&
+          (element.getAttribute("data-codex-plus-project-path") || "") === ${JSON.stringify(target.path)});
+      if (!row) return null;
+      row.scrollIntoView({ block: "center" });
+      const rect = row.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    if (!point) return false;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+    return true;
+  };
+  await clickTarget();
   const deadline = Date.now() + timeoutMs;
+  let nextRetry = Date.now() + 1000;
+  let retries = 0;
+  let active = null;
   while (Date.now() < deadline) {
-    const active = await cdp.evaluate(`(() => {
+    active = await cdp.evaluate(`(() => {
       const visible = (element) => { const rect = element?.getBoundingClientRect?.(); const style = element ? getComputedStyle(element) : null; return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden"); };
       const headers = Array.from(document.querySelectorAll("header")).filter(visible);
-      const header = headers.find((element) => String(element.textContent || "").includes(${JSON.stringify("Fixture:")}));
-      const chip = header ? Array.from(header.querySelectorAll("[data-codex-plus-project-path-header]")).find(visible) : null;
+      const header = headers.find((element) => String(element.textContent || "").includes(${JSON.stringify(target.title)}));
+      const chips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter(visible);
+      const chip = chips[0] || null;
+      const activeContext = CodexPlusHost.adapters.context.active();
+      const openButton = Array.from(document.querySelectorAll("header[data-app-shell-header-edge-scroll] button")).find((button) => visible(button) && String(button.textContent || "").trim().startsWith("Open in"));
+      const chipRect = chip?.getBoundingClientRect?.();
+      const openRect = openButton?.getBoundingClientRect?.();
       return {
         titleReady: Boolean(header),
+        activeCwd: activeContext?.cwd || "",
         chipPath: chip?.getAttribute("title") || "",
+        chipCount: chips.length,
+        fallbackChipCount: chips.filter((element) => element.hasAttribute("data-codex-plus-project-path-header-fallback")).length,
+        anchoredBeforeOpenIn: Boolean(chipRect && openRect && chipRect.right <= openRect.left && openRect.left - chipRect.right <= 24),
       };
     })()`);
-    if (active?.titleReady && active.chipPath === target.path) {
+    if (active?.titleReady && active.activeCwd && active.chipPath === active.activeCwd && active.chipCount === 1 && active.anchoredBeforeOpenIn) {
       await cdp.evaluate(`window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__ = true`);
       return { ok: true, target, active };
     }
+    if (Date.now() >= nextRetry && retries < 2) {
+      await clickTarget();
+      retries += 1;
+      nextRetry = Date.now() + 1000;
+    }
     await wait(100);
   }
-  return { ok: false, target, message: "Trusted fixture-thread click did not update the native title and path header" };
+  return {
+    ok: false,
+    target,
+    active,
+    message: `Trusted fixture-thread click did not update the native title and path header: ${JSON.stringify({ target, active })}`,
+  };
 }
 
-async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 10000 } = {}) {
+async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeActivate = null, wait = delay, timeoutMs = 10000 } = {}) {
   await cdp.evaluate(`(() => {
     document.documentElement.removeAttribute("data-codex-plus-sidebar-names-blurred");
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
@@ -587,6 +641,8 @@ async function verifySidebarBlurCommandPalette(cdp, { wait = delay, timeoutMs = 
     setTimeout(finish, 100);
   })`);
   if (!selected?.selected) return { ok: false, ...opened, ...selected };
+  if (beforeActivate) await beforeActivate();
+  if (!activate) return { ok: true, ...opened, ...selected, paletteVisible: true };
   if (typeof cdp.send !== "function") {
     return { ok: false, ...opened, ...selected, message: "Command palette item could not be activated with trusted keyboard events" };
   }
@@ -648,18 +704,33 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       .some((element) => normalize(element.textContent) === text);
     const containsVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p, h1, h2, h3")
       .some((element) => normalize(element.textContent).includes(text));
-    const reviewControl = () => visibleElements("button, [role='tab'], [role='button']")
-      .find((element) => {
+    const reviewControl = () => {
+      const controls = visibleElements("button, [role='tab'], [role='button']");
+      const review = controls.find((element) => {
         const text = normalize(element.textContent);
         const label = normalize(element.getAttribute("aria-label"));
-        return text === "Review" || label === "Review" || text === "Changes" || label === "Changes";
+        const rect = element.getBoundingClientRect();
+        return (text === "Review" || label === "Review") && rect.left >= innerWidth / 2 && rect.top < 80;
       });
+      if (review) return review;
+      return controls.find((element) => {
+        const text = normalize(element.textContent);
+        const label = normalize(element.getAttribute("aria-label"));
+        const rect = element.getBoundingClientRect();
+        return (text === "Changes" || label === "Changes") && rect.left >= innerWidth * 0.6 && rect.top < 240;
+      });
+    };
     const reviewSelected = () => visibleElements("[role='tab'][aria-selected='true'], button[aria-selected='true'], [data-state='active']")
       .some((element) => normalize(element.textContent) === "Review");
     const nativeReviewSourceVisible = () => {
       const text = normalize(document.body.textContent).replace(/→/g, "->");
       return /HEAD\\s*(->)?\\s*main/.test(text) || text.includes("Unstaged") || (text.includes("Local") && text.includes("main"));
     };
+    const unstagedReviewSourceSelected = () => visibleElements("button, [role='button']")
+      .some((element) => {
+        const rect = element.getBoundingClientRect();
+        return !element.hasAttribute("data-codex-plus-repo-branch-picker") && rect.left >= innerWidth / 2 && rect.top < 120 && normalize(element.textContent).startsWith("Unstaged");
+      });
     const clickNestedFixtureThread = () => {
       const row = visibleElements("[data-app-action-sidebar-thread-row]")
         .find((element) => normalize(element.textContent).includes("Fixture: nested repos before branch selection"));
@@ -669,33 +740,6 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     };
     const nestedBranchPickers = () => visibleElements("[data-codex-plus-repo-branch-picker]")
       .filter((element) => ["nested", "submodule", "configured"].includes(element.getAttribute("data-codex-plus-repo-kind")));
-    const selectUnstagedReviewSource = () => {
-      const item = visibleElements("[role='menuitem'], [cmdk-item], [data-radix-collection-item]")
-        .find((element) => ["Unstaged", "Show unstaged changes"].includes(normalize(element.textContent)));
-      if (item) {
-        item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-        item.click();
-        return true;
-      }
-      const reviewPanel = visibleElements("[role='tabpanel'][aria-label='Review']")[0];
-      const controls = (reviewPanel ? Array.from(reviewPanel.querySelectorAll("button, [role='button']")).filter(visible) : visibleElements("button, [role='button']"));
-      const sourceTrigger = controls
-        .find((element) => normalize(element.textContent) === "Branch" || normalize(element.getAttribute("title")) === "Switch branch");
-      if (sourceTrigger) {
-        sourceTrigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-        sourceTrigger.click();
-      }
-      return false;
-    };
-    const loadNestedBranchPickers = () => {
-      const pickers = nestedBranchPickers();
-      for (const picker of pickers) {
-        picker.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-        picker.focus?.();
-        picker.click?.();
-      }
-      return pickers.length;
-    };
     const nestedBranchPickerPopulated = () => nestedBranchPickers().some((picker) => {
       const branchCount = Number(picker.getAttribute("data-codex-plus-repo-branch-count") || "0");
       if (Number.isFinite(branchCount) && branchCount >= 3) return true;
@@ -729,10 +773,20 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       selectedUnstagedFallback: Boolean(extra.selectedUnstagedFallback),
       selectedReview: reviewSelected(),
       boundaryVisible: containsVisibleText("Tab content couldn't render"),
+      boundaryText: visibleElements("div, section, article")
+        .map((element) => normalize(element.textContent))
+        .filter((text) => text.includes("Tab content couldn't render"))
+        .sort((left, right) => left.length - right.length)[0] || "",
+      boundaryDiagnostics: visibleElements("pre, code")
+        .map((element) => normalize(element.textContent))
+        .filter(Boolean)
+        .slice(0, 4),
       tryAgainVisible: exactVisibleText("Try again"),
       repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
       mainVisible: containsVisibleText("Main"),
       nativeReviewSourceVisible: nativeReviewSourceVisible(),
+      unstagedReviewSourceSelected: unstagedReviewSourceSelected(),
+      reviewToolbarFailureVisible: containsVisibleText("Review toolbar failed to render"),
       nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
       strictNestedBranchPreload,
       nestedBranchPickerCount: nestedBranchPickers().length,
@@ -756,7 +810,6 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       if (control) {
 	        control.click();
 	        let clickedInnerReview = normalize(control.textContent) === "Review";
-        let clickedNestedBranchPicker = 0;
         let nestedBranchPickerPreloadBeforeOpen = false;
         let boundaryEverVisible = false;
 	        let requiredUnstagedFallback = false;
@@ -770,14 +823,12 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
             inner.click();
           }
           boundaryEverVisible = boundaryEverVisible || containsVisibleText("Tab content couldn't render");
-          if (clickedNestedBranchPicker === 0 && containsVisibleText("Codex Plus repositories") && (containsVisibleText("alpha-module") || containsVisibleText("beta-module"))) {
+          if (containsVisibleText("Codex Plus repositories") && (containsVisibleText("alpha-module") || containsVisibleText("beta-module"))) {
             const countsBeforeOpen = nestedBranchPickerOptionCounts();
             nestedBranchPickerPreloadBeforeOpen = nestedBranchPickers().length >= 2 && countsBeforeOpen.every((count) => count >= 3);
-            if (nestedBranchPickerPreloadBeforeOpen) clickedNestedBranchPicker = loadNestedBranchPickers();
           }
-	          if (nativeReviewSourceVisible() && !containsVisibleText("Codex Plus repositories") && containsVisibleText("No sources yet") && !selectedUnstagedFallback) {
+	          if (nativeReviewSourceVisible() && !unstagedReviewSourceSelected()) {
 	            requiredUnstagedFallback = true;
-	            selectedUnstagedFallback = selectUnstagedReviewSource() || selectedUnstagedFallback;
 	          }
 	          const current = snapshot({
 	            candidateCount: candidates.length,
@@ -785,7 +836,6 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
 	            reviewControlFound: true,
 	            clickedReview: true,
             clickedNestedFixtureThread,
-            clickedNestedBranchPicker,
             boundaryEverVisible,
             nestedBranchPickerPreloadBeforeOpen,
 	            requiredUnstagedFallback,
@@ -828,7 +878,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     step();
   })`);
   let finalStatus = status;
-  if (status?.requiredUnstagedFallback && !status.selectedUnstagedFallback && typeof cdp.send === "function") {
+  if (!status?.unstagedReviewSourceSelected && typeof cdp.send === "function") {
     const clickCenter = async (rect) => {
       if (!rect) return false;
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x, y: rect.y, button: "none" });
@@ -862,7 +912,11 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
       };
       const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-      const item = Array.from(document.querySelectorAll("[role='menuitem'], [data-radix-collection-item]"))
+      const branch = Array.from(document.querySelectorAll("button, [role='button']"))
+        .filter(visible)
+        .find((element) => normalize(element.textContent) === "Branch" && element.getBoundingClientRect().left >= innerWidth / 2 && element.getBoundingClientRect().top < 120);
+      const menu = branch ? document.getElementById(branch.getAttribute("aria-controls")) : null;
+      const item = Array.from(menu?.querySelectorAll("[role='menuitem'], [data-radix-collection-item]") || [])
         .filter(visible)
         .find((element) => normalize(element.textContent) === "Unstaged");
       if (!item) return null;
@@ -919,6 +973,11 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         .filter((element) => /diff --git/.test(element.textContent || ""))
         .length;
       const reviewDiffCardCount = () => visibleElements(".codex-review-diff-card").length;
+      const unstagedReviewSourceSelected = () => visibleElements("button, [role='button']")
+        .some((element) => {
+          const rect = element.getBoundingClientRect();
+          return !element.hasAttribute("data-codex-plus-repo-branch-picker") && rect.left >= innerWidth / 2 && rect.top < 120 && normalize(element.textContent).startsWith("Unstaged");
+        });
       return {
         ...${JSON.stringify(status)},
         cdpUnstagedFallback: true,
@@ -931,6 +990,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         repoHeaderVisible: containsVisibleText("Codex Plus repositories"),
         mainVisible: containsVisibleText("Main"),
         nativeReviewSourceVisible: normalize(document.body.textContent).includes("Unstaged") || (normalize(document.body.textContent).includes("Local") && normalize(document.body.textContent).includes("main")),
+        unstagedReviewSourceSelected: unstagedReviewSourceSelected(),
+        reviewToolbarFailureVisible: containsVisibleText("Review toolbar failed to render"),
         nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
         strictNestedBranchPreload: ${JSON.stringify(status?.strictNestedBranchPreload || false)},
         nestedBranchPickerCount: nestedBranchPickers().length,
@@ -969,12 +1030,19 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       branchLoadState: picker.getAttribute("data-codex-plus-repo-branch-load-state") || "",
       branchLoadError: picker.getAttribute("data-codex-plus-repo-branch-load-error") || "",
     }));
+    const unstagedReviewSourceSelected = () => visibleElements("button, [role='button']")
+      .some((element) => {
+        const rect = element.getBoundingClientRect();
+        return !element.hasAttribute("data-codex-plus-repo-branch-picker") && rect.left >= innerWidth / 2 && rect.top < 120 && normalize(element.textContent).startsWith("Unstaged");
+      });
     return {
       ...${JSON.stringify(finalStatus)},
       delayedReviewStabilityCheck: true,
       boundaryVisible: containsVisibleText("Tab content couldn't render"),
       boundaryEverVisible: ${JSON.stringify(finalStatus?.boundaryEverVisible || false)} || containsVisibleText("Tab content couldn't render"),
       tryAgainVisible: exactVisibleText("Try again"),
+      unstagedReviewSourceSelected: unstagedReviewSourceSelected(),
+      reviewToolbarFailureVisible: containsVisibleText("Review toolbar failed to render"),
       rawNestedDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
       reviewDiffCardCount: visibleElements(".codex-review-diff-card").length,
       nestedBranchPickerCount: nestedBranchPickers().length,
@@ -984,6 +1052,43 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       nestedBranchPickerDetails: nestedBranchPickerDetails(),
     };
   })()`);
+  const disclosureStatus = await cdp.evaluate(`new Promise((resolve) => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const cards = Array.from(document.querySelectorAll("[data-codex-plus-repo-patch-group] .codex-review-diff-card")).filter(visible);
+    const card = cards[0];
+    const toggle = card && Array.from(card.querySelectorAll("button, [role='button']"))
+      .find((element) => String(element.getAttribute("aria-label") || "").includes("Toggle file diff"));
+    if (!card || !toggle) {
+      resolve({ nestedDiffCardCount: cards.length, nestedDiffDisclosureExpanded: false, nestedDiffDisclosureCollapsed: false });
+      return;
+    }
+    const initialHeight = card.getBoundingClientRect().height;
+    const initialExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+    toggle.click();
+    setTimeout(() => {
+      const toggledHeight = card.getBoundingClientRect().height;
+      const toggledExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+      toggle.click();
+      setTimeout(() => {
+        const restoredHeight = card.getBoundingClientRect().height;
+        const restoredExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+        const cycled = toggledExpanded !== initialExpanded && restoredExpanded === initialExpanded;
+        const expandedHeight = Math.max(initialHeight, toggledHeight);
+        const collapsedHeight = Math.min(initialHeight, toggledHeight);
+        resolve({
+          nestedDiffCardCount: cards.length,
+          nestedDiffDisclosureExpanded: cycled && expandedHeight > collapsedHeight + 20,
+          nestedDiffDisclosureCollapsed: cycled && expandedHeight > collapsedHeight + 20 && Math.abs(restoredHeight - initialHeight) < 5,
+        });
+      }, 350);
+    }, 350);
+  })`);
+  finalStatus = { ...finalStatus, ...disclosureStatus };
   const ok = Boolean(
     finalStatus?.reviewControlFound &&
     finalStatus.clickedReview &&
@@ -994,6 +1099,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     finalStatus.repoHeaderVisible &&
     finalStatus.mainVisible &&
     finalStatus.nativeReviewSourceVisible &&
+    finalStatus.unstagedReviewSourceSelected &&
+    !finalStatus.reviewToolbarFailureVisible &&
     finalStatus.nestedRepoVisible &&
     (!finalStatus.strictNestedBranchPreload || finalStatus.nestedBranchPickerPreloadBeforeOpen) &&
     finalStatus.nestedBranchPickerPreloadComplete &&
@@ -1001,7 +1108,10 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     finalStatus.nestedBranchPickerCount >= 2 &&
     finalStatus.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
     finalStatus.rawNestedDiffFallbackCount === 0 &&
-    finalStatus.reviewDiffCardCount >= 2,
+    finalStatus.reviewDiffCardCount >= 3 &&
+    finalStatus.nestedDiffCardCount >= 2 &&
+    finalStatus.nestedDiffDisclosureExpanded &&
+    finalStatus.nestedDiffDisclosureCollapsed,
   );
   return {
     ok,
@@ -1137,6 +1247,7 @@ class CdpSession {
     }
     this.nextId = 1;
     this.pending = new Map();
+    this.events = [];
     this.socket = new WebSocket(webSocketDebuggerUrl);
   }
 
@@ -1151,7 +1262,12 @@ class CdpSession {
       });
       this.socket.addEventListener("message", (event) => {
         const message = JSON.parse(event.data);
-        if (!message.id) return;
+        if (!message.id) {
+          if (["Log.entryAdded", "Runtime.consoleAPICalled", "Runtime.exceptionThrown"].includes(message.method)) {
+            this.events.push(message);
+          }
+          return;
+        }
         const pending = this.pending.get(message.id);
         if (!pending) return;
         this.pending.delete(message.id);
@@ -1203,6 +1319,41 @@ class CdpSession {
       // Nothing useful to do while finishing JSON output.
     }
   }
+}
+
+function summarizeCdpEvents(events, limit = 12) {
+  return (Array.isArray(events) ? events : []).slice(-limit).map((event) => {
+    if (event?.method === "Runtime.exceptionThrown") {
+      const details = event.params?.exceptionDetails;
+      return {
+        method: event.method,
+        type: "exception",
+        text: String(details?.exception?.description || details?.text || "Runtime exception").slice(0, 2000),
+      };
+    }
+    if (event?.method === "Runtime.consoleAPICalled") {
+      const args = (event.params?.args || []).map((arg) => {
+        if (arg?.value != null) return typeof arg.value === "string" ? arg.value : JSON.stringify(arg.value);
+        return arg?.description || arg?.unserializableValue || arg?.type || "";
+      }).filter(Boolean);
+      return {
+        method: event.method,
+        type: event.params?.type || "console",
+        text: args.join(" | ").slice(0, 2000),
+      };
+    }
+    if (event?.method === "Log.entryAdded") {
+      const entry = event.params?.entry || {};
+      return {
+        method: event.method,
+        type: entry.level || "log",
+        text: String(entry.text || "").slice(0, 2000),
+        ...(entry.url ? { url: entry.url } : {}),
+        ...(Number.isFinite(entry.lineNumber) ? { line: entry.lineNumber } : {}),
+      };
+    }
+    return null;
+  }).filter(Boolean);
 }
 
 async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
@@ -1285,6 +1436,24 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
     ? " The app is still on the startup logo; check for a blocking macOS Keychain access dialog for the audit/regression app."
     : "";
   throw new Error(`Timed out waiting for Codex app shell to mount: ${JSON.stringify(lastStatus)}${startupHint}`);
+}
+
+async function auditRequiredHostAdapters(cdp, { requireBindings = false } = {}) {
+  const status = await cdp.evaluate(`(() => {
+    const audit = window.CodexPlusHost?.auditAdapters;
+    if (typeof audit?.missing !== "function") return { ok: false, missing: ["CodexPlusHost.auditAdapters.missing"] };
+    const missing = audit.missing();
+    const sidePanel = window.CodexPlusHost.adapters.threadSidePanel;
+    const binding = typeof sidePanel?.bindingStatus === "function" ? sidePanel.bindingStatus() : {};
+    if (binding.openFile !== true) missing.push("threadSidePanel.openFile(binding)");
+    if (binding.mount !== true) missing.push("threadSidePanel.mount(binding)");
+    return { ok: missing.length === 0, missing };
+  })()`);
+  const missing = (status?.missing || []).filter((path) => (
+    requireBindings || !path.endsWith("(binding)")
+  ));
+  if (missing.length > 0) throw new Error(`Missing required CodexPlusHost adapters: ${missing.join(", ")}`);
+  return { ok: true, missing: [] };
 }
 
 async function reloadAuditRenderer(cdp, { timeoutMs = 30000, wait = delay } = {}) {
@@ -1763,6 +1932,8 @@ async function createAuditProgress(args, {
 
 async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
   fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
+  await cdp.send("Page.bringToFront");
+  await delay(250);
   const result = await cdp.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
@@ -1781,7 +1952,9 @@ async function visualReadback(cdp) {
     };
     const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
-    const textIncludes = (text) => normalize(document.body?.innerText || document.body?.textContent || "").includes(text);
+    const textIncludes = (text) => normalize(document.body?.innerText || document.body?.textContent || "")
+      .toLowerCase()
+      .includes(String(text || "").toLowerCase());
     return {
       url: location.href,
       title: document.title,
@@ -1805,6 +1978,9 @@ async function visualReadback(cdp) {
       },
       commandPalette: {
         sidebarBlurred: document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+        visible: visibleElements(".command-menu-dialog, [role='dialog'], [cmdk-root]").length > 0,
+        toggleItemVisible: visibleElements("[cmdk-item], [role='option'], [role='menuitem'], button")
+          .some((element) => normalize(element.textContent).includes("Toggle sidebar blur")),
       },
       settings: {
         generalVisible: textIncludes("General"),
@@ -1815,9 +1991,16 @@ async function visualReadback(cdp) {
   })()`);
 }
 
-async function openSettingsForVisualContract(cdp, { wait = delay } = {}) {
+async function openSettingsForVisualContract(cdp, { wait = delay, timeoutMs = 15000 } = {}) {
   await cdp.send("Page.navigate", { url: "app://-/index.html?initialRoute=%2Fsettings%2Fgeneral-settings" });
-  await wait(2000);
+  const deadline = Date.now() + timeoutMs;
+  let readback = null;
+  do {
+    await wait(250);
+    readback = await visualReadback(cdp);
+    if (readback.settings.generalVisible && readback.settings.backToAppVisible) return readback;
+  } while (Date.now() < deadline);
+  return readback;
 }
 
 async function captureVisualContract(cdp, {
@@ -1828,21 +2011,35 @@ async function captureVisualContract(cdp, {
   includeSettings = true,
   fsImpl = fs,
   wait = delay,
+  activateFixture = activateFixtureThread,
+  verifyReview = verifyReviewPanelRender,
+  verifyCommand = verifySidebarBlurCommandPalette,
+  preparedReview = null,
+  preparedCommand = null,
 } = {}) {
   if (!artifactDir) throw new Error("visual contract artifactDir is required");
   fsImpl.mkdirSync(artifactDir, { recursive: true });
   const screenshots = {};
+  const shellState = await activateFixture(cdp, { wait });
+  await wait(2000);
   screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
   const shell = await visualReadback(cdp);
-  screenshots.review = await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
-  const review = await visualReadback(cdp);
-  screenshots.sidebarCommand = await capturePng(cdp, path.join(artifactDir, "sidebar-command.png"), { fsImpl });
-  const command = await visualReadback(cdp);
+  const reviewState = preparedReview?.state || await verifyReview(cdp);
+  if (!preparedReview) await wait(500);
+  screenshots.review = preparedReview?.screenshot || await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
+  const review = preparedReview?.readback || await visualReadback(cdp);
+  const commandState = preparedCommand?.state || await verifyCommand(cdp, { activate: false, wait });
+  if (!preparedCommand) await wait(250);
+  screenshots.sidebarCommand = preparedCommand?.screenshot || await capturePng(cdp, path.join(artifactDir, "sidebar-command.png"), { fsImpl });
+  const command = preparedCommand?.readback || await visualReadback(cdp);
+  if (!preparedCommand) {
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+  }
   let settings = null;
   if (includeSettings) {
-    await openSettingsForVisualContract(cdp, { wait });
+    settings = await openSettingsForVisualContract(cdp, { wait });
     screenshots.settings = await capturePng(cdp, path.join(artifactDir, "settings.png"), { fsImpl });
-    settings = await visualReadback(cdp);
   }
   const contract = {
     ok: true,
@@ -1858,16 +2055,22 @@ async function captureVisualContract(cdp, {
     review: {
       ...review.review,
       probe: reviewPanel,
+      captureProbe: reviewState,
     },
     commandPalette: {
       ...command.commandPalette,
       probe: commandPalette,
+      captureProbe: commandState,
     },
     settings: settings?.settings || null,
   };
   if (includeSettings && (contract.settings.blank || !contract.settings.generalVisible)) {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
+  }
+  if (!shellState?.ok || !reviewState?.ok || !commandState?.ok || !review.review.repoHeaderVisible || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+    contract.ok = false;
+    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, reviewState, commandState, review: review.review, command: command.commandPalette })}`;
   }
   writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
   writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });
@@ -1934,8 +2137,7 @@ async function cleanupLaunchedAuditApp(launchResult, {
 } = {}) {
   const pid = launchResult?.pid;
   if (keepOpen) return { attempted: false, keptOpen: true, ok: true, pid };
-  if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
-  if (launchResult.command === "/usr/bin/open" && launchResult.targetApp && launchResult.electronUserDataPath) {
+  if (launchResult?.targetApp && launchResult.electronUserDataPath) {
     const apps = listRunningApps({
       targetApp: launchResult.targetApp,
       devHome: launchResult.devHome,
@@ -1950,6 +2152,7 @@ async function cleanupLaunchedAuditApp(launchResult, {
     }
     if (apps.length > 0) await wait(500);
   }
+  if (pid == null) return { attempted: false, keptOpen: false, ok: true, pid: null };
   const signals = ["SIGTERM", "SIGKILL"];
   for (const signal of signals) {
     try {
@@ -2693,6 +2896,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
 
     if (shouldProbe("nestedRepositories")) try {
       const details = checkCommon("nestedRepositories");
+      const expectedReviewContext = window.CodexPlusHost.adapters.context.active();
       let nestedStateCalls = 0;
       const repositoryTargetRequests = [];
       const branchRequests = [];
@@ -2703,7 +2907,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           ...reviewDeps.React,
           useState(initial) {
             nestedStateCalls += 1;
-            if (nestedStateCalls === 2) {
+            if (nestedStateCalls === 1) {
               return [{
                 main: { id: "main:/tmp/codex-plus-audit", kind: "main", path: ".", label: "Main", cwd: "/tmp/codex-plus-audit" },
                 repositories: [
@@ -2752,10 +2956,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const repositoryTargetRequest = repositoryTargetRequests.find((request) => request?.method === "repository-targets");
       if (!repositoryTargetRequest) throw new Error("Review body did not request repository targets");
       const repositoryTargetParams = repositoryTargetRequest.params || {};
-      if (repositoryTargetParams.cwd !== "/tmp/codex-plus-audit") {
+      if (repositoryTargetParams.cwd !== expectedReviewContext?.cwd) {
         throw new Error(`Repository target request used wrong cwd: ${JSON.stringify(repositoryTargetParams.cwd)}`);
       }
-      if (repositoryTargetParams.hostId !== "local" || repositoryTargetParams.hostConfig?.id !== "local") {
+      if (repositoryTargetParams.hostId !== expectedReviewContext?.hostId || repositoryTargetParams.hostConfig?.id !== "local") {
         throw new Error(`Repository target request used wrong host context: ${JSON.stringify(repositoryTargetParams)}`);
       }
       if ("cloneHazard" in (repositoryTargetParams.hostConfig || {})) {
@@ -3006,24 +3210,21 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const accessory = plugin?.exports?.ProjectPathAccessory?.({ context: { cwd: "/tmp/example" }, jsx, jsxs });
       const headerAccessory = plugin?.exports?.ProjectPathAccessory?.({
         context: {
-          header: {
-            projectName: {
-              props: {
-                group: {
-                  projectKind: "local",
-                  projectId: "/tmp/header-project-id",
-                  path: "/tmp/header-project",
-                },
-              },
-            },
-          },
+          routeId: "fixture-header-route",
+          threadId: "fixture-header-thread",
+          cwd: "/tmp/header-project",
+          workspaceRoot: "/tmp/header-project",
+          gitRoot: "/tmp/header-project",
+          hostId: "fixture-header-host",
+          branchName: "main",
+          sourceProject: "fixture-header-project",
         },
         jsx,
         jsxs,
       });
       const missing = plugin?.exports?.ProjectPathAccessory?.({ context: {}, jsx, jsxs });
       if (accessory == null) throw new Error("Project path accessory was not rendered for cwd");
-      if (headerAccessory == null) throw new Error("Project path accessory was not rendered for header project path");
+      if (headerAccessory == null) throw new Error("Project path accessory was not rendered for normalized context");
       if (headerAccessory?.props?.title !== "/tmp/header-project") {
         throw new Error(`Project path accessory used wrong header path: ${JSON.stringify(headerAccessory?.props?.title)}`);
       }
@@ -3283,21 +3484,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (highlightCount === 0) throw new Error("Fuzzy match highlight did not render");
       if (selected[0] !== targetProject.projectId || events.length !== 2) throw new Error("Enter-to-first-result adapter did not select first ranked result");
       document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
-      const newChatButton = Array.from(document.querySelectorAll("button")).find((button) => {
-        const rect = button.getBoundingClientRect();
-        const text = normalize(button.innerText || "");
-        return rect.width > 0 && rect.height > 0 && (text.includes("New chat") || text.includes("New task"));
-      });
-      if (newChatButton) {
-        newChatButton.click();
-      }
-      let triggerCount = 0;
-      for (let attempt = 0; attempt < 300; attempt += 1) {
-        triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
-        if (triggerCount > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      if (triggerCount === 0) throw new Error("Project selector trigger is missing from the main composer");
+      const triggerCount = document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length;
       const syntheticShortcut = await new Promise((resolve) => {
         const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: ".", metaKey: true });
         document.dispatchEvent(event);
@@ -3582,6 +3769,14 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       };
       const stalePathChip = await waitForSettledVirtualPathHeader();
       if (stalePathChip) throw new Error(`Aharness virtual route left a stale native header path chip visible: ${stalePathChip.getAttribute("title")}`);
+      const expectedVirtualTitle = window.CodexPlus?.ui?.routeContext?.active?.()?.title || "";
+      if (!expectedVirtualTitle) throw new Error("Aharness virtual route did not expose a canonical header title");
+      const nativeHeader = Array.from(document.querySelectorAll("header"))
+        .find((element) => visible(element) && element.querySelector("[data-codex-plus-project-path-header]"));
+      const nativeHeaderText = normalize(nativeHeader?.textContent || "");
+      if (!nativeHeaderText.includes(expectedVirtualTitle)) {
+        throw new Error(`Aharness virtual route left a stale native header title: ${nativeHeaderText}`);
+      }
       const routeBackground = getComputedStyle(route).backgroundColor;
       const rootBackground = getComputedStyle(document.querySelector("#codex-plus-virtual-conversation-root")).backgroundColor;
       if (routeBackground !== "rgba(0, 0, 0, 0)" || rootBackground !== "rgba(0, 0, 0, 0)") {
@@ -3727,18 +3922,32 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const artifactButton = artifact.querySelector("[data-codex-plus-aharness-artifact-open]");
       if (!artifactButton) throw new Error("Aharness artifact open button did not render");
       const nativeFileAlerts = [];
+      const nativeFileOpenCalls = [];
       const previousAlert = window.alert;
+      const nativeFileAdapter = window.CodexPlusHost.adapters.threadSidePanel;
+      const previousOpenFile = nativeFileAdapter.openFile;
       window.alert = (message) => {
         nativeFileAlerts.push(String(message || ""));
       };
-      const nativeFileTabsBeforeArtifact = Array.from(document.querySelectorAll("[role='tab']"))
-        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
+      nativeFileAdapter.openFile = async (...args) => {
+        try {
+          const result = await previousOpenFile(...args);
+          nativeFileOpenCalls.push({ args, result });
+          return result;
+        } catch (error) {
+          nativeFileOpenCalls.push({ args, error: error?.message || String(error) });
+          throw error;
+        }
+      };
+      const nativeFileTabsBeforeArtifact = Array.from(new Set(Array.from(document.querySelectorAll("[role='tab']"))
+        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "")
+        .filter(Boolean)));
       let artifactTab = null;
       let artifactTabId = "";
       let artifactFileContent = null;
       try {
         press(artifactButton);
-        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 20000);
+        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 20000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
@@ -3746,10 +3955,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           if (nativeFileAlerts.some((message) => message.includes("native-file-opener-unavailable"))) {
             throw new Error(nativeFileAlerts.join(" | "));
           }
-          const visibleTabs = Array.from(document.querySelectorAll("[data-tab-id], [role='tab']"))
+          const visibleTabs = Array.from(new Set(Array.from(document.querySelectorAll("[data-tab-id], [role='tab']"))
+            .filter(visible)
             .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || normalize(tab.textContent || ""))
-            .filter(Boolean);
-          throw new Error(`Aharness artifact did not open as a native file tab: ${JSON.stringify({ nativeFileAlerts, visibleTabs })}`);
+            .filter(Boolean)));
+          throw new Error(`Aharness artifact did not open as a native file tab: ${JSON.stringify({ nativeFileAlerts, nativeFileOpenCalls, visibleTabs })}`);
         }
         artifactTabId = artifactTab.getAttribute("data-tab-id") || artifactTab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || "";
         const artifactTabUsesNativeFileViewer =
@@ -3760,7 +3970,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (!artifactTabUsesNativeFileViewer || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
           throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
         }
-        if (!artifactTab.closest?.("[data-app-shell-tabs]")) {
+        const artifactAppShell = artifactTab.closest?.("[data-app-shell-tabs]");
+        const artifactTabStrip = artifactTab.closest?.("[data-app-shell-tab-strip-controller]");
+        if (!artifactAppShell && !artifactTabStrip) {
           throw new Error(`Aharness artifact tab is not inside the native app shell tab strip: ${artifactTabId}`);
         }
         artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 30000);
@@ -3779,12 +3991,31 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
           throw new Error("Aharness artifact file tab did not render artifact contents");
         }
-        const artifactShell = artifactTab.closest("[data-app-shell-tabs]");
         const artifactPanelShell = artifactFileContent.closest("[data-app-shell-tabs]");
-        if (!artifactShell || (artifactPanelShell && artifactShell !== artifactPanelShell)) {
-          throw new Error(`Aharness artifact tab and panel are not contained by the same native app shell: ${artifactTabId}`);
+        const artifactPanelController = artifactFileContent.matches("[data-app-shell-tab-panel-controller]")
+          ? artifactFileContent
+          : artifactFileContent.closest("[data-app-shell-tab-panel-controller]");
+        if (artifactAppShell) {
+          if (artifactPanelShell && artifactAppShell !== artifactPanelShell) {
+            throw new Error(`Aharness artifact tab and panel are not contained by the same native app shell: ${artifactTabId}`);
+          }
+        } else if (
+          !artifactPanelController ||
+          artifactTabStrip.getAttribute("data-app-shell-tab-strip-controller") !== artifactPanelController.getAttribute("data-app-shell-tab-panel-controller")
+        ) {
+          throw new Error(`Aharness artifact tab and panel do not use the same native app shell controller: ${artifactTabId}`);
         }
-        const shellRect = artifactShell.getBoundingClientRect();
+        let artifactCommonShell = artifactAppShell;
+        if (!artifactCommonShell) {
+          artifactCommonShell = artifactTabStrip.parentElement;
+          while (artifactCommonShell && !artifactCommonShell.contains(artifactPanelController)) {
+            artifactCommonShell = artifactCommonShell.parentElement;
+          }
+          if (!artifactCommonShell || artifactCommonShell === document.body || artifactCommonShell === document.documentElement) {
+            throw new Error(`Aharness artifact tab and panel do not share a bounded native app shell container: ${artifactTabId}`);
+          }
+        }
+        const shellRect = artifactCommonShell.getBoundingClientRect();
         const tabRect = artifactTab.getBoundingClientRect();
         const panelRect = artifactFileContent.getBoundingClientRect();
         if (tabRect.left < shellRect.left - 1 || tabRect.right > shellRect.right + 1 || panelRect.left < shellRect.left - 1 || panelRect.right > shellRect.right + 1) {
@@ -3797,6 +4028,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (document.querySelector("[data-codex-plus-thread-file-panel]")) throw new Error("Aharness artifact opened in a plugin-owned file panel");
       } finally {
         window.alert = previousAlert;
+        nativeFileAdapter.openFile = previousOpenFile;
       }
       const routeAfterArtifact = await waitForAharness("[data-codex-plus-aharness-route]", 10000);
       if (!routeAfterArtifact) throw new Error("Aharness artifact open displaced the virtual chat route");
@@ -3810,8 +4042,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!settledRouteAfterArtifact || !settledActiveAfterArtifact.startsWith("cpx-aharness-run:")) {
         throw new Error(`Aharness artifact open did not keep the virtual chat route mounted after the File tab settled: ${settledActiveAfterArtifact}`);
       }
-      const nativeFileTabsAfterArtifact = Array.from(document.querySelectorAll("[role='tab']"))
-        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "");
+      const nativeFileTabsAfterArtifact = Array.from(new Set(Array.from(document.querySelectorAll("[role='tab']"))
+        .map((tab) => tab.closest("[data-tab-id]")?.getAttribute("data-tab-id") || tab.getAttribute("data-tab-id") || "")
+        .filter(Boolean)));
       if (nativeFileTabsBeforeArtifact.length > 0 && !nativeFileTabsBeforeArtifact.every((tabId) => nativeFileTabsAfterArtifact.includes(tabId))) {
         throw new Error("Aharness artifact tab hid an existing native file tab");
       }
@@ -4028,10 +4261,12 @@ async function runAudit(args, {
   const buildFixture = operations.buildAuditFixture || buildAuditFixture;
   const seedFixtureBrowserState = operations.seedAuditFixtureBrowserState || seedAuditFixtureBrowserState;
   const launchApp = operations.launchDevApp || launchDevApp;
+  const waitForLaunchRetry = operations.waitForLaunchRetry || delay;
   const waitRenderer = operations.waitForRendererTarget || waitForRendererTarget;
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
+  const auditAdapters = operations.auditRequiredHostAdapters || auditRequiredHostAdapters;
   const reloadRenderer = operations.reloadAuditRenderer || reloadAuditRenderer;
   const closeVirtualRoute = operations.closeActiveVirtualRoute || closeActiveVirtualRoute;
   const dismissDialogs = operations.dismissStartupDialogs || dismissStartupDialogs;
@@ -4058,6 +4293,9 @@ async function runAudit(args, {
   let appShellStatus = null;
   let cleanupResult = null;
   let visualContractResult = null;
+  let visualArtifactDir = args.artifactDir || null;
+  let preparedReviewContract = null;
+  let preparedCommandContract = null;
   let initialProjectSelectorShortcut = null;
   let result = null;
   try {
@@ -4111,28 +4349,54 @@ async function runAudit(args, {
       }
     }
     if (preflight.launch) {
+      const launchOptions = {
+        targetApp: args.target,
+        devHome: args.devHome,
+        electronUserDataPath: args.electronUserDataPath,
+        remoteDebuggingPort: port,
+        devInstanceId: args.devInstanceId,
+      };
       launchResult = await withAuditProgress(
         progress,
         `Launching Codex Plus on port ${port}`,
         `Launched app on port ${port}`,
-        () => launchApp({
-          targetApp: args.target,
-          devHome: args.devHome,
-          electronUserDataPath: args.electronUserDataPath,
-          remoteDebuggingPort: port,
-          devInstanceId: args.devInstanceId,
-        }),
+        () => launchApp(launchOptions),
+      );
+      if (launchResult.instanceIdentity?.bundleIdentifier?.startsWith("com.openai.chatgpt-plus.")) {
+        for (let retry = 1; retry <= 2 && !target; retry += 1) {
+          try {
+            target = await waitRenderer(port, 30000);
+          } catch {
+            await withAuditProgress(
+              progress,
+              `Cleaning failed ChatGPT start ${retry}/2 on port ${port}`,
+              `Cleaned failed ChatGPT start ${retry}/2 on port ${port}`,
+              () => cleanupApp(launchResult, { keepOpen: false }),
+            );
+            await waitForLaunchRetry(2000);
+            launchResult = await withAuditProgress(
+              progress,
+              `Retrying ChatGPT start ${retry}/2 on port ${port}`,
+              `Retried ChatGPT start ${retry}/2 on port ${port}`,
+              () => launchApp(launchOptions),
+            );
+          }
+        }
+        if (!target && launchResult.relaunchError) throw new Error(launchResult.relaunchError);
+      }
+    }
+    if (!target) {
+      target = await withAuditProgress(
+        progress,
+        "Waiting for app://-/index.html",
+        "Found app://-/index.html",
+        () => waitRenderer(port),
       );
     }
-    target = await withAuditProgress(
-      progress,
-      "Waiting for app://-/index.html",
-      "Found app://-/index.html",
-      () => waitRenderer(port),
-    );
     cdp = new Session(target.webSocketDebuggerUrl);
     await cdp.connect();
     await cdp.send("Runtime.enable");
+    await cdp.send("Log.enable");
     runtimeStatus = await withAuditProgress(
       progress,
       "Waiting for Codex Plus runtime",
@@ -4144,6 +4408,12 @@ async function runAudit(args, {
       "Waiting for Codex app shell",
       "App shell mounted",
       () => waitAppShell(cdp, appShellTimeoutMs),
+    );
+    await withAuditProgress(
+      progress,
+      "Auditing required host adapters",
+      "Required host adapters installed",
+      () => auditAdapters(cdp),
     );
     await withAuditProgress(
       progress,
@@ -4248,13 +4518,22 @@ async function runAudit(args, {
       "Project selector shortcut fuzzy match passed",
       () => verifyProjectSelectorShortcut(cdp),
     );
+    const focusedNestedAudit = Array.isArray(args.auditPlugins) &&
+      args.auditPlugins.length === 1 &&
+      args.auditPlugins[0] === "nestedRepositories";
     const fixtureThread = await withAuditCheckProgress(
       progress,
       "Activating fixture thread with trusted input",
       "Activated fixture thread",
-      () => activateFixture(cdp),
+      () => activateFixture(cdp, { nested: focusedNestedAudit }),
     );
     if (!fixtureThread.ok) throw new Error(fixtureThread.message);
+    await withAuditProgress(
+      progress,
+      "Auditing native side-panel bindings",
+      "Native side-panel bindings installed",
+      () => auditAdapters(cdp, { requireBindings: true }),
+    );
     const splitAharnessProbe = !Array.isArray(args.auditPlugins) || args.auditPlugins.length === 0;
     const baseAuditPlugins = splitAharnessProbe ? [
       "aboutMetadata", "nestedRepositories", "diagnosticErrors", "userBubbleColors",
@@ -4338,22 +4617,28 @@ async function runAudit(args, {
       );
       live.pluginResults.projectSelectorShortcut.shortcut = shortcut;
       if (!shortcut.ok) {
-        const sourceFamily = applyResult?.sourceFamily || live.runtimeStatus?.config?.sourceFamily || "codex";
-        if (sourceFamily === "chatgpt") {
-          live.ok = false;
-          live.pluginResults.projectSelectorShortcut.ok = false;
-          live.failures.push({
-            plugin: "projectSelectorShortcut",
-            message: shortcut.message || "Cmd+. did not open the project selector",
-          });
-        } else {
-          live.expectedWarnings.push({
-            plugin: "projectSelectorShortcut",
-            code: "trusted-shortcut-not-opened",
-            message: shortcut.message || "Trusted Cmd+. verifier did not open the project selector on this Codex transition source.",
-            details: shortcut,
-          });
-        }
+        live.ok = false;
+        live.pluginResults.projectSelectorShortcut.ok = false;
+        live.failures.push({
+          plugin: "projectSelectorShortcut",
+          message: shortcut.message || "Cmd+. did not open the project selector",
+        });
+      }
+    }
+    if (live.pluginResults?.nestedRepositories?.ok) {
+      const nestedFixture = await withAuditCheckProgress(
+        progress,
+        "Activating nested repository fixture",
+        "Activated nested repository fixture",
+        () => activateFixture(cdp, { nested: true }),
+      );
+      if (!nestedFixture.ok) {
+        live.ok = false;
+        live.pluginResults.nestedRepositories.ok = false;
+        live.failures.push({
+          plugin: "nestedRepositories",
+          message: nestedFixture.message || "Nested repository fixture thread was not visible",
+        });
       }
     }
     if (live.pluginResults?.nestedRepositories?.ok) {
@@ -4364,7 +4649,17 @@ async function runAudit(args, {
         () => verifyReviewPanel(cdp),
       );
       live.pluginResults.nestedRepositories.reviewPanel = reviewPanel;
+      if (reviewPanel.ok && args.visualContract === true) {
+        const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" });
+        await delay(1000);
+        preparedReviewContract = {
+          state: reviewPanel,
+          screenshot: await capturePng(cdp, path.join(artifactDir, "review.png")),
+          readback: await visualReadback(cdp),
+        };
+      }
       if (!reviewPanel.ok) {
+        reviewPanel.cdpDiagnostics = summarizeCdpEvents(cdp.events);
         live.ok = false;
         live.pluginResults.nestedRepositories.ok = false;
         live.failures.push({
@@ -4374,14 +4669,25 @@ async function runAudit(args, {
       }
     }
     if (live.pluginResults?.sidebarNameBlur?.ok) {
+      const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" });
       const commandPalette = await withAuditCheckProgress(
         progress,
         "Verifying sidebar blur command palette action",
         "Sidebar blur command palette action passed",
-        () => verifySidebarBlurCommandPalette(cdp),
+        () => verifySidebarBlurCommandPalette(cdp, {
+          beforeActivate: args.visualContract === true ? async () => {
+            await delay(500);
+            preparedCommandContract = {
+              screenshot: await capturePng(cdp, path.join(artifactDir, "sidebar-command.png")),
+              readback: await visualReadback(cdp),
+            };
+          } : null,
+        }),
       );
+      if (preparedCommandContract) preparedCommandContract.state = commandPalette;
       live.pluginResults.sidebarNameBlur.commandPalette = commandPalette;
       if (!commandPalette.ok) {
+        commandPalette.cdpDiagnostics = summarizeCdpEvents(cdp.events);
         live.ok = false;
         live.pluginResults.sidebarNameBlur.ok = false;
         live.failures.push({
@@ -4471,7 +4777,7 @@ async function runAudit(args, {
       preflight,
     };
     if (args.visualContract === true) {
-      const artifactDir = args.artifactDir || defaultAuditArtifactDir({
+      const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({
         version: applyResult?.codexVersion || "unknown",
       });
       visualContractResult = await withAuditProgress(
@@ -4483,6 +4789,8 @@ async function runAudit(args, {
           result,
           reviewPanel: live.pluginResults?.nestedRepositories?.reviewPanel || null,
           commandPalette: live.pluginResults?.sidebarNameBlur?.commandPalette || null,
+          preparedReview: preparedReviewContract,
+          preparedCommand: preparedCommandContract,
         }),
       );
       result.visualContract = visualContractResult;
@@ -4552,6 +4860,7 @@ async function runAudit(args, {
         included: Boolean(args.includeNativeOpenProbes),
       },
       preflight,
+      cdpDiagnostics: summarizeCdpEvents(cdp?.events),
     };
     if (visualContractResult) result.visualContract = visualContractResult;
     return result;
@@ -4640,6 +4949,7 @@ module.exports = {
   auditAttachCommand,
   auditIdentity,
   auditPreflight,
+  auditRequiredHostAdapters,
   cleanupLaunchedAuditApp,
   checkKeepOpenAppStability,
   closeActiveVirtualRoute,
@@ -4665,6 +4975,7 @@ module.exports = {
   processIsAlive,
   reloadAuditRenderer,
   runAudit,
+  summarizeCdpEvents,
   shouldShowAuditProgress,
   waitForAppShellMounted,
   waitForLiveRuntime,

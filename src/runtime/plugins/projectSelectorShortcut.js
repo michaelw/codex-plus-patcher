@@ -1,8 +1,6 @@
 (function () {
   const CodexPlus = window.CodexPlus;
-  const triggerSelector = "[data-codex-plus-project-selector-trigger]";
   let keydownHandler = null;
-  let projectButtonObserver = null;
 
   function normalizeForFzf(value) {
     const source = String(value ?? "");
@@ -37,71 +35,10 @@
     ].map((value) => normalizeForFzf(value).text.trim()).filter(Boolean).join(" ");
   }
 
-  function projectSearchFields(project) {
-    return [
-      { text: project?.label, weight: 0 },
-      { text: project?.repositoryData?.rootFolder, weight: 10 },
-      { text: project?.hostDisplayName, weight: 20 },
-      { text: project?.path, weight: 40 },
-    ].map((field) => ({ ...field, text: normalizeForFzf(field.text).text.trim() })).filter((field) => field.text);
-  }
-
   function fzfConstructor() {
-    return window.fzf?.Fzf;
-  }
-
-  function fallbackPositions(text, query) {
-    const normalizedText = normalizeForFzf(text);
-    const normalizedQuery = normalizeForFzf(query).text.trim().toLowerCase();
-    if (!normalizedText.text || !normalizedQuery) return null;
-
-    const haystack = normalizedText.text.toLowerCase();
-    const positions = [];
-    let cursor = 0;
-
-    for (const char of normalizedQuery) {
-      cursor = haystack.indexOf(char, cursor);
-      if (cursor === -1) return null;
-      positions.push(cursor);
-      cursor += 1;
-    }
-
-    return positions;
-  }
-
-  function fallbackScore(text, query) {
-    const positions = fallbackPositions(text, query);
-    if (positions == null) return null;
-
-    let score = positions[0] + (positions[positions.length - 1] - positions[0]);
-    for (let index = 1; index < positions.length; index += 1) {
-      score += positions[index] - positions[index - 1] - 1;
-    }
-    for (const position of positions) {
-      if (position === 0 || /\s/.test(text[position - 1] ?? "")) score -= 2;
-    }
-
-    return score;
-  }
-
-  function rankedFilter(items, query) {
-    return items
-      .map((item, index) => {
-        const scores = projectSearchFields(item)
-          .map((field) => {
-            const score = fallbackScore(field.text, query);
-            return score == null ? null : score + field.weight;
-          })
-          .filter((score) => score != null);
-        return { item, index, score: scores.length === 0 ? null : Math.min(...scores) };
-      })
-      .filter((entry) => entry.score != null)
-      .sort((left, right) =>
-        left.score - right.score ||
-        projectSearchText(left.item).length - projectSearchText(right.item).length ||
-        left.index - right.index,
-      )
-      .map((entry) => entry.item);
+    const Fzf = window.fzf?.Fzf;
+    if (typeof Fzf !== "function") throw new Error("Required Codex Plus fzf asset is unavailable");
+    return Fzf;
   }
 
   function fuzzyFilter(items, query) {
@@ -109,17 +46,12 @@
     const normalizedQuery = normalizeForFzf(query).text.trim();
     if (!normalizedQuery) return list;
 
-    return rankedFilter(list, query);
+    const Fzf = fzfConstructor();
+    return new Fzf(list, { selector: projectSearchText }).find(normalizedQuery).map((entry) => entry.item);
   }
 
   function labelPositions(text, query) {
     const Fzf = fzfConstructor();
-    if (typeof Fzf !== "function") {
-      const positions = fallbackPositions(text, query);
-      const normalizedText = normalizeForFzf(text);
-      return positions?.map((index) => normalizedText.map[index]).filter((index) => Number.isInteger(index)) ?? null;
-    }
-
     const normalizedText = normalizeForFzf(text);
     const normalizedQuery = normalizeForFzf(query).text.trim();
     if (!normalizedText.text || !normalizedQuery) return null;
@@ -166,107 +98,8 @@
     return parts;
   }
 
-  function dispatchMouseEvent(target, type) {
-    if (typeof target.dispatchEvent !== "function") return false;
-    const EventConstructor = type === "pointerdown"
-      ? window.PointerEvent || window.MouseEvent
-      : window.MouseEvent;
-    if (typeof EventConstructor !== "function") return false;
-    target.dispatchEvent(new EventConstructor(type, {
-      bubbles: true,
-      button: 0,
-      buttons: type === "pointerdown" || type === "mousedown" ? 1 : 0,
-      cancelable: true,
-      ctrlKey: false,
-      view: window,
-    }));
-    return true;
-  }
-
-  function elementRect(element) {
-    const rect = element?.getBoundingClientRect?.();
-    return rect && rect.width > 0 && rect.height > 0 ? rect : null;
-  }
-
-  function visibleTriggerTarget(trigger) {
-    const rect = elementRect(trigger);
-    if (rect) return { element: trigger, rect };
-
-    const child = trigger?.querySelector?.("button,[role='button'],[tabindex]");
-    const childRect = elementRect(child);
-    return childRect ? { element: child, rect: childRect } : null;
-  }
-
-  function visibleTriggerCandidates() {
-    return Array.from(document.querySelectorAll(triggerSelector)).map((trigger) => {
-      if (!(trigger instanceof HTMLElement)) return false;
-      if (trigger.disabled || trigger.getAttribute("aria-disabled") === "true") return false;
-      const target = visibleTriggerTarget(trigger);
-      return target ? { trigger, target } : false;
-    }).filter(Boolean);
-  }
-
-  function triggerPriority({ trigger }) {
-    const variant = trigger.getAttribute("data-codex-plus-project-selector-variant");
-    if (variant === "default") return 0;
-    if (variant == null || variant === "") return 1;
-    return 2;
-  }
-
-  function projectSelectorTrigger() {
-    const [candidate] = visibleTriggerCandidates().sort((left, right) => {
-      const priority = triggerPriority(left) - triggerPriority(right);
-      if (priority !== 0) return priority;
-      const leftRect = left.target.rect;
-      const rightRect = right.target.rect;
-      return rightRect.top - leftRect.top || rightRect.left - leftRect.left;
-    });
-    return candidate ?? null;
-  }
-
-  function shouldDecorateProjectButton(button) {
-    const aria = String(button?.getAttribute?.("aria-label") || "").trim();
-    const text = String(button?.textContent || "").replace(/\s+/g, " ").trim();
-    return (
-      aria.startsWith("Project:") ||
-      aria.startsWith("Change project:") ||
-      aria === "Choose project" ||
-      text === "Choose project"
-    );
-  }
-
-  function decorateHeaderProjectButtons() {
-    for (const button of document.querySelectorAll("button")) {
-      if (!(button instanceof HTMLElement)) continue;
-      if (!shouldDecorateProjectButton(button)) continue;
-      button.setAttribute("data-codex-plus-project-selector-trigger", "true");
-      button.setAttribute("data-codex-plus-project-selector-variant", "default");
-    }
-  }
-
-  function watchHeaderProjectButtons() {
-    if (!document.body) {
-      window.addEventListener("DOMContentLoaded", watchHeaderProjectButtons, { once: true });
-      return;
-    }
-    decorateHeaderProjectButtons();
-    projectButtonObserver = new MutationObserver(decorateHeaderProjectButtons);
-    projectButtonObserver.observe(document.body, { attributeFilter: ["aria-label"], attributes: true, childList: true, subtree: true });
-  }
-
   function focusProjectSelector() {
-    const candidate = projectSelectorTrigger();
-    if (candidate == null) return false;
-    const { trigger, target } = candidate;
-    target.element.focus?.();
-    const dispatched = [
-      dispatchMouseEvent(trigger, "pointerdown"),
-      dispatchMouseEvent(trigger, "mousedown"),
-      dispatchMouseEvent(trigger, "mouseup"),
-      dispatchMouseEvent(trigger, "click"),
-    ].some(Boolean);
-    if (!dispatched) trigger.click?.();
-    return true;
+    return window.CodexPlusHost.adapters.projectSelector.open("default");
   }
 
   CodexPlus.registerPlugin(
@@ -291,21 +124,17 @@
           fuzzyFilter,
           fuzzyHighlight,
         };
-        watchHeaderProjectButtons();
         keydownHandler = (event) => {
           if (event.defaultPrevented || event.key !== "." || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) {
             return;
           }
-          if (api.commands.run("codexPlus.focusProjectSelector")) event.preventDefault();
+          if (window.CodexPlusHost.adapters.commands.dispatch("codexPlus.focusProjectSelector").handled) event.preventDefault();
         };
         document.addEventListener("keydown", keydownHandler, true);
       },
       stop() {
         if (keydownHandler) document.removeEventListener("keydown", keydownHandler, true);
         keydownHandler = null;
-        window.removeEventListener("DOMContentLoaded", watchHeaderProjectButtons);
-        projectButtonObserver?.disconnect();
-        projectButtonObserver = null;
       },
     }),
   );

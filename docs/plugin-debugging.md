@@ -109,6 +109,11 @@ extra native windows so the app remains usable after a keep-open run. Use
 `--include-native-open-probes` when you specifically want the audit to open
 DevTools and a Mermaid viewer window as part of the live probes.
 
+For a manual checkpoint, use `audit-plugins --manual`. Manual mode skips the
+probes, keeps the app open, and still prepares the generated fixture. Do not
+use a `dev-sync` live-state launch for regression review unless live source
+state was explicitly requested.
+
 When an audit app is already open, attach instead of relaunching:
 
 ```sh

@@ -1,19 +1,6 @@
 (function (globalObject) {
   function pathFromContext(context) {
-    const virtualContext = activeVirtualProjectContext();
-    if (virtualContext?.cwd) return virtualContext.cwd;
-    const headerProject = context?.header?.projectName?.props?.group;
-    const value =
-      context?.cwd ??
-      context?.project?.cwd ??
-      context?.project?.path ??
-      headerProject?.cwd ??
-      headerProject?.path ??
-      (headerProject?.projectKind === "local" ? headerProject?.projectId : null) ??
-      null;
-    if (typeof value === "string" && value.trim()) return value.trim();
-    const activeProject = globalObject?.CodexPlus?.ui?.projectContext?.active?.();
-    return typeof activeProject?.cwd === "string" ? activeProject.cwd.trim() : "";
+    return typeof context?.cwd === "string" ? context.cwd.trim() : "";
   }
 
   function middleTruncate(value, maxLength = 46) {
@@ -38,30 +25,7 @@
   }
 
   function copyPath(path) {
-    return globalObject?.navigator?.clipboard?.writeText?.(path);
-  }
-
-  function normalize(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
-  }
-
-  function activeVirtualProjectContext() {
-    const route = globalObject?.CodexPlus?.ui?.virtualConversations?.activeRouteId?.() ||
-      decodeURIComponent(String(globalObject.location?.hash || "").replace(/^#/, ""));
-    const routeId = normalize(route);
-    if (!routeId) return null;
-    const routeContext = globalObject?.CodexPlus?.ui?.routeContext?.active?.();
-    const context = routeContext && (!routeContext.routeId || routeContext.routeId === routeId) ? {
-      cwd: routeContext.activeCwd,
-      label: routeContext.sourceProject?.label || "",
-      source: routeContext.source || "",
-      title: routeContext.title || "",
-    } : globalObject?.CodexPlus?.ui?.projectContext?.active?.();
-    return {
-      cwd: String(context.cwd).trim(),
-      label: normalize(context.label || ""),
-      title: normalize(context.title || ""),
-    };
+    return globalObject.CodexPlusHost.adapters.clipboard.writeText(path);
   }
 
   function diagnose(event, details) {
@@ -125,7 +89,6 @@
     formatPathLabel,
     middleTruncate,
     pathFromContext,
-    activeVirtualProjectContext,
   };
 
   if (typeof module !== "undefined" && module.exports) {
@@ -144,11 +107,6 @@
       exports: exportsObject,
       start(api) {
         diagnose("start", { hasThreadHeader: Boolean(api.ui.threadHeader) });
-        CodexPlus.styles.register("projectPathHeader", `
-          body[data-codex-plus-route-context-source="aharness"][data-codex-plus-virtual-route^="cpx-aharness-run:"] [data-codex-plus-project-path-header] {
-            display: none !important;
-          }
-        `);
         api.ui.threadHeader.addAccessory(ProjectPathAccessory);
       },
     }),

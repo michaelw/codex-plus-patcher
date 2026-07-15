@@ -176,32 +176,12 @@ function setCopyFeedback(label) {
     copySource.title = "Copy Mermaid source";
   }, 1200);
 }
-function fallbackCopySource() {
-  const textarea = document.createElement("textarea");
-  textarea.value = source;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    if (!document.execCommand("copy")) throw new Error("copy command failed");
-  } finally {
-    textarea.remove();
-  }
-}
 async function copySourceToClipboard() {
   try {
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(source);
-    else fallbackCopySource();
+    await window.CodexPlusHost.adapters.clipboard.writeText(source);
     setCopyFeedback("Copied Mermaid source");
-  } catch (error) {
-    try {
-      fallbackCopySource();
-      setCopyFeedback("Copied Mermaid source");
-    } catch {
-      setCopyFeedback("Copy failed");
-    }
+  } catch {
+    setCopyFeedback("Copy failed");
   }
 }
 async function renderFromSource() {
@@ -290,7 +270,9 @@ renderFromSource().catch((error) => {
     const html = source
       ? viewerHtml({ source, isDark, mermaidModuleUrl: assetUrl(mermaidCoreAsset()), debug })
       : `<!doctype html><meta charset="utf-8"><body>${escapeHtml("No Mermaid source was found.")}</body>`;
-    CodexPlus.native.request("mermaid/openViewer", { html }).catch(() => {});
+    window.CodexPlusHost.adapters.native.request("mermaid/openViewer", { html }).catch((error) => {
+      window.alert?.(`Unable to open Mermaid viewer: ${error?.message || String(error)}`);
+    });
   }
 
   function decorate(container) {

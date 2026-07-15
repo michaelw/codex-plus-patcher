@@ -715,7 +715,7 @@ test("aharness plugin registers native commands and menu item", async () => {
     history: { state: null, replaceState() {} },
     setInterval() { return 1; },
     clearInterval() {},
-    codexPlusNative: {
+    codexPlusHostBridge: {
       request(method, params) {
         nativeRequests.push({ method, params });
         return Promise.resolve({ ok: true, runs: [] });
@@ -740,6 +740,11 @@ test("aharness plugin registers native commands and menu item", async () => {
     },
   };
   runRuntimeApi(context);
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../src/runtime/host/coreAdapters.js"), "utf8"),
+    context,
+    { filename: "host/coreAdapters.js" },
+  );
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aharnessRuns.js"), "utf8"),
     context,
@@ -827,9 +832,11 @@ test("virtual conversations do not hide normal Codex route siblings", () => {
   host.appendChild(staleContent);
   const window = {
     CodexPlus: { ui: {}, diagnostics: { log() {} } },
+    CodexPlusHost: { adapters: { context: { clear() {} } } },
     history: { state: null, replaceState() {} },
     addEventListener() {},
   };
+  window.CodexPlus.ui.routeContext = { clear() {} };
   const context = {
     window,
     globalThis: window,
@@ -995,9 +1002,11 @@ test("virtual conversations replace home content without hiding claimed composer
     innerWidth: 1400,
     innerHeight: 900,
     CodexPlus: { ui: {}, diagnostics: { log() {} } },
+    CodexPlusHost: { adapters: { context: { clear() {} } } },
     history: { state: null, replaceState() {} },
     addEventListener() {},
   };
+  window.CodexPlus.ui.routeContext = { clear() {} };
   const context = {
     window,
     globalThis: window,
@@ -1543,14 +1552,12 @@ test("aharness artifact UI uses thread side panel API instead of a plugin-owned 
   assert.doesNotMatch(threadSidePanelApi, /data-codex-plus-thread-file-panel/);
   assert.doesNotMatch(threadSidePanelApi, /cpx-thread-file-panel/);
   assert.match(threadSidePanelApi, /registerTabProvider/);
-  assert.match(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openFile/);
-  assert.doesNotMatch(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openTab/);
-  assert.match(threadSidePanelApi, /nativeFileOpener/);
-  assert.match(threadSidePanelApi, /waitForNativeFileOpener\(timeoutMs = 30000\)/);
-  assert.doesNotMatch(threadSidePanelApi, /dispatchNativeFilesLauncher/);
+  assert.match(plugin, /CodexPlusHost\.adapters\.threadSidePanel\.openFile/);
+  assert.doesNotMatch(plugin, /CodexPlus\.ui\.threadSidePanel/);
+  assert.match(threadSidePanelApi, /hostAdapter\(\)\.openFile\(filePath, options\)/);
+  assert.doesNotMatch(threadSidePanelApi, /nativeFileOpener|waitForNativeFileOpener|dispatchNativeFilesLauncher/);
   assert.match(threadSidePanelApi, /workspaceRoot: cwd \|\| undefined/);
-  assert.match(threadSidePanelApi, /resetTabState: true/);
-  assert.match(threadSidePanelApi, /native-file-opener-unavailable: ChatGPT file opener hook did not produce a host tab/);
+  assert.match(threadSidePanelApi, /resetTabState: file\.resetTabState !== false/);
   assert.doesNotMatch(threadSidePanelApi, /file:local:\$\{filePath\}/);
   assert.doesNotMatch(plugin, /data-codex-plus-aharness-artifact-content/);
   assert.doesNotMatch(plugin, /cpx-ah-artifact-panel/);
@@ -1654,525 +1661,6 @@ test("project context marks active project without hiding native tabs", () => {
   assert.equal(nestedWrapper.hidden, false);
   assert.equal(nestedWrapper.style.display, "");
   assert.equal(nestedTab.getAttribute("aria-selected"), "true");
-});
-
-test("thread side panel API opens files through the upstream file tab adapter", async () => {
-  function element(tag) {
-    const node = {
-      tag,
-      tagName: tag.toUpperCase(),
-      children: [],
-      parentElement: null,
-      attributes: {},
-      hidden: false,
-      innerHTML: "",
-      textContent: "",
-      appendChild(child) {
-        child.parentElement = this;
-        this.children.push(child);
-        return child;
-      },
-      remove() {
-        if (!this.parentElement) return;
-        this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
-        this.parentElement = null;
-      },
-      setAttribute(key, value) {
-        this.attributes[key] = value;
-      },
-      getAttribute(key) {
-        return this.attributes[key] ?? null;
-      },
-      querySelector(selector) {
-        return this.querySelectorAll(selector)[0] || null;
-      },
-      querySelectorAll(selector) {
-        const matches = [];
-        const visit = (child) => {
-          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
-          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
-          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
-          if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
-          if (selector === "[data-codex-plus-thread-side-panel-tab]" && child.attributes["data-codex-plus-thread-side-panel-tab"] != null) matches.push(child);
-          if (selector === "[data-codex-plus-thread-side-panel-body]" && child.attributes["data-codex-plus-thread-side-panel-body"] != null) matches.push(child);
-          if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel" && child.attributes["data-codex-plus-thread-side-panel-body"] == null) matches.push(child);
-          if (selector === "[role='tab']:not([data-codex-plus-thread-side-panel-tab])" && child.attributes.role === "tab" && child.attributes["data-codex-plus-thread-side-panel-tab"] == null) matches.push(child);
-          for (const grandchild of child.children) visit(grandchild);
-        };
-        for (const child of this.children) visit(child);
-        return matches;
-      },
-      closest(selector) {
-        let current = this;
-        while (current) {
-          if (selector === "aside" && current.tagName === "ASIDE") return current;
-          current = current.parentElement;
-        }
-        return null;
-      },
-      addEventListener() {},
-      style: {},
-    };
-    return node;
-  }
-  const body = element("body");
-  const aside = element("aside");
-  const shell = element("div");
-  shell.setAttribute("data-app-shell-tabs", "true");
-  const tablist = element("div");
-  tablist.setAttribute("role", "tablist");
-  const nativeTab = element("button");
-  nativeTab.setAttribute("role", "tab");
-  nativeTab.setAttribute("aria-selected", "true");
-  const tabpanel = element("div");
-  tabpanel.setAttribute("role", "tabpanel");
-  body.appendChild(aside);
-  aside.appendChild(shell);
-  shell.appendChild(tablist);
-  tablist.appendChild(nativeTab);
-  shell.appendChild(tabpanel);
-  const window = { CodexPlus: { ui: {} } };
-  const context = {
-    window,
-    globalThis: window,
-    CSS: { escape: (value) => String(value) },
-    document: {
-      body,
-      createElement: element,
-      querySelector(selector) {
-        if (selector === "[data-app-shell-tabs]") return shell;
-        if (selector === "[role='tabpanel']") return tabpanel;
-        if (selector === "[role='tablist']") return tablist;
-        if (selector === "[data-codex-plus-thread-side-panel-host]") return null;
-        if (selector.includes("side-panel") || selector.includes("SidePanel")) return null;
-        return null;
-      },
-      querySelectorAll() {
-        throw new Error("openFile should use the registered native opener without toggling the side panel");
-      },
-    },
-  };
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8"),
-    context,
-    { filename: "api/threadSidePanel.js" },
-  );
-  let nativeOpen = null;
-  window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
-    nativeOpen = { filePath, options };
-    nativeTab.setAttribute("data-tab-id", `text-editor:local:${filePath}`);
-    tabpanel.setAttribute("data-tab-id", `text-editor:local:${filePath}`);
-    tabpanel.textContent = "# Result";
-    return { viewer: "mcpCapabilityFileViewer", status: "opened", placement: "right" };
-  };
-
-  const opened = await window.CodexPlus.ui.threadSidePanel.openFile({
-    path: "/tmp/aharness-examples/.aharness/runs/run-1/result.md",
-    cwd: "/tmp/aharness-examples",
-    name: "result.md",
-    content: "# Result",
-  });
-
-  assert.equal(opened.ok, true);
-  assert.equal(opened.native, true);
-  assert.equal(opened.result.viewer, "mcpCapabilityFileViewer");
-  assert.deepEqual(JSON.parse(JSON.stringify(nativeOpen)), {
-    filePath: "/tmp/aharness-examples/.aharness/runs/run-1/result.md",
-    options: {
-      activate: true,
-      isPreview: false,
-      resetTabState: true,
-      target: "right",
-      workspaceRoot: "/tmp/aharness-examples",
-    },
-  });
-  const pluginTab = tablist.querySelector("[data-codex-plus-thread-side-panel-tab]");
-  const pluginPanel = shell.querySelector("[data-codex-plus-thread-side-panel-body]");
-  assert.equal(pluginTab, null);
-  assert.equal(pluginPanel, null);
-  assert.equal(tabpanel.hidden, false);
-  assert.equal(nativeTab.getAttribute("aria-selected"), "true");
-});
-
-test("thread side panel API can open the native side panel before rendering", async () => {
-  function element(tag) {
-    const node = {
-      tag,
-      tagName: tag.toUpperCase(),
-      children: [],
-      parentElement: null,
-      attributes: {},
-      hidden: false,
-      innerHTML: "",
-      textContent: "",
-      appendChild(child) {
-        child.parentElement = this;
-        this.children.push(child);
-        return child;
-      },
-      remove() {
-        if (!this.parentElement) return;
-        this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
-        this.parentElement = null;
-      },
-      setAttribute(key, value) {
-        this.attributes[key] = value;
-      },
-      getAttribute(key) {
-        return this.attributes[key] ?? null;
-      },
-      querySelector(selector) {
-        return this.querySelectorAll(selector)[0] || null;
-      },
-      querySelectorAll(selector) {
-        const matches = [];
-        const visit = (child) => {
-          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
-          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
-          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
-          if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
-          if (selector === "[data-codex-plus-thread-side-panel-tab]" && child.attributes["data-codex-plus-thread-side-panel-tab"] != null) matches.push(child);
-          if (selector === "[data-codex-plus-thread-side-panel-body]" && child.attributes["data-codex-plus-thread-side-panel-body"] != null) matches.push(child);
-          if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel" && child.attributes["data-codex-plus-thread-side-panel-body"] == null) matches.push(child);
-          if (selector === "[role='tab']:not([data-codex-plus-thread-side-panel-tab])" && child.attributes.role === "tab" && child.attributes["data-codex-plus-thread-side-panel-tab"] == null) matches.push(child);
-          for (const grandchild of child.children) visit(grandchild);
-        };
-        for (const child of this.children) visit(child);
-        return matches;
-      },
-      closest(selector) {
-        let current = this;
-        while (current) {
-          if (selector === "aside" && current.tagName === "ASIDE") return current;
-          current = current.parentElement;
-        }
-        return null;
-      },
-      addEventListener() {},
-      dispatchEvent(event) {
-        if (event.type !== "mousedown") return true;
-        const aside = element("aside");
-        const shell = element("div");
-        shell.setAttribute("data-app-shell-tabs", "true");
-        const tablist = element("div");
-        tablist.setAttribute("role", "tablist");
-        const tabpanel = element("div");
-        tabpanel.setAttribute("role", "tabpanel");
-        body.appendChild(aside);
-        aside.appendChild(shell);
-        shell.appendChild(tablist);
-        shell.appendChild(tabpanel);
-        return true;
-      },
-      style: {},
-    };
-    return node;
-  }
-  const body = element("body");
-  const toggle = element("button");
-  toggle.setAttribute("aria-label", "Toggle side panel");
-  body.appendChild(toggle);
-  const window = { CodexPlus: { ui: {} } };
-  const context = {
-    window,
-    globalThis: window,
-    CSS: { escape: (value) => String(value) },
-    MouseEvent: class {
-      constructor(type) {
-        this.type = type;
-      }
-    },
-    Date,
-    setTimeout,
-    document: {
-      body,
-      createElement: element,
-      querySelector(selector) {
-        if (selector === "[data-app-shell-tabs]") return body.children.flatMap((child) => child.children).find((child) => child.getAttribute("data-app-shell-tabs") === "true") || null;
-        if (selector === "[role='tabpanel']") return body.children.flatMap((child) => child.children).flatMap((child) => child.children).find((child) => child.getAttribute("role") === "tabpanel") || null;
-        if (selector === "[role='tablist']") return body.children.flatMap((child) => child.children).flatMap((child) => child.children).find((child) => child.getAttribute("role") === "tablist") || null;
-        if (selector === "[data-codex-plus-thread-side-panel-host]") return null;
-        if (selector.includes("side-panel") || selector.includes("SidePanel")) return null;
-        return null;
-      },
-      querySelectorAll(selector) {
-        if (selector === "button") return [toggle];
-        return [];
-      },
-    },
-  };
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8"),
-    context,
-    { filename: "api/threadSidePanel.js" },
-  );
-  let nativeOpen = null;
-  window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
-    nativeOpen = { filePath, options };
-    const nativePanel = context.document.querySelector("[role='tabpanel']");
-    nativePanel?.setAttribute("data-tab-id", `file:${filePath}`);
-    if (nativePanel) nativePanel.textContent = "# Result";
-    return { viewer: "reviewFileSource", status: "opened", placement: "right" };
-  };
-
-  const ensured = await window.CodexPlus.ui.threadSidePanel.ensureOpen();
-  const opened = await window.CodexPlus.ui.threadSidePanel.openFile({
-    path: "/tmp/run/result.md",
-    cwd: "/tmp/run",
-    name: "result.md",
-    content: "# Result",
-  });
-
-  const aside = body.children.find((child) => child.tagName === "ASIDE");
-  assert.equal(ensured.ok, true);
-  assert.equal(opened.ok, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(nativeOpen)), {
-    filePath: "/tmp/run/result.md",
-    options: {
-      activate: true,
-      isPreview: false,
-      resetTabState: true,
-      target: "right",
-      workspaceRoot: "/tmp/run",
-    },
-  });
-  assert.equal(aside.querySelector("[data-codex-plus-thread-side-panel-tab]"), null);
-  assert.equal(aside.querySelector("[data-codex-plus-thread-side-panel-body]"), null);
-});
-
-test("thread side panel API waits for the native file opener after the side panel mounts", async () => {
-  function element(tag) {
-    const node = {
-      tag,
-      tagName: tag.toUpperCase(),
-      children: [],
-      parentElement: null,
-      attributes: {},
-      appendChild(child) {
-        child.parentElement = this;
-        this.children.push(child);
-        return child;
-      },
-      setAttribute(key, value) {
-        this.attributes[key] = value;
-      },
-      getAttribute(key) {
-        return this.attributes[key] ?? null;
-      },
-      querySelector(selector) {
-        return this.querySelectorAll(selector)[0] || null;
-      },
-      querySelectorAll(selector) {
-        const matches = [];
-        const visit = (child) => {
-          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
-          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
-          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
-          if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
-          if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel") matches.push(child);
-          for (const grandchild of child.children) visit(grandchild);
-        };
-        for (const child of this.children) visit(child);
-        return matches;
-      },
-      closest(selector) {
-        let current = this;
-        while (current) {
-          if (selector === "aside" && current.tagName === "ASIDE") return current;
-          current = current.parentElement;
-        }
-        return null;
-      },
-      addEventListener() {},
-      style: {},
-    };
-    return node;
-  }
-  const body = element("body");
-  const aside = element("aside");
-  const shell = element("div");
-  shell.setAttribute("data-app-shell-tabs", "true");
-  const tablist = element("div");
-  tablist.setAttribute("role", "tablist");
-  const tabpanel = element("div");
-  tabpanel.setAttribute("role", "tabpanel");
-  body.appendChild(aside);
-  aside.appendChild(shell);
-  shell.appendChild(tablist);
-  shell.appendChild(tabpanel);
-  const window = { CodexPlus: { ui: {} } };
-  const context = {
-    window,
-    globalThis: window,
-    CSS: { escape: (value) => String(value) },
-    Date,
-    setTimeout,
-    document: {
-      body,
-      createElement: element,
-      querySelector(selector) {
-        if (selector === "[data-app-shell-tabs]") return shell;
-        if (selector === "[role='tabpanel']") return tabpanel;
-        if (selector === "[role='tablist']") return tablist;
-        if (selector === "[data-codex-plus-thread-side-panel-host]") return null;
-        if (selector.includes("side-panel") || selector.includes("SidePanel")) return null;
-        return null;
-      },
-      querySelectorAll() {
-        return [];
-      },
-    },
-  };
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8"),
-    context,
-    { filename: "api/threadSidePanel.js" },
-  );
-  let nativeOpen = null;
-  setTimeout(() => {
-    window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
-      nativeOpen = { filePath, options };
-      tabpanel.setAttribute("data-tab-id", `file:local:${filePath}`);
-      tabpanel.textContent = "# Result";
-      return { viewer: "reviewFileSource", status: "opened", placement: "right" };
-    };
-  }, 100);
-
-  const opened = await window.CodexPlus.ui.threadSidePanel.openFile({
-    path: "/tmp/run/result.md",
-    cwd: "/tmp/run",
-  });
-
-  assert.equal(opened.ok, true);
-  assert.equal(nativeOpen.filePath, "/tmp/run/result.md");
-  assert.equal(nativeOpen.options.workspaceRoot, "/tmp/run");
-});
-
-test("thread side panel API activates native Files before waiting for its opener", async () => {
-  function element(tag) {
-    const node = {
-      tag,
-      tagName: tag.toUpperCase(),
-      children: [],
-      parentElement: null,
-      attributes: {},
-      textContent: "",
-      appendChild(child) {
-        child.parentElement = this;
-        this.children.push(child);
-        return child;
-      },
-      setAttribute(key, value) {
-        this.attributes[key] = value;
-      },
-      getAttribute(key) {
-        return this.attributes[key] ?? null;
-      },
-      querySelector(selector) {
-        return this.querySelectorAll(selector)[0] || null;
-      },
-      querySelectorAll(selector) {
-        const matches = [];
-        const visit = (child) => {
-          if (selector === "[data-tab-id]" && child.attributes["data-tab-id"] != null) matches.push(child);
-          if (selector === "[role='tab']" && child.attributes.role === "tab") matches.push(child);
-          if (selector === "[role='tabpanel']" && child.attributes.role === "tabpanel") matches.push(child);
-          if (selector === "[role='tablist']" && child.attributes.role === "tablist") matches.push(child);
-          if (selector === "[role='tabpanel']:not([data-codex-plus-thread-side-panel-body])" && child.attributes.role === "tabpanel") matches.push(child);
-          for (const grandchild of child.children) visit(grandchild);
-        };
-        for (const child of this.children) visit(child);
-        return matches;
-      },
-      closest(selector) {
-        let current = this;
-        while (current) {
-          if (selector === "aside" && current.tagName === "ASIDE") return current;
-          current = current.parentElement;
-        }
-        return null;
-      },
-      addEventListener() {},
-      dispatchEvent() {
-        return true;
-      },
-      style: {},
-    };
-    return node;
-  }
-  const body = element("body");
-  const aside = element("aside");
-  const shell = element("div");
-  shell.setAttribute("data-app-shell-tabs", "true");
-  const tablist = element("div");
-  tablist.setAttribute("role", "tablist");
-  const tabpanel = element("div");
-  tabpanel.setAttribute("role", "tabpanel");
-  const filesButton = element("button");
-  filesButton.textContent = "Files⌘P";
-  body.appendChild(aside);
-  body.appendChild(filesButton);
-  aside.appendChild(shell);
-  shell.appendChild(tablist);
-  shell.appendChild(tabpanel);
-  const window = { CodexPlus: { ui: {} } };
-  let filesActivated = false;
-  filesButton.dispatchEvent = (event) => {
-    if (event.type !== "mousedown") return true;
-    filesActivated = true;
-    setTimeout(() => {
-      window.CodexPlusHost.adapters.threadSidePanel.openFile = (filePath, options) => {
-        window.__nativeOpen = { filePath, options };
-        tabpanel.setAttribute("data-tab-id", `file:${filePath}`);
-        tabpanel.textContent = "# Result";
-        return { viewer: "reviewFileSource", status: "opened", placement: "right" };
-      };
-    }, 20);
-    return true;
-  };
-  const context = {
-    window,
-    globalThis: window,
-    CSS: { escape: (value) => String(value) },
-    Date,
-    setTimeout,
-    MouseEvent: class {
-      constructor(type) {
-        this.type = type;
-      }
-    },
-    document: {
-      body,
-      createElement: element,
-      querySelector(selector) {
-        if (selector === "[data-app-shell-tabs]") return shell;
-        if (selector === "[role='tabpanel']") return tabpanel;
-        if (selector === "[role='tablist']") return tablist;
-        if (selector === "[data-codex-plus-thread-side-panel-host]") return null;
-        if (selector.includes("side-panel") || selector.includes("SidePanel")) return null;
-        return null;
-      },
-      querySelectorAll(selector) {
-        if (selector === "button,[role='button'],[role='tab']") return [filesButton];
-        return [];
-      },
-    },
-  };
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, "../src/runtime/api/threadSidePanel.js"), "utf8"),
-    context,
-    { filename: "api/threadSidePanel.js" },
-  );
-
-  const opened = await window.CodexPlus.ui.threadSidePanel.openFile({
-    path: "/tmp/run/result.md",
-    cwd: "/tmp/run",
-  });
-
-  assert.equal(opened.ok, true);
-  assert.equal(filesActivated, true);
-  assert.equal(window.__nativeOpen.filePath, "/tmp/run/result.md");
-  assert.equal(window.__nativeOpen.options.workspaceRoot, "/tmp/run");
 });
 
 test("aharness plugin shortens run rows and keeps full target out of sidebar labels", () => {
@@ -2321,7 +1809,7 @@ test("aharness plugin shortens run rows and keeps full target out of sidebar lab
   assert.match(plugin, /function appendFileEditGroup\(parent, rows, run\)/);
   assert.match(plugin, /function projectRelativePath\(filePath, run\)/);
   assert.match(plugin, /function openRunFile\(run, filePath\)/);
-  assert.match(plugin, /CodexPlus\.ui\.threadSidePanel\?\.openFile\?\.\(\{/);
+  assert.match(plugin, /CodexPlusHost\.adapters\.threadSidePanel\.openFile\(absolutePath/);
   assert.match(plugin, /data-codex-plus-aharness-file-group/);
   assert.match(plugin, /data-codex-plus-aharness-file-open/);
   assert.match(plugin, /fileEditState\.set\(groupKey, group\.open\)/);

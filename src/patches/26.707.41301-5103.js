@@ -15,6 +15,7 @@ module.exports = buildCodexPlusPatchSet({
     errorBoundary: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-Bj9ubaFn.js",
     generalSettings: "webview/assets/general-settings-BBi3jMJr.js",
     header: "webview/assets/thread-app-shell-chrome-G7vno0lf.js",
+    threadTitle: "webview/assets/local-conversation-page-BU8CFfWN.js",
     threadPageHeader: null,
     localConversationPage: "webview/assets/local-conversation-thread-BLEibV-Y.js",
     threadContext: "webview/assets/app-initial~app-main~hotkey-window-thread-page~keyboard-shortcuts-settings~thread-app-shell~cf704xib-Do6EGhkP.js",

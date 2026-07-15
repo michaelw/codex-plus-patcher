@@ -50,7 +50,7 @@ function create({ electron, aharnessRuntimeLoader } = {}) {
       const event = focusedEvent();
       const webContents = event?.sender;
       if (typeof webContents?.executeJavaScript !== "function") return { ok: false };
-      webContents.executeJavaScript(`window.CodexPlus?.commands?.run(${JSON.stringify(String(commandId))})`).catch(() => {});
+      webContents.executeJavaScript(`window.CodexPlusHost.adapters.commands.dispatch(${JSON.stringify(String(commandId))})`).catch(() => {});
       return { ok: true };
     } catch {
       return { ok: false };
@@ -166,6 +166,19 @@ function create({ electron, aharnessRuntimeLoader } = {}) {
           return registerNativeMenuItem(request.params);
         case "devtools/open":
           return openDevTools(event);
+        case "clipboard/write-text":
+          electron.clipboard.writeText(String(request.params?.text || ""));
+          return { ok: true };
+        case "routing/open-deep-route": {
+          const route = request.params?.route;
+          if (typeof route !== "string" || !route.startsWith("/")) throw new Error(`Unsupported Codex Plus deep route: ${route}`);
+          const url = new URL(event.sender.getURL());
+          url.pathname = "/index.html";
+          url.search = "";
+          url.searchParams.set("initialRoute", route);
+          await event.sender.loadURL(url.toString());
+          return { ok: true, route };
+        }
         case "mermaid/openViewer":
           return openMermaidViewer(request.params);
         default:
