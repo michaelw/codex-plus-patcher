@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.17.1...v0.18.0) (2026-07-15)
+
+
+### Features
+
+* migrate host adapters across Codex versions ([#111](https://github.com/michaelw/codex-plus-patcher/issues/111)) ([9d047a2](https://github.com/michaelw/codex-plus-patcher/commit/9d047a2f9a2fee777f69b5be75f59925e554eae8))
+
 ## [0.17.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.17.0...v0.17.1) (2026-07-12)
 
 
