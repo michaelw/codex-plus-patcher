@@ -64,6 +64,26 @@
     });
   }
 
+  function workerGitRequest(workerId) {
+    return {
+      request({ method, params, signal }) {
+        return workerRequest(workerId, method, params, signal);
+      },
+    };
+  }
+
+  function hostPathValue(value) {
+    return value?.fsPath ?? value?.path ?? value;
+  }
+
+  function reviewDeps(deps) {
+    return {
+      ...deps,
+      gitRequest: typeof deps.gitRequest === "function" ? deps.gitRequest : workerGitRequest,
+      pathValue: typeof deps.pathValue === "function" ? deps.pathValue : hostPathValue,
+    };
+  }
+
   function debugText(value) {
     try {
       return JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? String(item) : item), 2) ?? "";
@@ -499,8 +519,8 @@
   }
 
   function ReviewMux(props, deps) {
+    deps = reviewDeps(deps);
     const { jsx, jsxs, React, useAtom, hostConfigAtom, gitRequest, pathValue } = deps;
-    if (typeof gitRequest !== "function" || typeof pathValue !== "function") throw new Error("Review adapter did not supply gitRequest and pathValue");
     const context = window.CodexPlusHost.adapters.context.active();
     const cwd = context?.cwd || null;
     const hostId = context?.hostId || null;

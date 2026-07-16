@@ -497,6 +497,20 @@ function patchWorker(text) {
 function patchThreadSidePanelTabs(text) {
   const originalText = text;
   text = patchThreadSidePanelNativeProjectContext(text);
+  if (text.includes("function aTe(e){let t=(0,WP.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
+    let patched = replaceOnce(
+      text,
+      "function aTe(e){let t=(0,WP.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+      `${reviewHook("[GP,EA,null,null,null,null,null,null,null,null,null,NSe,null,null,null,null,null,null,null,Do,kA]")}function aTe(e){let t=(0,WP.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      "91948 review host hook insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "s=(0,GP.jsx)(Kre,{children:(0,GP.jsx)(NSe,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "s=(0,GP.jsx)(Kre,{children:(0,GP.jsx)(CPXRM,{mainReviewContent:(0,GP.jsx)(NSe,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+      "91948 review body mux anchor",
+    );
+  }
   if (text.includes("function PCt(e){let t=(0,FCt.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e")) {
     const importAnchor = 'import{n as e,r as t,s as n,t as r}from"./rolldown-runtime-Czos8NxU.js";';
     let patched = replaceOnce(text, importAnchor, `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`, "61608 branch picker content import anchor");
@@ -1126,6 +1140,20 @@ function patchLocalThreadCatalogBootstrap(text) {
 
 function patchAppShell(text) {
   text = patchLocalThreadCatalogBootstrap(text);
+  if (text.includes("function fse(){let e=(0,mj.c)(3),t,n;")) {
+    let patched = replaceOnce(
+      text,
+      "function fse(){let e=(0,mj.c)(3),t,n;",
+      `${diagnosticDetailsHook()}function fse(){let e=(0,mj.c)(3),t,n;`,
+      "91948 app shell error fallback prop anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[t,n,(0,hj.jsx)(Qn,{onClick:pse,children:(0,hj.jsx)(Z,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "children:[t,n,CPXDiagnosticDetails({jsx:hj.jsx,error:null}),(0,hj.jsx)(Qn,{onClick:pse,children:(0,hj.jsx)(Z,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+      "91948 app shell error detail insertion anchor",
+    );
+  }
   if (text.includes("function JSe(){let e=(0,kk.c)(3),t,n;")) {
     let patched = replaceOnce(text, "function JSe(){let e=(0,kk.c)(3),t,n;", `${diagnosticDetailsHook()}function JSe(){let e=(0,kk.c)(3),t,n;`, "61608 app shell error fallback prop anchor");
     return replaceOnce(
@@ -1383,6 +1411,26 @@ function patchAppShell(text) {
 }
 
 function patchErrorBoundary(text) {
+  if (text.includes("function FCe(e){let t=(0,mF.c)(9),{resetError:n}=e,r=va(),i,a;")) {
+    let patched = replaceOnce(
+      text,
+      "function FCe(e){let t=(0,mF.c)(9),{resetError:n}=e,r=va(),i,a;",
+      `${diagnosticDetailsHook()}function FCe(e){let t=(0,mF.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=va(),i,a;`,
+      "91948 webview error boundary fallback prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:[i,a,(0,gF.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,gF.jsx)(an,{onClick:s,children:c})]})]",
+      "children:[i,a,CPXDiagnosticDetails({jsx:gF.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,gF.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,gF.jsx)(an,{onClick:s,children:c})]})]",
+      "91948 webview error boundary detail anchor",
+    );
+    return replaceOnce(
+      patched,
+      "r=e??(e=>(0,gF.jsx)(FCe,{resetError:()=>e.resetError()}));",
+      "r=e??(e=>(0,gF.jsx)(FCe,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));",
+      "91948 webview error boundary error prop anchor",
+    );
+  }
   if (text.includes("function SPe(e){let t=(0,CPe.c)(9),{resetError:n}=e,r=Yn(),i,a;")) {
     let patched = replaceOnce(text, "function SPe(e){let t=(0,CPe.c)(9),{resetError:n}=e,r=Yn(),i,a;", `${diagnosticDetailsHook()}function SPe(e){let t=(0,CPe.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e,r=Yn(),i,a;`, "61608 webview error boundary fallback prop anchor");
     patched = replaceOnce(
@@ -1598,6 +1646,12 @@ function patchErrorBoundary(text) {
 }
 
 function patchAppMainProjectColors(text) {
+  if (
+    text.includes("function JJ(e){let t=(0,YJ.c)(44),{children:n,groups:r,projectAppearances:i,selectedProjectIds:a,") &&
+    text.includes("function pW(e){let t=(0,mW.c)(3),{target:n}=e")
+  ) {
+    return text;
+  }
   if (text.includes("function Kf(e){let t=(0,qf.c)(57),")) {
     let patched = replaceOnce(text, "function Kf(e){let t=(0,qf.c)(57),", `${projectColorHook()}function Kf(e){let t=(0,qf.c)(57),`, "61608 project color app main helper insertion anchor");
     return replaceOnce(patched, "A=ki.sidebarProjectRow({collapsed:a,label:g,projectId:b})", "A={...ki.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}", "61608 project header row color attributes anchor");
@@ -1901,6 +1955,22 @@ function patchAppMainProjectColors(text) {
 }
 
 function patchAppMainSidebarBlur(text) {
+  if (text.includes("function pW(e){let t=(0,mW.c)(3),{target:n}=e")) {
+    if (text.includes("o=(0,gW.jsx)(Lm,{icon:a,label:i})")) {
+      return replaceOnce(
+        text,
+        "o=(0,gW.jsx)(Lm,{icon:a,label:i})",
+        "o=(0,gW.jsx)(Lm,{icon:a,label:(0,gW.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,children:i})})",
+        "91948 sidebar conversation blur raw label anchor",
+      );
+    }
+    return replaceOnce(
+      text,
+      "o=(0,gW.jsx)(Lm,{icon:a,label:(0,gW.jsx)(`span`,{...CPXPR(n.kind===`optimistic`?{threadId:n.conversationId,title:i,projectless:!0}:{threadId:n.conversation.id,title:i,cwd:n.conversation.cwd,projectId:n.conversation.projectId??null}),children:i})})",
+      "o=(0,gW.jsx)(Lm,{icon:a,label:(0,gW.jsx)(`span`,{...CPXPR(n.kind===`optimistic`?{threadId:n.conversationId,title:i,projectless:!0}:{threadId:n.conversation.id,title:i,cwd:n.conversation.cwd,projectId:n.conversation.projectId??null}),\"data-codex-plus-sidebar-name\":``,children:i})})",
+      "91948 sidebar conversation blur label anchor",
+    );
+  }
   if (text.includes("function Kf(e){let t=(0,qf.c)(57),")) {
     return replaceOnce(text, "U=(0,Jf.jsx)(`span`,{className:`text-fade-truncate pr-1`,children:g})", "U=(0,Jf.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pr-1`,children:g})", "61608 project header sidebar blur label anchor");
   }
@@ -2038,6 +2108,23 @@ function patchAppMainSidebarBlur(text) {
 }
 
 function patchHeader(text) {
+  if (
+    text.includes("function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,") &&
+    text.includes("(0,sr.jsx)(G.HeaderAction,{actionId:`thread-local-project-actions`")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,",
+      `${threadHeaderHook()}function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,`,
+      "91948 thread shell header accessory helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let c=s;if(c==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let l;return t[2]!==c||t[3]!==r?(l=(0,sr.jsx)(G.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:c,hostConfig:r})}),t[2]=c,t[3]=r,t[4]=l):l=t[4],l}",
+      "let c=s,CPX_headerContext={cwd:i.cwd,hostId:r?.id??null,header:{surface:`thread-shell`,conversationId:n??null}},CPX_headerAccessories=CPXThreadHeaderAccessories({context:CPX_headerContext,deps:{jsx:sr.jsx,jsxs:sr.jsxs,useSyncExternalStore:nr.useSyncExternalStore}}),CPX_headerAction=CPX_headerAccessories==null?null:(0,sr.jsx)(G.HeaderAction,{actionId:`codex-plus-project-path`,align:`start`,order:90,children:CPX_headerAccessories});if(c==null||!a||i.kind!==`git`||r.kind===`remote-control`)return CPX_headerAction;let l;return t[2]!==c||t[3]!==r?(l=(0,sr.jsx)(G.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:c,hostConfig:r})}),t[2]=c,t[3]=r,t[4]=l):l=t[4],CPX_headerAction==null?l:(0,sr.jsxs)(sr.Fragment,{children:[CPX_headerAction,l]})}",
+      "91948 thread shell header accessory mount anchor",
+    );
+  }
   if (
     text.includes("function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,") &&
     text.includes("(0,sr.jsx)(H.HeaderAction,{actionId:`thread-local-project-actions`")
@@ -2356,6 +2443,29 @@ function patchHeader(text) {
 function patchThreadTitle(text) {
   if (
     text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
+    text.includes("projectName:f,title:p,titleSuffix:m,cwd:g,canPin:_,hideForkActions:v}=e")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Sl(e){let t=(0,Tl.c)(51),",
+      `${threadHeaderContextHook()}${threadHeaderBoundTitleHook("ll")}function Sl(e){let t=(0,Tl.c)(51),`,
+      "91948 thread title context helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "projectName:f,title:p,titleSuffix:m,cwd:g,canPin:_,hideForkActions:v}=e,y=l===void 0?!1:l,",
+      "projectName:f,title:CPX_nativeTitle,titleSuffix:m,cwd:g,canPin:_,hideForkActions:v}=e,p=CPXThreadHeaderTitle(CPX_nativeTitle),y=l===void 0?!1:l,",
+      "91948 thread title adapter mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let D=E,O=c(kt,n),k=co(D,Ot(r??O).id),A;",
+      "let D=E,O=c(kt,n),CPXC=CPXBindThreadHeaderContext({routeId:n,threadId:n,cwd:g,workspaceRoot:g,gitRoot:D??g,hostId:Ot(r??O).id,sourceProject:{id:g,label:typeof f==`string`?f:``,cwd:g}}),k=co(D,Ot(r??O).id),A;",
+      "91948 thread title native context anchor",
+    );
+  }
+  if (
+    text.includes("function Sl(e){let t=(0,Tl.c)(51),{conversationId:n,hostIdOverride:r,") &&
     text.includes("projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e")
   ) {
     let patched = replaceOnce(text, "function Sl(e){let t=(0,Tl.c)(51),", `${threadHeaderContextHook()}${threadHeaderBoundTitleHook("ll")}function Sl(e){let t=(0,Tl.c)(51),`, "61608 thread title context helper insertion anchor");
@@ -2558,7 +2668,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:rq.jsx,jsxs:rq.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:rq.jsx,jsxs:rq.jsxs,useSyncExternalStore:nq.useSyncExternalStore})),v=h.length>0,",
       "41415 thread header native end-action anchor",
     );
   }
@@ -3000,6 +3110,23 @@ function patchLocalConversationPageHeader(text) {
 
 function patchGeneralSettingsUserBubbleColors(text) {
   if (
+    text.includes("function Ar({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
+    text.includes("children:[k.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Fr,{ariaLabel:e.ariaLabel,value:S[e.role],onChange:t=>{A(e.role,t)}}),label:e.label},e.role)),ee.map")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function Ar({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+      `${appearanceSettingsHook("{React:Jr,jsx:J.jsx,SettingRow:H,ColorInput:Fr,Switch:Vn}")}function Ar({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){`,
+      "91948 user bubble settings helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "children:[k.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Fr,{ariaLabel:e.ariaLabel,value:S[e.role],onChange:t=>{A(e.role,t)}}),label:e.label},e.role)),ee.map",
+      "children:[k.map(e=>(0,J.jsx)(H,{size:`compact`,control:(0,J.jsx)(Fr,{ariaLabel:e.ariaLabel,value:S[e.role],onChange:t=>{A(e.role,t)}}),label:e.label},e.role)),...CPXAppearanceRows(n),ee.map",
+      "91948 user bubble settings row anchor",
+    );
+  }
+  if (
     text.includes("function Or({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){") &&
     text.includes("children:[D.map(e=>(0,J.jsx)(L,{size:`compact`,control:(0,J.jsx)(Nr,{ariaLabel:e.ariaLabel,value:x[e.role],onChange:t=>{k(e.role,t)}}),label:e.label},e.role)),O.map")
   ) {
@@ -3227,6 +3354,26 @@ function patchGeneralSettingsUserBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsBubbleColors(text) {
+  if (text.includes("function Rae({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
+    let patched = replaceOnce(
+      text,
+      "function Rae({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+      `${messageComposerHook()}function Rae({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`,
+      "91948 user bubble helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "return(0,aT.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "return(0,aT.jsx)(`form`,{\"data-codex-plus-user-entry\":!0,className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+      "91948 edit user message entry marker anchor",
+    );
+    return replaceOnce(
+      patched,
+      "\"data-user-message-bubble\":!0,role:B?`button`:void 0,",
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:B?`button`:void 0,",
+      "91948 user bubble marker attribute anchor",
+    );
+  }
   if (text.includes("function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){")) {
     let patched = replaceOnce(text, "function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){", `${messageComposerHook()}function FNt({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){`, "61608 user bubble helper insertion anchor");
     patched = replaceOnce(
@@ -3540,6 +3687,14 @@ function patchUserMessageAttachmentsBubbleColors(text) {
 }
 
 function patchUserMessageAttachmentsProjectColors(text) {
+  if (text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:B?`button`:void 0,")) {
+    return replaceOnce(
+      text,
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:B?`button`:void 0,",
+      "\"data-user-message-bubble\":!0,...CPXBubbleProps({project:globalThis.CodexPlusHost.adapters.context.active()}),role:B?`button`:void 0,",
+      "91948 user bubble canonical project context anchor",
+    );
+  }
   if (
     text.includes("function FNt(") &&
     text.includes("\"data-user-message-bubble\":!0,...CPXBubbleProps({}),role:I?`button`:void 0,")
@@ -3623,6 +3778,23 @@ function patchUserMessageAttachmentsProjectColors(text) {
 }
 
 function patchComposerBubbleColors(text) {
+  if (
+    text.includes("function ec(e){if(L?.type!==`local`") &&
+    text.includes("(0,tJ.jsx)(Zq,{className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function ec(e){if(L?.type!==`local`",
+      `${messageComposerHook()}function ec(e){if(L?.type!==\`local\``,
+      "91948 composer user bubble helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,tJ.jsx)(Zq,{className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,",
+      "(0,tJ.jsx)(Zq,{...CPXSurfaceProps({}),className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,",
+      "91948 composer user entry marker render anchor",
+    );
+  }
   if (text.includes("function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,")) {
     return replaceOnce(text, "function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,", `${messageComposerHook()}function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,`, "61608 composer helper insertion anchor");
   }
@@ -3904,6 +4076,26 @@ function patchComposerBubbleColors(text) {
 }
 
 function patchComposerPrimitiveSurface(text) {
+  if (text.includes("function nu(e){let t=(0,_u.c)(18),{children:n,className:r,utilityBarVariant:i,")) {
+    let patched = replaceOnce(
+      text,
+      "function nu(e){let t=(0,_u.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:h}=e,",
+      `${messageComposerHook()}function nu(e){let t=(0,_u.c)(19),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:h,codexPlusProps:CPX_surfaceProps}=e,CPX_resolvedSurfaceProps=CPX_surfaceProps??CPXSurfaceProps({}),`,
+      "91948 native composer primitive surface props anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[10]!==n||t[11]!==a||t[12]!==d||t[13]!==f||t[14]!==p||t[15]!==h||t[16]!==O?",
+      "t[10]!==n||t[11]!==a||t[12]!==d||t[13]!==f||t[14]!==p||t[15]!==h||t[16]!==O||t[18]!==CPX_resolvedSurfaceProps?",
+      "91948 native composer primitive surface cache anchor",
+    );
+    return replaceOnce(
+      patched,
+      "k=(0,vu.jsx)(c.div,{inert:a,className:O,onMouseDown:gu,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:h,children:n}),t[10]=n,t[11]=a,t[12]=d,t[13]=f,t[14]=p,t[15]=h,t[16]=O,t[17]=k",
+      "k=(0,vu.jsx)(c.div,{inert:a,...CPX_resolvedSurfaceProps,className:O,onMouseDown:gu,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:h,children:n}),t[10]=n,t[11]=a,t[12]=d,t[13]=f,t[14]=p,t[15]=h,t[16]=O,t[17]=k,t[18]=CPX_resolvedSurfaceProps",
+      "91948 native composer primitive surface render anchor",
+    );
+  }
   if (text.includes("function h(e){let t=(0,A.c)(18),{children:n,className:r,utilityBarVariant:i,")) {
     let patched = replaceOnce(
       text,
@@ -4002,6 +4194,20 @@ function patchComposerPrimitiveSurface(text) {
 }
 
 function patchComposerProjectColors(text) {
+  if (text.includes("(0,tJ.jsx)(Zq,{...CPXSurfaceProps({}),className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,")) {
+    let patched = replaceOnce(
+      text,
+      "(0,tJ.jsx)(Zq,{...CPXSurfaceProps({}),className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,",
+      "(0,tJ.jsx)(Zq,{key:CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()})?.[`data-codex-plus-project-color`]??``,codexPlusProps:CPXSurfaceProps({project:globalThis.CodexPlusHost.adapters.context.active()}),className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,",
+      "91948 composer canonical project context anchor",
+    );
+    return replaceOnce(
+      patched,
+      "ds=(e,t=jr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;Ep({path:n,line:r,column:r==null?void 0:1,cwd:bn,hostId:t,openFile:Zt.mutate})},ps=e=>",
+      "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:F})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>Ep({scope:F,path:e,cwd:t.workspaceRoot??bn,hostConfig:Mr,hostId:t.hostId??jr,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openFile:Zt.mutate,openInSidePanel:!0})),ds=(e,t=jr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;Ep({path:n,line:r,column:r==null?void 0:1,cwd:bn,hostId:t,openFile:Zt.mutate})},ps=e=>",
+      "91948 composer-native file opener adapter anchor",
+    );
+  }
   if (
     text.includes("function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,") &&
     text.includes("):(0,E$.jsx)(PUe,{className:C,utilityBarVariant:S,hasDropTargetPortal:_s,")
@@ -4304,6 +4510,29 @@ function patchKeyboardShortcutsSearchInput(text) {
 
 function patchCommandMenuRuntimeCommands(text) {
   if (text.includes("function CPXCommandPaletteItem") && text.includes("bindNativeDispatch")) return text;
+  if (
+    text.includes("function yle(e){let t=(0,u4.c)(126),") &&
+    text.includes("let f=ie?F.filter(wle):F,p;")
+  ) {
+    let patched = replaceOnce(
+      text,
+      "function yle(e){let t=(0,u4.c)(126),",
+      "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,f4.jsx)(RA,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function yle(e){let t=(0,u4.c)(126),",
+      "91948 command palette plugin item anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "!i&&c!=null&&G.push(c),t[29]=L,",
+      "W||G.push(...globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,f4.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id))),!i&&c!=null&&G.push(c),t[29]=L,",
+      "91948 command palette plugin item mount anchor",
+    );
+    return replaceOnce(
+      patched,
+      "c=()=>{Vv(r.id,`command_menu`),n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+      "c=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(Vv(e,`command_menu`),!0)),e.dispatch(r.id),n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+      "91948 command menu stable dispatch anchor",
+    );
+  }
   if (text.includes("function aJe(e){let t=(0,a8.c)(126),") && text.includes("let f=ne?P.filter(uJe):P,p;")) {
     let patched = replaceOnce(
       text,
@@ -4479,6 +4708,46 @@ function patchAppCommandPaletteRuntimeCommands(text) {
 }
 
 function patchLocalTaskRow(text) {
+  if (text.includes("function Czt(e){let t=(0,Tzt.c)(142),") && text.includes("isProjectlessHoverCard:Y")) {
+    let patched = replaceOnce(
+      text,
+      "function Czt(e){let t=(0,Tzt.c)(142),",
+      `${projectColorHook()}function Czt(e){let t=(0,Tzt.c)(142),`,
+      "91948 canonical local task row helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "let Ze=g(m5,Ye),Qe=g(Ate,n),$e=g(Qa,n)??Pe?.source,et=g(mre,n)??Pe?.title??null;g(wr,n)??Pe?.threadSource;let tt=fe?N:void 0,nt;",
+      "let Ze=g(m5,Ye),Qe=g(Ate,n),$e=g(Qa,n)??Pe?.source,et=g(mre,n)??Pe?.title??null;g(wr,n)??Pe?.threadSource;let CPXRowData=CPXS.mergeThreadRowAttributes(de,CPXPR({projectId:se,label:ce,path:Ve,cwd:Ve,hostId:We,threadId:n,title:et,projectKind:Me?`chat`:void 0,projectless:Me})),tt=fe?N:void 0,nt;",
+      "91948 canonical local task row project context anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "hoverCardSideOffset:Jt,dataAttributes:de,archiveAriaLabel:Yt,",
+      "hoverCardSideOffset:Jt,dataAttributes:CPXRowData,archiveAriaLabel:Yt,",
+      "91948 canonical local task row data attributes anchor",
+    );
+    return replaceOnce(
+      patched,
+      "Y=(0,d7.jsxs)(`div`,{...x,...j,ref:n,className:P,role:`button`,",
+      "Y=(0,d7.jsxs)(`div`,{...x,...j,...CPXPR({projectId:b,label:g}),ref:n,className:P,role:`button`,",
+      "91948 canonical native project row attributes anchor",
+    );
+  }
+  if (text.includes("function pW(e){let t=(0,mW.c)(3),{target:n}=e")) {
+    let patched = replaceOnce(
+      text,
+      "function pW(e){let t=(0,mW.c)(3),{target:n}=e,",
+      `${projectColorHook()}function pW(e){let t=(0,mW.c)(3),{target:n}=e,`,
+      "91948 conversation row project color helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "o=(0,gW.jsx)(Lm,{icon:a,label:i})",
+      "o=(0,gW.jsx)(Lm,{icon:a,label:(0,gW.jsx)(`span`,{...CPXPR(n.kind===`optimistic`?{threadId:n.conversationId,title:i,projectless:!0}:{threadId:n.conversation.id,title:i,cwd:n.conversation.cwd,projectId:n.conversation.projectId??null}),children:i})})",
+      "91948 conversation row project color attributes anchor",
+    );
+  }
   if (text.includes("function ey(e){let t=(0,oy.c)(128),")) {
     let patched = replaceOnce(text, "function ey(e){let t=(0,oy.c)(128),", `${projectColorHook()}function ey(e){let t=(0,oy.c)(128),`, "61608 local task row project color helper insertion anchor");
     patched = replaceOnce(patched, "dataAttributes:ki.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label})", "dataAttributes:{...ki.sidebarThreadRow({active:s,hostId:t.hostId,id:n,kind:`local`,pinned:r,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}", "61608 local pending task row project color attributes anchor");
@@ -4826,6 +5095,20 @@ function patchLocalTaskRow(text) {
 }
 
 function patchMermaidDiagramShell(text) {
+  if (text.includes("function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:o,onRendered:s,renderKey:l}){")) {
+    let patched = replaceOnce(
+      text,
+      "function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:o,onRendered:s,renderKey:l}){",
+      `${mermaidDiagramHook()}function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:o,onRendered:s,renderKey:l}){`,
+      "91948 mermaid diagram shell helper insertion anchor",
+    );
+    return replaceOnce(
+      patched,
+      "(0,X.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":T,children:[",
+      "(0,X.jsxs)(`div`,{...CPXMermaidDiagramProps({code:t}),className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":T,children:[",
+      "91948 mermaid diagram shell host props anchor",
+    );
+  }
   if (text.includes("function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){")) {
     let patched = replaceOnce(text, "function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){", `${mermaidDiagramHook()}function cr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:o,renderKey:s}){`, "61608 mermaid diagram shell helper insertion anchor");
     return replaceOnce(patched, "(0,X.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[", "(0,X.jsxs)(`div`,{...CPXMermaidDiagramProps({code:t}),className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[", "61608 mermaid diagram shell host props anchor");
@@ -5253,6 +5536,20 @@ function patchLocalThreadCatalogEnabled(text) {
 }
 
 function patchChatGptStartupAnnouncements(text) {
+  if (text.includes("function Vse({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===en.ChatGPT&&t!=null&&t!==Pt.Agent&&t!==Pt.Dev}")) {
+    let patched = replaceOnce(
+      text,
+      "function Vse({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===en.ChatGPT&&t!=null&&t!==Pt.Agent&&t!==Pt.Dev}",
+      "function Vse({appBrand:e,buildFlavor:t,platform:n}){return false}",
+      "91948 ChatGPT migration announcement eligibility anchor",
+    );
+    return replaceOnce(
+      patched,
+      "function yN(e){let t=(0,bN.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "function yN(e){return null;let t=(0,bN.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+      "91948 ChatGPT model upgrade announcement modal anchor",
+    );
+  }
   if (text.includes("function SCe({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===xn.ChatGPT&&t!=null&&t!==Zt.Agent&&t!==Zt.Dev}")) {
     let patched = replaceOnce(text, "function SCe({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===xn.ChatGPT&&t!=null&&t!==Zt.Agent&&t!==Zt.Dev}", "function SCe({appBrand:e,buildFlavor:t,platform:n}){return false}", "61608 ChatGPT migration announcement eligibility anchor");
     return replaceOnce(patched, "function Fj(e){let t=(0,Ij.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,", "function Fj(e){return null;let t=(0,Ij.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,", "61608 ChatGPT model upgrade announcement modal anchor");

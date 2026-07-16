@@ -2299,7 +2299,7 @@ test("launch-dev uses isolated Codex and Electron state", () => {
   assert.match(formatLaunchDevResult(result), /com\.openai\.codex-plus\.dev/);
 });
 
-test("launch-dev falls back to the ChatGPT executable and dev identity for ChatGPT targets", () => {
+test("launch-dev directly launches the ChatGPT executable with isolated identity", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-chatgpt-launch-dev-"));
   const targetApp = path.join(tmpDir, "ChatGPT Plus.app");
 
@@ -2333,13 +2333,8 @@ test("launch-dev falls back to the ChatGPT executable and dev identity for ChatG
     },
   });
 
-  assert.equal(launched.command, "/usr/bin/open");
+  assert.equal(launched.command, path.join(targetApp, "Contents/MacOS/ChatGPT"));
   assert.deepEqual(launched.args, [
-    "-n",
-    "--env", `CODEX_HOME=${path.join(tmpDir, "dev-home")}`,
-    "--env", `CODEX_ELECTRON_USER_DATA_PATH=${path.join(tmpDir, "electron-user-data")}`,
-    targetApp,
-    "--args",
     `--user-data-dir=${path.join(tmpDir, "electron-user-data")}`,
     "--use-mock-keychain",
     "--remote-debugging-port=9234",

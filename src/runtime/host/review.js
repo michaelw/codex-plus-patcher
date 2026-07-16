@@ -58,7 +58,7 @@
       DiffCard,
     };
     boundDeps = deps;
-    for (const name of ["gitRequest", "pathValue", "parseDiff", "DiffCard"]) required(name);
+    for (const name of ["parseDiff", "DiffCard"]) required(name);
     const { mainReviewContent: hostBody, ...pluginProps } = props;
     return globalObject.CodexPlus.ui.review.renderBody({
       props: { ...pluginProps, hostBody },
