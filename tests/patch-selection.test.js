@@ -239,10 +239,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.707.72221-5307");
-  assert.equal(chatgptPatchSets.length, 7);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.707.91948-5440");
+  assert.equal(chatgptPatchSets.length, 8);
 
   for (const identity of [
+    ["26.707.91948", "5440", "85b11c8d93d377f82161ba9b7b1af6f95b2a0490f01993dbc4d3a107dce77591"],
     ["26.707.72221", "5307", "b5da51e5df6e996076e4cb19045cec46dd4c08cf61c19cdbc5cb426b8413b73c"],
     ["26.707.71524", "5263", "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84"],
     ["26.707.62119", "5211", "165db3a1d32009724fcb91427a73926fe8de2a1e24141d5f1e24951d120424f7"],
@@ -993,7 +994,7 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.equal(
     window.CodexPlusHost.adapters.review.renderBodyFromHost(
       { mainReviewContent: "host-body" },
-      [{ jsx, jsxs: jsx, Fragment: "fragment" }, { createElement: () => null }, null, null, null, null, null, null, null, () => ({ request() {} }), (value) => value, "default-review", null, null, null, null, null, null, null, () => [], () => null],
+      [{ jsx, jsxs: jsx, Fragment: "fragment" }, { createElement: () => null }, null, null, null, null, null, null, null, null, null, "default-review", null, null, null, null, null, null, null, () => [], () => null],
     ),
     "wrapped:host-body",
   );
@@ -1895,6 +1896,29 @@ test("current ChatGPT project selector exposes its controlled open handler", () 
   assert.match(transformed, /CPXP\.fuzzyFilter\(r,_\)/);
 });
 
+test("91948 project selector binds its moved app-main producer", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
+  const transform = collectFileTransforms(patchSet)
+    .find(([, candidate]) => candidate.name === "patchHomeProjectDropdownProjectSelectorShortcut")?.[1];
+  assert.equal(typeof transform, "function");
+  const transformed = transform([
+    "function JJ(e){let t=(0,YJ.c)(44),",
+    "let e=_.trim().toLowerCase();b=r.filter(t=>{if(!e)return!0;let n=t.repositoryData?.rootFolder??``;return[t.label,n,t.path??``,t.hostDisplayName??``].some(t=>t.toLowerCase().includes(e))});",
+    "w=(0,ZJ.jsx)(Re,{value:_,onChange:s,placeholder:c,className:`mb-1`})",
+    "(0,ZJ.jsx)(`span`,{className:`truncate`,children:e.label})",
+    "function tY({activeProjectIdOverride:e,allowLocalProjects:t=!0,",
+    "te=c??p,ne=e=>{m(e),l?.(e)},re=n&&s===`home`",
+    "(0,iY.jsx)(_e,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,triggerButton:u,contentWidth:`menu`,",
+    "let ge=(0,iY.jsx)(_e,{open:c,onOpenChange:ne,onCloseAutoFocus:z,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:u??(s===`hero`?pe():de()),contentWidth:`workspace`,",
+  ].join(""));
+  assert.match(transformed, /CPXP\.setOpenHandler\(s/);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,_\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,b,o,_\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,_,ZJ\.jsx\)/);
+  assert.match(transformed, /open:te/);
+  assert.match(transformed, /triggerButton:CPXPST/);
+});
+
 test("run command patch bridges the native project selector shortcut to the runtime command", () => {
   const fakeMapRunCommandBundle = [
     "import{f as e}from\"./vscode-api-Cc4BqLmp.js\";",
@@ -2362,7 +2386,10 @@ test("41415 binds native context and title while prepending the path accessory t
     "function Xfn({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:rq\.jsx,jsxs:rq\.jsxs\}\)\)/);
+  assert.match(
+    actionShell,
+    /CPXThreadHeaderActiveAccessories\(\{jsx:rq\.jsx,jsxs:rq\.jsxs,useSyncExternalStore:nq\.useSyncExternalStore\}\)\)/,
+  );
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
 });
 
@@ -2756,6 +2783,8 @@ test("header patch renders project path accessories from thread context", () => 
             ? "app-initial~app-main~hotkey-window-thread-page~thread-app-shell-chrome~header~remote-conver~h59fr3q5-ByNuXnmY.js"
           : patchSet.id === "chatgpt-26.707.72221-5307"
             ? "app-initial~app-main~onboarding-page-CIkoyvFz.js"
+          : patchSet.id === "chatgpt-26.707.91948-5440"
+            ? "app-initial~app-main~onboarding-page-Bye92EOT.js"
           : "app-initial~app-main~hotkey-window-thread-page~thread-app-shell-chrome~header~remote-conver~h59fr3q5-DhcrijQk.js";
       const escapedThreadContextFile = expectedThreadContextFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(transformed, new RegExp(`from"\\.\\/${escapedThreadContextFile}"`));
@@ -3354,6 +3383,9 @@ test("review patch mounts repository mux before main branch selection", () => {
   assert.doesNotMatch(pluginSource, /method: "recent-branches"/);
   assert.doesNotMatch(pluginSource, /method: "search-branches"/);
   assert.match(pluginSource, /function workerRequest/);
+  assert.match(pluginSource, /function reviewDeps/);
+  assert.match(pluginSource, /gitRequest: typeof deps\.gitRequest === "function" \? deps\.gitRequest : workerGitRequest/);
+  assert.match(pluginSource, /pathValue: typeof deps\.pathValue === "function" \? deps\.pathValue : hostPathValue/);
   assert.match(pluginSource, /sendWorkerMessageFromView\(workerId, \{ type: "worker-request", workerId, request \}\)/);
   assert.match(pluginSource, /subscribeToWorkerMessages\(workerId/);
   assert.doesNotMatch(pluginSource, /api\.native\.request\("repository-targets"/);
@@ -4112,6 +4144,24 @@ test("ChatGPT local task row patch forwards native row project identity", () => 
   assert.match(transformed, /projectless:!\(t\.projectId\|\|t\.worktreeGitRoot\|\|t\.worktreeWorkspaceRoot\)/);
   assert.match(transformed, /hostId:null,threadId:t,title:e\.task\.title\?\?``/);
   assert.match(transformed, /projectId:ye,label:ve,path:le,cwd:le,hostId:p,threadId:o,title:S,projectKind:ye\|\|le\?void 0:d,projectless:d===`projectless`/);
+});
+
+test("91948 local task rows bind project identity at the canonical native row seam", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
+  const fakeLocalTaskRowBundle = [
+    "function Czt(e){let t=(0,Tzt.c)(142),",
+    "isProjectlessHoverCard:Y",
+    "let Ze=g(m5,Ye),Qe=g(Ate,n),$e=g(Qa,n)??Pe?.source,et=g(mre,n)??Pe?.title??null;g(wr,n)??Pe?.threadSource;let tt=fe?N:void 0,nt;",
+    "hoverCardSideOffset:Jt,dataAttributes:de,archiveAriaLabel:Yt,",
+    "function xRt(e){let t=(0,SRt.c)(57),{ref:n,className:r,actions:i,collapsed:a,contentClassName:o,dragHandleListeners:s,dragHandleRef:c,icon:l,iconDropTargetKind:u,iconRef:d,isActive:f,isDisabled:p,ariaLabel:m,ariaExpanded:h,label:g,labelEnd:_,onContextMenu:v,onPress:y,projectId:b,rowAttributes:x,selectAction:S,trailingContent:C}=e,",
+    "Y=(0,d7.jsxs)(`div`,{...x,...j,ref:n,className:P,role:`button`,",
+  ].join("");
+
+  const transformed = transformFile(patchSet, findTransformPath(patchSet, "local-task-row"), fakeLocalTaskRowBundle);
+
+  assert.match(transformed, /CPXS\.mergeThreadRowAttributes\(de,CPXPR\(\{projectId:se,label:ce,path:Ve,cwd:Ve,hostId:We,threadId:n,title:et,projectKind:Me\?`chat`:void 0,projectless:Me\}\)\)/);
+  assert.match(transformed, /dataAttributes:CPXRowData/);
+  assert.match(transformed, /Y=\(0,d7\.jsxs\)\(`div`,\{\.\.\.x,\.\.\.j,\.\.\.CPXPR\(\{projectId:b,label:g\}\),ref:n,className:P,role:`button`,/);
 });
 
 test("101652 local task row patch forwards projectless chat row identity", () => {
@@ -4900,6 +4950,41 @@ test("72221 review producer binds the strict review adapter at the moved host bo
   assert.match(transformed, /CodexPlusHost\.adapters\.review\.renderBodyFromHost\(e,\[mY,Mzt,rl,I,null,null,null,Em,null,Dl,CPXPathValue,zMt,zi,No,Pt,kl,dc,CPXBranchPickerDropdownContent,null,CPXParseDiff,qAt\]\)/);
   assert.match(transformed, /mainReviewContent:\(0,mY\.jsx\)\(zMt/);
   assert.doesNotMatch(transformed, /typeof [A-Za-z_$]+!==`undefined`/);
+});
+
+test("91948 composer binds the strict side-panel adapter at its native file opener", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
+  const transforms = new Map(collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]));
+  const composer = transforms.get("patchComposerProjectColors")([
+    "function Xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,clientThreadId:N,interactionsDisabled:P}){let F=D(Dp),",
+    "ds=(e,t=jr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;Ep({path:n,line:r,column:r==null?void 0:1,cwd:bn,hostId:t,openFile:Zt.mutate})},ps=e=>",
+    ">(0,tJ.jsx)(Zq,{...CPXSurfaceProps({}),className:w,utilityBarVariant:C,hasDropTargetPortal:Hc,",
+  ].join(""));
+
+  assert.match(composer, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
+  assert.match(composer, /CPXSP\.bindMount\(\(\)=>\(\{scope:F\}\)\)/);
+  assert.match(composer, /CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>Ep\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?bn,hostConfig:Mr,hostId:t\.hostId\?\?jr,line:t\.line,endLine:t\.endLine,isPreview:t\.isPreview,title:t\.title,openFile:Zt\.mutate,openInSidePanel:!0\}\)\)/);
+
+  const primitive = transforms.get("patchComposerPrimitiveSurface")([
+    "function nu(e){let t=(0,_u.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:h}=e,",
+    "t[10]!==n||t[11]!==a||t[12]!==d||t[13]!==f||t[14]!==p||t[15]!==h||t[16]!==O?",
+    "k=(0,vu.jsx)(c.div,{inert:a,className:O,onMouseDown:gu,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:h,children:n}),t[10]=n,t[11]=a,t[12]=d,t[13]=f,t[14]=p,t[15]=h,t[16]=O,t[17]=k",
+  ].join(""));
+  assert.match(primitive, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(primitive, /inert:a,\.\.\.CPX_resolvedSurfaceProps,className:O/);
+});
+
+test("91948 review producer keeps worker and path fallbacks out of minified host glue", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
+  const transform = findTransform(patchSet, "review");
+  const transformed = transform([
+    "function aTe(e){let t=(0,WP.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "s=(0,GP.jsx)(Kre,{children:(0,GP.jsx)(NSe,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+  ].join(""));
+
+  assert.match(transformed, /renderBodyFromHost\(e,\[GP,EA,null,null,null,null,null,null,null,null,null,NSe,null,null,null,null,null,null,null,Do,kA\]\)/);
+  assert.match(transformed, /mainReviewContent:\(0,GP\.jsx\)\(NSe,/);
+  assert.doesNotMatch(transformed, /CPXBranchPickerDropdownContent/);
 });
 
 test("62119 review producer binds the native diff parser used by its host review", () => {
