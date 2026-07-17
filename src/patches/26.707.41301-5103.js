@@ -6,6 +6,10 @@ module.exports = buildCodexPlusPatchSet({
   bundleVersion: "5103",
   asarSha256: "2869c4765e5e0c6466e40f739bd0f7fc9e6b659ac10e1e03d391ca3f5e600b56",
   sourceFamily: "chatgpt",
+  unchangedTransformVariants: [
+    "sidebar-name-blur/patchKeyboardShortcutsSearchInput",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   files: {
     main: ".vite/build/main-BOrkpaTV.js",
     electronCommandSource: ".vite/build/src-BAGkFo-J.js",

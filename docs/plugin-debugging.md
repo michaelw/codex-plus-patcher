@@ -154,6 +154,32 @@ ordinary plugin validation.
 - Startup cleanliness: after launch, the initial composer must be empty. Text
   left from a command search, such as `blur`, is a defect.
 
+## Newest-First Version Proof
+
+For a new port or shared host-hook change, keep the proof loop short and
+ordered:
+
+1. Add the exact newest patch and version-owned transform variants.
+2. Run focused transform tests.
+3. Run the newest-only in-memory preflight.
+4. Run the newest live regression and inspect all four contract screenshots.
+5. Run all-version preflight.
+6. Run the all-version live sweep and inspect every contract.
+
+Use these commands for steps 3 through 6:
+
+```sh
+npm run regression:sources -- --preflight-only --newest 1 --jsonl
+npm run regression:sources -- --newest 1 --jsonl
+npm run regression:sources -- --preflight-only
+npm run regression:sources -- --auto-clean
+```
+
+Restart from focused tests after any implementation change. For an older
+failure, compare its owned transform and file mapping with the Git diff before
+changing the hook. If neither changed, investigate the preflight rule,
+generated fixture, live audit, and screenshot state first.
+
 ## Stable Hook Discovery
 
 Start from the live UI and the patched ASAR, not from guesses. Inspect the DOM,

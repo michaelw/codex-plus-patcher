@@ -56,6 +56,7 @@ test("regression sources parses options and rejects unsafe combinations", () => 
     keepOpen: false,
     newest: null,
     noProgress: false,
+    preflightOnly: false,
     visualContract: true,
     artifactDir: null,
     remoteDebuggingPort: 9234,
@@ -65,6 +66,7 @@ test("regression sources parses options and rejects unsafe combinations", () => 
 
   assert.equal(parseArgs(["--clean"]).clean, true);
   assert.equal(parseArgs(["--jsonl"]).jsonl, true);
+  assert.equal(parseArgs(["--preflight-only"]).preflightOnly, true);
   assert.equal(parseArgs(["--no-visual-contract"]).visualContract, false);
   assert.equal(parseArgs(["--artifact-dir", "~/contracts"]).artifactDir, path.join(os.homedir(), "contracts"));
   assert.equal(parseArgs(["--newest", "2"]).newest, 2);
@@ -76,6 +78,101 @@ test("regression sources parses options and rejects unsafe combinations", () => 
   const detailedJsonl = parseArgs(["--json", "--jsonl"]);
   assert.equal(detailedJsonl.json, true);
   assert.equal(detailedJsonl.jsonl, true);
+});
+
+test("preflight-only validates sources without creating or launching a target app", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    const sourceApp = createSourceApp(sourcesDir, "26.623.70822");
+    const calls = [];
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: false,
+        keepOpen: false,
+        newest: null,
+        noProgress: true,
+        preflightOnly: true,
+        visualContract: true,
+        artifactDir: null,
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+        useLiveSourceHome: false,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
+        patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        preflightPatchSet(options) {
+          calls.push(options);
+          return { ok: true, transformedFiles: [{ filePath: "webview/index.js" }] };
+        },
+        runAudit() {
+          throw new Error("live audit must not run during preflight");
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.preflightOnly, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].sourceApp, sourceApp);
+    assert.equal(fs.existsSync(pathsForSource(result.regressionDir, result.results[0]).targetApp), false);
+    assert.equal(fs.existsSync(result.preflightSummary), true);
+  });
+});
+
+test("preflight-only stops after the first supported source failure", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    const newestApp = createSourceApp(sourcesDir, "26.623.70822");
+    const olderApp = createSourceApp(sourcesDir, "26.623.61825");
+    const identities = new Map([
+      [newestApp, identity("26.623.70822", "4559", "sha-a")],
+      [olderApp, identity("26.623.61825", "4548", "sha-b")],
+    ]);
+    const calls = [];
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: false,
+        keepOpen: false,
+        newest: null,
+        noProgress: true,
+        preflightOnly: true,
+        visualContract: true,
+        artifactDir: null,
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+        useLiveSourceHome: false,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: (appPath) => identities.get(appPath),
+        patchSets: [
+          patchSet("26.623.70822", "4559", "sha-a"),
+          patchSet("26.623.61825", "4548", "sha-b"),
+        ],
+        preflightPatchSet({ patchSet: selected }) {
+          calls.push(selected.id);
+          throw new Error("Expected one newest anchor, found 0");
+        },
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 1);
+    assert.equal(result.results.length, 1);
+    assert.match(result.results[0].failures[0].message, /newest anchor/);
+  });
 });
 
 test("regression sources sorts newest-first and limits newest versions numerically", async () => {
@@ -226,15 +323,17 @@ test("regression sources builds isolated paths for each version", () => {
   });
 });
 
-test("regression sources runs supported sources and continues after failures", async () => {
+test("regression sources runs newest-first and stops after the first failure", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "work", "sources");
     const firstApp = createSourceApp(sourcesDir, "26.623.70822");
     const secondApp = createSourceApp(sourcesDir, "26.623.61825");
+    const thirdApp = createSourceApp(sourcesDir, "26.623.42026");
     const calls = [];
     const identities = new Map([
       [firstApp, identity("26.623.70822", "4559", "sha-a")],
       [secondApp, identity("26.623.61825", "4548", "sha-b")],
+      [thirdApp, identity("26.623.42026", "4514", "sha-c")],
     ]);
 
     const result = await runRegressionSources(
@@ -260,6 +359,7 @@ test("regression sources runs supported sources and continues after failures", a
         patchSets: [
           patchSet("26.623.70822", "4559", "sha-a"),
           patchSet("26.623.61825", "4548", "sha-b"),
+          patchSet("26.623.42026", "4514", "sha-c"),
         ],
         runAudit: async (args) => {
           calls.push(args);
@@ -448,6 +548,45 @@ test("regression sources jsonl progress carries source identity", async () => {
     const records = writes.join("").trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(records.some((record) => record.version === "26.623.70822" && record.sourceApp === sourceApp), true);
     assert.equal(records.some((record) => record.type === "visual_contract" && record.artifactDir.endsWith("26.623.70822")), true);
+  });
+});
+
+test("regression sources jsonl progress includes the first audit failure", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "26.623.70822");
+    const writes = [];
+    const stream = { write: (text) => writes.push(text) };
+
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: true,
+        keepOpen: false,
+        newest: null,
+        noProgress: false,
+        visualContract: false,
+        artifactDir: null,
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
+        patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        progressOptions: { stream, now: () => new Date("2026-07-07T00:00:00.000Z") },
+        createJsonlProgress: (options) => require("../src/core/plugin-audit").createJsonlProgress(options),
+        runAudit: async () => ({ ok: false, failures: [{ plugin: "aharnessRuns", message: "precise failure" }] }),
+      },
+    );
+
+    assert.equal(result.ok, false);
+    const records = writes.join("").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records.some((record) => record.status === "fail" && record.message.includes("aharnessRuns: precise failure")), true);
   });
 });
 

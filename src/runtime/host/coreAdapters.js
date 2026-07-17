@@ -4,6 +4,8 @@
   let nativeContext = null;
   let nativeContextKey = "null";
   let contextNotifyScheduled = false;
+  const contextListeners = new Set();
+  let contextVersion = 0;
 
   function bridgeRequest(method, params) {
     const request = globalObject.codexPlusHostBridge?.request;
@@ -47,6 +49,22 @@
     };
   }
 
+  function notifyContext() {
+    contextVersion += 1;
+    for (const listener of Array.from(contextListeners)) listener();
+    globalObject.CodexPlusHost.adapters.threadHeader.notify();
+  }
+
+  function contextSnapshot() {
+    return contextVersion;
+  }
+
+  function subscribeContext(listener) {
+    if (typeof listener !== "function") throw new Error("Context subscriber must be a function");
+    contextListeners.add(listener);
+    return () => contextListeners.delete(listener);
+  }
+
   function bindActive(context) {
     const nextContext = context == null ? null : { ...context };
     const nextKey = JSON.stringify(nextContext);
@@ -57,7 +75,7 @@
       contextNotifyScheduled = true;
       Promise.resolve().then(() => {
         contextNotifyScheduled = false;
-        globalObject.CodexPlusHost.adapters.threadHeader.notify();
+        notifyContext();
       });
     }
     return activeContext();
@@ -65,13 +83,13 @@
 
   function setContext(context) {
     const result = globalObject.CodexPlus.ui.routeContext.set(context);
-    globalObject.CodexPlusHost.adapters.threadHeader.notify();
+    notifyContext();
     return result;
   }
 
   function clearContext(routeId) {
     const result = globalObject.CodexPlus.ui.routeContext.clear(routeId);
-    globalObject.CodexPlusHost.adapters.threadHeader.notify();
+    notifyContext();
     return result;
   }
 
@@ -86,7 +104,14 @@
 
   globalObject.CodexPlusHost.adapters.native = { request: bridgeRequest };
   globalObject.CodexPlusHost.adapters.commands = { bindNativeDispatch, dispatch, metadata };
-  globalObject.CodexPlusHost.adapters.context = { active: activeContext, bindActive, clear: clearContext, set: setContext };
+  globalObject.CodexPlusHost.adapters.context = {
+    active: activeContext,
+    bindActive,
+    clear: clearContext,
+    set: setContext,
+    snapshot: contextSnapshot,
+    subscribe: subscribeContext,
+  };
   globalObject.CodexPlusHost.adapters.clipboard = { writeText };
   globalObject.CodexPlusHost.adapters.routing = { openDeepRoute };
 })();

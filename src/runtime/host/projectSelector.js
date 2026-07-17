@@ -1,6 +1,7 @@
 (function () {
   const globalObject = typeof window !== "undefined" ? window : globalThis;
   const openHandlers = new Map();
+  let acceptFirstHandler = null;
 
   function fuzzyFilter(projects, query) {
     return globalObject.CodexPlus.ui.projectSelector.fuzzyFilter(projects, query);
@@ -30,6 +31,14 @@
     event.stopPropagation?.();
     selectProjectId(project.projectId);
     closeDropdown(event);
+  }
+
+  function acceptCurrent(event) {
+    return acceptFirstHandler?.(event);
+  }
+
+  function setAcceptFirstHandler(handler) {
+    acceptFirstHandler = typeof handler === "function" ? handler : null;
   }
 
   function trigger(element, variant, React) {
@@ -64,10 +73,12 @@
   }
 
   globalObject.CodexPlusHost.adapters.projectSelector = {
+    acceptCurrent,
     acceptFirst,
     fuzzyFilter,
     fuzzyHighlight,
     open,
+    setAcceptFirstHandler,
     setOpenHandler,
     trigger,
   };

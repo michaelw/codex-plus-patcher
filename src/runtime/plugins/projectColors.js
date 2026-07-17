@@ -177,7 +177,10 @@
       ...(sidebar ? { "data-codex-plus-project-sidebar-color": "" } : {}),
       ...(sidebar && projectless ? { "data-codex-plus-projectless": "true" } : {}),
       ...(sidebar && projectPath ? { "data-codex-plus-project-path": String(projectPath) } : {}),
-      style: inlineStyle,
+      style: sidebar ? inlineStyle : {
+        ...inlineStyle,
+        borderRadius: "var(--composer-border-radius, var(--radius-3xl))",
+      },
     };
   }
 

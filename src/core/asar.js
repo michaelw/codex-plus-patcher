@@ -9,8 +9,8 @@ function sha256File(file) {
   return sha256(fs.readFileSync(file));
 }
 
-function readAsar(asarPath) {
-  const buffer = fs.readFileSync(asarPath);
+function readAsar(input) {
+  const buffer = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
   const headerSize = buffer.readUInt32LE(4);
   const jsonSize = buffer.readUInt32LE(12);
   const header = JSON.parse(buffer.subarray(16, 16 + jsonSize).toString("utf8"));
@@ -61,8 +61,8 @@ function fileIntegrity(buffer) {
   };
 }
 
-function patchAsar(asarPath, fileTransforms, transformContext = {}) {
-  const archive = readAsar(asarPath);
+function transformAsarBuffer(sourceBuffer, fileTransforms, transformContext = {}) {
+  const archive = readAsar(sourceBuffer);
   const assetFiles = transformContext.assetFiles || [];
   for (const [filePath, , options] of assetFiles) {
     const node = ensureFileEntry(archive.header, filePath);
@@ -78,11 +78,23 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
     contents.set(filePath, Buffer.from(archive.buffer.subarray(offset, offset + Number(node.size || 0))));
   }
 
+  const transformedFiles = [];
   for (const [filePath, transform] of fileTransforms) {
     const original = contents.get(filePath);
     if (!original) throw new Error(`Could not find ${filePath} in app.asar`);
     const patched = transform(original.toString("utf8"), transformContext);
-    contents.set(filePath, Buffer.from(patched, "utf8"));
+    const patchedBuffer = Buffer.from(patched, "utf8");
+    contents.set(filePath, patchedBuffer);
+    transformedFiles.push({
+      filePath,
+      transform: transform.name || "anonymous",
+      variantId: transform.variantId || null,
+      ownerPatchSetId: transform.ownerPatchSetId || null,
+      expectedChange: transform.expectedChange !== false,
+      beforeSha256: sha256(original),
+      afterSha256: sha256(patchedBuffer),
+      changed: !original.equals(patchedBuffer),
+    });
   }
 
   const unpackedFiles = [];
@@ -123,14 +135,26 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
   header.writeUInt32LE(json.length + padding.length + 4, 8);
   header.writeUInt32LE(json.length, 12);
 
-  fs.writeFileSync(asarPath, Buffer.concat([header, json, padding, ...dataBuffers]));
-  for (const [filePath, content, options] of unpackedFiles) {
+  const buffer = Buffer.concat([header, json, padding, ...dataBuffers]);
+  return {
+    buffer,
+    contents,
+    sha256: sha256(buffer),
+    transformedFiles,
+    unpackedFiles,
+  };
+}
+
+function patchAsar(asarPath, fileTransforms, transformContext = {}) {
+  const result = transformAsarBuffer(fs.readFileSync(asarPath), fileTransforms, transformContext);
+  fs.writeFileSync(asarPath, result.buffer);
+  for (const [filePath, content, options] of result.unpackedFiles) {
     const unpackedPath = `${asarPath}.unpacked/${filePath}`;
     fs.mkdirSync(require("node:path").dirname(unpackedPath), { recursive: true });
     fs.writeFileSync(unpackedPath, content);
     if (Number.isInteger(options?.mode)) fs.chmodSync(unpackedPath, options.mode);
   }
-  return sha256File(asarPath);
+  return result.sha256;
 }
 
 module.exports = {
@@ -139,5 +163,6 @@ module.exports = {
   readAsar,
   sha256,
   sha256File,
+  transformAsarBuffer,
   walkFiles,
 };

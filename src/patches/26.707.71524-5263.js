@@ -6,6 +6,11 @@ module.exports = buildCodexPlusPatchSet({
   bundleVersion: "5263",
   asarSha256: "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84",
   sourceFamily: "chatgpt",
+  unchangedTransformVariants: [
+    "sidebar-name-blur/patchKeyboardShortcutsSearchInput",
+    "sidebar-name-blur/patchCommandMenuRuntimeCommands",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   files: {
     main: ".vite/build/main-DcVqMbYE.js",
     electronCommandSource: ".vite/build/src-HagpvBpE.js",

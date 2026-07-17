@@ -4,6 +4,11 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.31921-4452",
   codexVersion: "26.623.31921",
   bundleVersion: "4452",
+  unchangedTransformVariants: [
+    "diagnostic-error-boundary/patchErrorBoundary",
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   asarSha256: "04287710b058bc0977031481c21f5ab69cfb2bcf4fa5c1919b9b590c38960543",
   files: {
     main: ".vite/build/main--VWTbRdF.js",

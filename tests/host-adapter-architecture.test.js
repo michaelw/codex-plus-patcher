@@ -11,6 +11,8 @@ const required = [
   "commands.dispatch",
   "commands.metadata",
   "context.active",
+  "context.snapshot",
+  "context.subscribe",
   "threadSidePanel.openFile",
   "threadSidePanel.mount",
   "review.renderBodyFromHost",
@@ -18,11 +20,14 @@ const required = [
   "review.context",
   "review.gitRequest",
   "review.pathValue",
+  "projectSelector.acceptCurrent",
   "projectSelector.acceptFirst",
   "projectSelector.fuzzyFilter",
   "projectSelector.fuzzyHighlight",
+  "projectSelector.setAcceptFirstHandler",
   "projectSelector.trigger",
   "sidebar.projectRowProps",
+  "sidebar.projects",
   "sidebar.threadRowProps",
   "sidebar.mergeThreadRowAttributes",
   "messageComposer.userBubbleProps",
@@ -47,6 +52,11 @@ test("required host adapter manifest is authoritative and loaded before consumer
   assert.ok(files.indexOf("api/hostAdapters.js") > files.indexOf("api/index.js"));
   assert.ok(files.indexOf("api/hostAdapters.js") < files.indexOf("api/native.js"));
   assert.ok(files.indexOf("api/hostAdapters.js") < files.indexOf("plugins/nestedRepositories.js"));
+});
+
+test("Aharness discovers projects through the shared sidebar interface", () => {
+  const plugin = source("src/runtime/plugins/aharnessRuns.js");
+  assert.match(plugin, /CodexPlus\.ui\.sidebar\.projects\(\)/);
 });
 
 test("plugins and public APIs do not access legacy native globals", () => {

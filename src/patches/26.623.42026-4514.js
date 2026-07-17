@@ -4,6 +4,12 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.42026-4514",
   codexVersion: "26.623.42026",
   bundleVersion: "4514",
+  unchangedTransformVariants: [
+    "diagnostic-error-boundary/patchErrorBoundary",
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+    "project-selector-shortcut/patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   asarSha256: "6f4ec4c023ad3c0680e31f0963988870dc6f07d76b64a64c8866e09d482ddda6",
   files: {
     main: ".vite/build/main-r5HnecX_.js",
