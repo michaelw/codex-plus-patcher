@@ -4,6 +4,10 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.41415-4505",
   codexVersion: "26.623.41415",
   bundleVersion: "4505",
+  unchangedTransformVariants: [
+    "diagnostic-error-boundary/patchErrorBoundary",
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+  ],
   asarSha256: "ed664fdce203cd18445469d323519f96e39450aaf5164dc9d6d0055a582b88c5",
   files: {
     main: ".vite/build/main-DlLr9rLj.js",

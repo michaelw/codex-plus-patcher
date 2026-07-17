@@ -6,16 +6,20 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const { patchAsar, readAsar, walkFiles } = require("../src/core/asar");
+const { patchAsar, readAsar, sha256, transformAsarBuffer, walkFiles } = require("../src/core/asar");
 const {
   applyPatchSet,
   collectAssetFiles,
   collectFileTransforms,
   collectInfoPlistStrings,
   mergeRuntimeConfig,
+  preflightPatchSet,
   selectPatch,
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
+const { replaceOnce } = require("../src/patches/lib/replace");
+const { patchSetOwnsTransformVariant } = require("../src/patches/lib/transform-ownership");
+const { patchHomeProjectDropdownProjectSelectorShortcut } = require("../src/patches/lib/project-selector-shortcut-patch");
 const {
   browserRuntimeFilesForConfig,
   codexPlusRuntimeAssets,
@@ -25,6 +29,16 @@ const {
 
 const codexPatchSets = patchSets.filter((patchSet) => patchSet.runtimeConfig?.sourceFamily !== "chatgpt");
 const chatgptPatchSets = patchSets.filter((patchSet) => patchSet.runtimeConfig?.sourceFamily === "chatgpt");
+
+function ownedTestTransform(patchSetId, variantId, transformOrder, transform = (text) => text) {
+  Object.defineProperties(transform, {
+    ownerPatchSetId: { value: patchSetId },
+    owningPatchSetIds: { value: [patchSetId] },
+    variantId: { value: variantId },
+    transformOrder: { value: transformOrder },
+  });
+  return transform;
+}
 
 function transformFile(patchSet, filePath, text, context) {
   return collectFileTransforms(patchSet)
@@ -239,10 +253,12 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.707.91948-5440");
-  assert.equal(chatgptPatchSets.length, 8);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.21425-5488");
+  assert.equal(chatgptPatchSets.length, 10);
 
   for (const identity of [
+    ["26.715.21425", "5488", "5db4c67090c0521fa717e83e46cb0a6175cb6c16fb89064223753bdf05cff0aa"],
+    ["26.715.21316", "5484", "38e79e68f970a3a0d85bfe856911e1c5f24d8e267c4637565ca64f65da268ca1"],
     ["26.707.91948", "5440", "85b11c8d93d377f82161ba9b7b1af6f95b2a0490f01993dbc4d3a107dce77591"],
     ["26.707.72221", "5307", "b5da51e5df6e996076e4cb19045cec46dd4c08cf61c19cdbc5cb426b8413b73c"],
     ["26.707.71524", "5263", "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84"],
@@ -281,13 +297,50 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
 });
 
+test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21316-5484", "chatgpt-26.715"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "chatgpt-26.715"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "chatgpt-26.715.21425"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21316-5484", "chatgpt-26.715.21425"), false);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.707.91948-5440", "chatgpt-26.715"), false);
+  assert.throws(() => patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "unknown"), /Unknown transform variant unknown/);
+});
+
+test("newest patch omits transforms for host seams that no longer exist", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.21425-5488");
+  assert.equal(collectFileTransforms(newest).some(([filePath]) => filePath == null), false);
+});
+
+test("21425 home project selector passes the live React namespace to the trigger adapter", () => {
+  const transformed = patchHomeProjectDropdownProjectSelectorShortcut([
+    "function mt({activeProjectIdOverride:e,allowLocalProjects:t=!0,",
+    "_=r.filter(e),t[0]=r,t[1]=h,t[2]=_",
+    "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);let w;",
+    "R=f??v,z=e=>{y(e),p?.(e)},B=",
+    "(0,Z.jsx)(Ue,{open:f,onOpenChange:z,onCloseAutoFocus:M,side:`top`,triggerButton:h,contentWidth:`menu`,",
+    "let Je=(0,Z.jsx)(Ue,{open:f,onOpenChange:z,onCloseAutoFocus:M,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:h??(u===`hero`?Ke():He()),contentWidth:`workspace`,",
+  ].join(""), { patchSetId: "chatgpt-26.715.21425-5488" });
+
+  assert.match(transformed, /CPXP\.trigger\(e,t,gt\)/);
+});
+
+test("21425 binds the moved review parser and current Mermaid asset", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/patches/lib/common-patches.js"), "utf8");
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.21425-5488");
+
+  assert.match(source, /null,hc,yd\]"\)\}function _T/);
+  assert.match(source, /"oe\.push\(\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)/);
+  assert.match(source, /CPXCommandPaletteItem\(\{command:e,close:t\}\).*\(0,V4\.jsx\)\(aO,/);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-BfTk2v0k.js");
+});
+
 test("collects named patch queue transforms and plist changes", () => {
   const patchSet = {
     patches: [
       {
         id: "identity",
         infoPlistStrings: { CFBundleName: "Codex Plus" },
-        fileTransforms: [["webview/index.html", (text) => text]],
+        fileTransforms: [["webview/index.html", ownedTestTransform("codex-example", "codex-example/identity/title", 0)]],
       },
       {
         id: "worker",
@@ -656,11 +709,11 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
       {
         id: "identity",
         infoPlistStrings: { CFBundleName: "Codex Plus" },
-        fileTransforms: [["webview/index.html", (text) => text]],
+        fileTransforms: [["webview/index.html", ownedTestTransform("codex-example", "codex-example/identity/title", 0)]],
       },
       {
         id: "about",
-        fileTransforms: [[".vite/build/main.js", (text) => text]],
+        fileTransforms: [[".vite/build/main.js", ownedTestTransform("codex-example", "codex-example/about/main", 1)]],
       },
     ],
   };
@@ -686,6 +739,12 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
     patchedAppBundleIdentifier: "com.openai.codex-plus",
     sourceFamily: "codex",
     sourceAsarSha256: "source-sha",
+    sourceIdentity: {
+      version: "1.2.3",
+      bundleVersion: "456",
+      asarSha256: "source-sha",
+      sourceFamily: "codex",
+    },
     appliedPatches: ["identity", "about"],
     assetFiles: [],
   });
@@ -715,7 +774,7 @@ test("applyPatchSet dry-run reports runtime asset files", async () => {
     patches: [
       {
         id: "identity",
-        fileTransforms: [["webview/index.html", (text) => text]],
+        fileTransforms: [["webview/index.html", ownedTestTransform("codex-example", "codex-example/identity/title", 0)]],
       },
     ],
   };
@@ -799,6 +858,229 @@ test("patchAsar inserts new runtime files and integrity metadata", () => {
   assert.ok(files.has("webview/assets/codex-plus/runtime.js"));
   assert.equal(files.get("webview/assets/codex-plus/runtime.js").size, "window.CodexPlus={}".length);
   assert.equal(files.get("webview/assets/codex-plus/runtime.js").integrity.algorithm, "SHA256");
+});
+
+test("transformAsarBuffer applies owned transforms without writing an archive", () => {
+  const source = makeAsar({ "webview/index.js": "export const started = true;" });
+  const transform = (text) => text.replace("true", "false");
+  Object.defineProperties(transform, {
+    ownerPatchSetId: { value: "codex-test-1" },
+    variantId: { value: "codex-test-1/runtime/index" },
+    transformOrder: { value: 0 },
+  });
+
+  const result = transformAsarBuffer(
+    source,
+    [["webview/index.js", transform]],
+    { patchSetId: "codex-test-1" },
+  );
+
+  assert.equal(source.includes(Buffer.from("false")), false);
+  assert.equal(result.transformedFiles.length, 1);
+  assert.deepEqual(result.transformedFiles[0], {
+    filePath: "webview/index.js",
+    transform: "transform",
+    variantId: "codex-test-1/runtime/index",
+    ownerPatchSetId: "codex-test-1",
+    expectedChange: true,
+    beforeSha256: result.transformedFiles[0].beforeSha256,
+    afterSha256: result.transformedFiles[0].afterSha256,
+    changed: true,
+  });
+  assert.notEqual(result.transformedFiles[0].beforeSha256, result.transformedFiles[0].afterSha256);
+  const archive = readAsar(result.buffer);
+  assert.equal(readAsarFileContent(archive, "webview/index.js"), "export const started = false;");
+});
+
+test("preflightPatchSet rejects unchanged and syntactically invalid transforms", () => {
+  const source = makeAsar({ "webview/index.js": "export const started = true;" });
+  const sourceSha256 = sha256(source);
+  const patchSet = {
+    id: "codex-test-1",
+    codexVersion: "1",
+    bundleVersion: "2",
+    asarSha256: sourceSha256,
+    sourceFamily: "codex",
+    runtimeConfig: {},
+    assetFiles: [
+      ["webview/assets/codex-plus/runtime-manifest.js", "window.__CodexPlusRuntimeConfig={};"],
+      ["webview/assets/codex-plus/api/hostAdapters.js", "globalThis.CodexPlusHost.requiredAdapterMethods=[];"],
+    ],
+    patches: [{
+      id: "test",
+      fileTransforms: [["webview/index.js", Object.assign((text) => text, {
+        ownerPatchSetId: "codex-test-1",
+        variantId: "codex-test-1/test/index",
+        transformOrder: 0,
+      })]],
+    }],
+  };
+  const base = {
+    sourceApp: "/source/Codex.app",
+    identity: { version: "1", bundleVersion: "2", asarSha256: sourceSha256, sourceFamily: "codex" },
+    patchSet,
+    operations: { readSourceAsar: () => source, getPatcherGitSha: () => "test" },
+  };
+
+  assert.throws(() => preflightPatchSet(base), /did not change webview\/index\.js/);
+  patchSet.patches[0].fileTransforms[0][1] = Object.assign(() => "export const = ;", {
+    ownerPatchSetId: "codex-test-1",
+    variantId: "codex-test-1/test/index",
+    transformOrder: 0,
+  });
+  assert.throws(() => preflightPatchSet(base), /syntax check failed.*webview\/index\.js/i);
+});
+
+test("preflightPatchSet summarizes asset verification without listing every archive asset", () => {
+  const source = makeAsar({ "webview/index.js": "export const started = true;" });
+  const sourceSha256 = sha256(source);
+  const assets = [
+    ["webview/assets/codex-plus/runtime-manifest.js", "window.__CodexPlusRuntimeConfig={};"],
+    ["webview/assets/codex-plus/api/hostAdapters.js", "globalThis.CodexPlusHost.requiredAdapterMethods=[];"],
+  ];
+  const result = preflightPatchSet({
+    sourceApp: "/source/Codex.app",
+    identity: { version: "1", bundleVersion: "2", asarSha256: sourceSha256, sourceFamily: "codex" },
+    patchSet: {
+      id: "codex-test-1",
+      codexVersion: "1",
+      bundleVersion: "2",
+      asarSha256: sourceSha256,
+      sourceFamily: "codex",
+      runtimeConfig: {},
+      assetFiles: assets,
+      patches: [],
+    },
+    operations: { readSourceAsar: () => source, getPatcherGitSha: () => "test" },
+  });
+
+  assert.equal(result.assetFileCount, assets.length);
+  assert.deepEqual(result.requiredAssets, assets.map(([filePath]) => filePath));
+  assert.equal("assetFiles" in result, false);
+});
+
+test("preflightPatchSet rejects duplicate variants and incorrect transform order", () => {
+  const source = makeAsar({ "webview/index.js": "export const started = true;" });
+  const sourceSha256 = sha256(source);
+  const transform = (id, order) => ownedTestTransform(
+    "codex-test-1",
+    id,
+    order,
+    (text) => text.replace("true", "false"),
+  );
+  const patchSet = {
+    id: "codex-test-1",
+    codexVersion: "1",
+    bundleVersion: "2",
+    asarSha256: sourceSha256,
+    sourceFamily: "codex",
+    patches: [{
+      id: "test",
+      fileTransforms: [
+        ["webview/index.js", transform("codex-test-1/test/first", 1)],
+        ["webview/index.js", transform("codex-test-1/test/second", 0)],
+      ],
+    }],
+  };
+  const options = {
+    sourceApp: "/source/Codex.app",
+    identity: { version: "1", bundleVersion: "2", asarSha256: sourceSha256, sourceFamily: "codex" },
+    patchSet,
+    operations: { readSourceAsar: () => source, getPatcherGitSha: () => "test" },
+  };
+
+  assert.throws(() => preflightPatchSet(options), /out of order/);
+  patchSet.patches[0].fileTransforms[1][1] = transform("codex-test-1/test/first", 2);
+  assert.throws(() => preflightPatchSet(options), /Duplicate transform variant codex-test-1\/test\/first/);
+});
+
+test("replaceOnce reports missing and duplicate anchors precisely", () => {
+  assert.throws(() => replaceOnce("none", "anchor", "patched", "test anchor"), /Expected one test anchor, found 0/);
+  assert.throws(() => replaceOnce("anchor anchor", "anchor", "patched", "test anchor"), /Expected one test anchor, found 2/);
+});
+
+test("registered transforms carry explicit patch-set ownership", () => {
+  for (const patchSet of patchSets) {
+    for (const [, transform] of collectFileTransforms(patchSet)) {
+      assert.equal(transform.ownerPatchSetId, patchSet.id, `${patchSet.id}: ${transform.name}`);
+      assert.match(transform.variantId, new RegExp(`^${patchSet.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+      assert.equal(Number.isInteger(transform.transformOrder), true, `${patchSet.id}: ${transform.name} order`);
+      assert.throws(
+        () => transform("irrelevant", { patchSetId: "another-patch-set" }),
+        /belongs to .*another-patch-set/,
+      );
+    }
+  }
+});
+
+test("26.715 moved seams bind the owned command, composer, and project selector adapters", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.21316-5484");
+  const transforms = collectFileTransforms(patchSet);
+  const byName = (name) => transforms.find(([, transform]) => transform.name === name)?.[1];
+
+  const header = byName("patchHeader")([
+    "function ar(e){let t=(0,or.c)(5),{conversationId:n}=e,",
+    "let l=c;if(l==null||!s||o.kind!==`git`||a.kind===`remote-control`)return null;let u;return t[2]!==l||t[3]!==a?(u=(0,sr.jsx)(U.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,sr.jsx)(Jn,{cwd:l,hostConfig:a})}),t[2]=l,t[3]=a,t[4]=u):u=t[4],u}",
+  ].join(""));
+  assert.match(header, /useSyncExternalStore:nr\.useSyncExternalStore/);
+
+  const title = byName("patchThreadTitle")([
+    "var zl,Bl,Vl=e((()=>{zl=h(),",
+    "function Il(e){let t=(0,zl.c)(43),",
+    "projectName:f,title:p,titleSuffix:m,cwd:h,canPin:g,hideForkActions:_}=e,v=u===void 0?!1:u,",
+    "let w=C,T=r(St,i),E=bo(w,Ne(a??T).id),D;",
+  ].join(""));
+  assert.match(title, /var CPXReact,zl,Bl,Vl=e\(\(\(\)=>\{CPXReact=t\(c\(\),1\),zl=h\(\),/);
+  assert.match(title, /CPXReact\.useSyncExternalStore\(CPXH\.threadHeader\.subscribe,CPXH\.threadHeader\.snapshot,CPXH\.threadHeader\.snapshot\)/);
+
+  const command = byName("patchCommandMenuRuntimeCommands")([
+    "function o4(e){let t=(0,z4.c)(134),",
+    "!i&&c!=null&&oe.push(c),t[30]=U,",
+    "c=()=>{Hs(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(command, /function CPXCommandPaletteItem/);
+  assert.match(command, /CodexPlusHost\.adapters\.commands\.metadata/);
+  assert.match(command, /bindNativeDispatch/);
+
+  const composer = byName("patchComposerPrimitiveSurface")([
+    "function C(e){let t=(0,L.c)(36),{children:r,className:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:h,onDrop:g}=e,",
+    "t[19]!==T||t[20]!==r||t[21]!==f||t[22]!==p||t[23]!==h||t[24]!==g||t[25]!==k||t[26]!==A?",
+    "M=(0,z.jsx)(T,{inert:k,className:A,onMouseDown:I,onDragEnter:f,onDragOver:h,onDragLeave:p,onDrop:g,children:r}),t[19]=T,t[20]=r,t[21]=f,t[22]=p,t[23]=h,t[24]=g,t[25]=k,t[26]=A,t[27]=M",
+  ].join(""));
+  assert.match(composer, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(composer, /R\.useSyncExternalStore\(CPXCTX\.subscribe,CPXCTX\.snapshot,CPXCTX\.snapshot\)/);
+  assert.match(composer, /project:e&&e\.project!=null\?e\.project:CPXCTX\.active\(\)/);
+  assert.match(composer, /CPX_resolvedSurfaceProps=CPXSurfaceProps\(\{\}\)/);
+  assert.match(composer, /\.\.\.CPX_resolvedSurfaceProps/);
+  assert.match(composer, /t\[36\]=CPX_resolvedSurfaceProps/);
+
+  const selector = byName("patchHomeProjectDropdownProjectSelectorShortcut")([
+    "function ut(e){let t=(0,ft.c)(32),",
+    "_=r.filter(e),t[0]=r,t[1]=h,t[2]=_",
+    "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);let w;",
+    "function ht({activeProjectIdOverride:e,allowLocalProjects:t=!0,",
+    "I=f??v,L=e=>{y(e),p?.(e)},Te=",
+    "(0,X.jsx)(qe,{open:f,onOpenChange:L,onCloseAutoFocus:j,side:`top`,triggerButton:h,contentWidth:`menu`,",
+    "let q=(0,X.jsx)(qe,{open:f,onOpenChange:L,onCloseAutoFocus:j,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:h??(u===`hero`?Ge():We()),contentWidth:`workspace`,",
+  ].join(""));
+  assert.match(selector, /CPXP\.setOpenHandler\(u/);
+  assert.match(selector, /CPXP\.fuzzyFilter\(r,h\)/);
+  assert.match(selector, /CPXP\.setAcceptFirstHandler/);
+  assert.match(selector, /open:I/);
+  assert.match(selector, /triggerButton:CPXPST/);
+
+  const visibleTrigger = byName("patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut")(
+    [
+      "function M(e){let t=(0,N.c)(23),",
+      "h=(0,P.jsx)(O,{value:s,onChange:p,placeholder:m,className:`mb-1`})",
+      "(0,q.jsx)(`span`,{className:`truncate`,children:e.label})",
+      '(0,Q.jsx)(x,{"aria-label":n,"data-composer-navigation-target":r,categoryLabel:null,collapse:`xs`,disabled:C,icon:u,indicator:`none`,value:M,valueClassName:T})',
+    ].join(""),
+  );
+  assert.match(visibleTrigger, /onKeyDown:CPXP\.acceptCurrent/);
+  assert.match(visibleTrigger, /CPXP\.fuzzyHighlight/);
+  assert.match(visibleTrigger, /data-codex-plus-project-selector-trigger/);
+  assert.match(visibleTrigger, /data-codex-plus-project-selector-variant":`home`/);
 });
 
 test("runtime API registers plugins, settings, commands, styles, modules, and patches", async () => {
@@ -1341,6 +1623,15 @@ test("project selector shortcut command focuses and opens the mounted selector t
   keydownListeners[0].listener(presentKeydown);
   assert.equal(presentKeydown.defaultPrevented, true);
   assert.equal(openCount, 2);
+
+  let acceptedEvent = null;
+  window.CodexPlusHost.adapters.projectSelector.setAcceptFirstHandler((event) => {
+    acceptedEvent = event;
+    return "accepted";
+  });
+  const enter = { key: "Enter" };
+  assert.equal(window.CodexPlusHost.adapters.projectSelector.acceptCurrent(enter), "accepted");
+  assert.equal(acceptedEvent, enter);
 });
 
 test("local active workspace root dropdown exposes only the final selector trigger to Codex Plus", () => {
@@ -2037,7 +2328,7 @@ test("title patch loads the Codex Plus runtime bootstrap", () => {
 });
 
 test("ChatGPT patch set uses ChatGPT Plus branding with stable CodexPlus runtime names", () => {
-  const patchSet = chatgptPatchSets[0];
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
   assert.ok(patchSet);
   assert.deepEqual(patchSet.patches.map((patch) => patch.id), [
     "bundle-identity",
@@ -2157,7 +2448,7 @@ test("41301 native title mount subscribes to the stable virtual header contract"
 });
 
 test("ChatGPT thread side panel file opener is registered from the route scope", () => {
-  const patchSet = chatgptPatchSets[0];
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
   const fakeAppShellBundle = [
     "function lce(){let e=(0,HA.c)(3),t,n;",
     "children:[t,n,(0,UA.jsx)(gs,{onClick:uce,children:(0,UA.jsx)(W,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
@@ -2763,6 +3054,8 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.21425-5488" ||
+      patchSet.id === "chatgpt-26.715.21316-5484" ||
       patchSet.id === "chatgpt-26.707.31428-5059" ||
       patchSet.id === "chatgpt-26.707.62119-5211" ||
       patchSet.id === "chatgpt-26.707.61608-5200"
@@ -3821,7 +4114,7 @@ test("thread side panel native file opener is patched for 26.623.31921 file tab 
 });
 
 test("ChatGPT native file opener keeps native tabs while preferring active project context", () => {
-  const patchSet = chatgptPatchSets[0];
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.91948-5440");
   const transform = findTransform(patchSet, "review");
   const transformed = transform([
     "function I5(e,t,n={}){let{activate:r=!0,controller:i,endLine:a,hostId:o,icon:s,isPreview:c,line:l,resetTabState:u=!1,syncOpenTabs:d=!0,target:f=`right`,tabId:p,title:m,workspaceRoot:h}=n,g=o??`local`,_=Cxe(t,o,p),v=i??De(nt(e,_)??f),y=e.get(v.tabById$,_),b=Do(e),x=m??e.get(Ul).formatMessage(Txe.openFileTabTitle),S=Hs(t??void 0),C=t==null?x:Ys({cwd:b,path:t});",
@@ -4058,6 +4351,8 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     project: { cwd: "/tmp/codex-plus-audit/worktrees/c7ee/alpha-workspace", hostId: "local" },
   });
 
+  assert.equal(composerProps.style.borderRadius, "var(--composer-border-radius, var(--radius-3xl))");
+  assert.equal(sidebarProps.style.borderRadius, undefined);
   assert.equal(
     composerProps.style["--codex-plus-project-accent"],
     sidebarProps.style["--codex-plus-project-accent"],
@@ -4782,6 +5077,7 @@ test("composer patch applies the user entry marker and shared color variables", 
   const bubblePlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
   const projectPlugin = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/projectColors.js"), "utf8");
   assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-surface-chrome\{background-color:transparent!important;background-image:none!important\}/);
   assert.match(projectPlugin, /--codex-plus-project-separator-dark/);
   assert.match(projectPlugin, /box-shadow:inset 6px 0 0 var\(--codex-plus-project-accent\)/);
   assert.match(projectPlugin, /\[data-codex-plus-user-entry\]\[data-codex-plus-project-color\]/);
@@ -4809,6 +5105,23 @@ test("ChatGPT composer project colors attach to the native composer surface", ()
   assert.doesNotMatch(transformed, /"data-codex-composer-root":``,\.\.\.CPXSurfaceProps\(\{\}\),children/);
   assert.doesNotMatch(transformed, /CPX_localThreadKey/);
   assert.doesNotMatch(transformed, /CPX_threadProjectId/);
+});
+
+test("21316 native project rows forward the source path through the shared sidebar adapter", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.21316-5484");
+  const transforms = new Map(collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]));
+  const transform = transforms.get("patchLocalTaskRow");
+  const source = [
+    "function Kd(e){let t=(0,Qd.c)(125),",
+    "j=Te.sidebarProjectRow({collapsed:a,label:_,projectId:x})",
+    "let qe=Ke,Ye=lu,Xe=s?Te:void 0,Ze=c(",
+    "dataAttributes:Te.sidebarThreadRow({active:u,hostId:t.hostId,id:n,kind:`local`,pinned:a,title:t.label})",
+    "dataAttributes:Te.sidebarThreadRow({active:u,hostId:null,id:t,kind:`remote`,pinned:a,title:e.task.title??``})",
+    "dataAttributes:Te.sidebarThreadRow({active:u,hostId:f,id:r,kind:`local`,pinned:a,title:x})",
+  ].join(";");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+
+  assert.match(transformed, /Xe=\{\.\.\.\(s\?Te:void 0\),\.\.\.CPXPR\(\{projectId:N,label:z,path:M,cwd:M,hostId:i\.hostId,projectKind:i\.projectKind\}\)\}/);
 });
 
 test("72221 binds moved host seams without changing consumer contracts", () => {

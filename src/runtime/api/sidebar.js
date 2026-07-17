@@ -2,6 +2,21 @@
   const globalObject = typeof window !== "undefined" ? window : globalThis;
   const { applyDecorators, mergeDataAttributes } = globalObject.__CodexPlusRuntime;
   const sections = new Map();
+  const projectRegistry = new Map();
+
+  function rememberProject(project) {
+    if (!project || typeof project !== "object") return;
+    const cwd = project.path ?? project.cwd ?? project.projectPath ?? project.remotePath ?? project.root ?? project.workspaceRoot;
+    if (!cwd) return;
+    const id = project.projectId ?? project.id ?? cwd;
+    projectRegistry.set(String(id), {
+      id: String(id),
+      label: String(project.label ?? project.title ?? cwd),
+      cwd: String(cwd),
+      ...(project.hostId == null ? {} : { hostId: String(project.hostId) }),
+      ...(project.projectKind == null ? {} : { projectKind: String(project.projectKind) }),
+    });
+  }
 
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
@@ -75,10 +90,20 @@
     return semanticSidebarHost();
   }
 
+  function directChildForHeading(host, title) {
+    for (const heading of headingElements(title)) {
+      if (!host.contains?.(heading)) continue;
+      let child = heading;
+      while (child?.parentElement && child.parentElement !== host) child = child.parentElement;
+      if (child?.parentElement === host) return child;
+    }
+    return null;
+  }
+
   function insertSection(host, section, model = {}) {
     const children = Array.from(host.children || []);
     const afterTitle = model.afterSectionTitle || model.afterTitle || "Pinned";
-    const projects = children.find((child) => {
+    const projects = directChildForHeading(host, "Projects") || children.find((child) => {
       const heading = child.getAttribute?.("data-app-action-sidebar-section-heading");
       const text = child.textContent?.trim() || "";
       return heading === "Projects" || text === "Projects" || text.startsWith("Projects\n");
@@ -87,7 +112,7 @@
       host.insertBefore(section, projects);
       return;
     }
-    const afterSection = children.find((child) => {
+    const afterSection = directChildForHeading(host, afterTitle) || children.find((child) => {
       const heading = child.getAttribute?.("data-app-action-sidebar-section-heading");
       const text = child.textContent?.trim() || "";
       return heading === afterTitle || text === afterTitle || text.startsWith(`${afterTitle}\n`);
@@ -195,7 +220,7 @@
       section.setAttribute("data-codex-plus-sidebar-section", id);
     }
     if (model.elementId) section.id = String(model.elementId);
-    if (section.parentElement !== host) insertSection(host, section, model);
+    insertSection(host, section, model);
     return section;
   }
 
@@ -245,10 +270,15 @@
     },
     mergeDataAttributes,
     projectRowProps(props) {
+      rememberProject(props?.project);
       return applyDecorators(props, this.projectDecorators);
     },
     threadRowProps(props) {
+      rememberProject(props?.project);
       return applyDecorators(props, this.threadDecorators);
+    },
+    projects() {
+      return Array.from(projectRegistry.values(), (project) => ({ ...project }));
     },
     pressElement,
     registerSection,

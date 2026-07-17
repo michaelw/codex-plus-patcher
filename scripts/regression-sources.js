@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { getAppIdentity } = require("../src/core/patch-engine");
+const { getAppIdentity, preflightPatchSet } = require("../src/core/patch-engine");
 const { sourceFamilyConfig } = require("../src/core/app-identity");
 const {
   createAuditProgress,
@@ -34,6 +34,7 @@ function parseArgs(argv) {
     keepOpen: false,
     newest: null,
     noProgress: false,
+    preflightOnly: false,
     visualContract: true,
     artifactDir: null,
     remoteDebuggingPort: 9234,
@@ -62,6 +63,7 @@ function parseArgs(argv) {
       args.newest = value;
     }
     else if (arg === "--no-progress") args.noProgress = true;
+    else if (arg === "--preflight-only") args.preflightOnly = true;
     else if (arg === "--artifact-dir") args.artifactDir = path.resolve(expandPath(next()));
     else if (arg === "--no-visual-contract") args.visualContract = false;
     else if (arg === "--remote-debugging-port" || arg === "--port") {
@@ -76,6 +78,7 @@ function parseArgs(argv) {
   }
 
   if (args.autoClean && args.keepOpen) throw new Error("--auto-clean cannot be combined with --keep-open");
+  if (args.clean && args.preflightOnly) throw new Error("--clean cannot be combined with --preflight-only");
   return args;
 }
 
@@ -87,6 +90,7 @@ Options:
   --sources-dir <path>         Source cache root. Default: main checkout work/sources
   --filter <text>              Case-insensitive match against version, path, or patch set id
   --newest <N>                 Limit to the newest N matching cached sources
+  --preflight-only             Transform every selected source in memory; do not copy or launch apps
   --auto-clean                 Remove each generated regression directory after its audit
   --clean                      Cleanup-only mode for generated regression directories
   --keep-open                  Leave audit-launched apps open
@@ -107,6 +111,10 @@ function defaultRegressionDirForSources(_sourcesDir, { cwd = process.cwd() } = {
 
 function defaultContractRoot({ cwd = process.cwd(), now = new Date() } = {}) {
   return path.join(cwd, "work", "regression", "contracts", now.toISOString().replace(/[:.]/g, "-"));
+}
+
+function defaultPreflightRoot({ cwd = process.cwd(), now = new Date() } = {}) {
+  return path.join(cwd, "work", "regression", "preflight", now.toISOString().replace(/[:.]/g, "-"));
 }
 
 function compareVersionStrings(left, right) {
@@ -353,7 +361,13 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     cleaned = true;
   }
   if (auditResult.ok) sourceProgress?.succeed?.("Regression audit passed");
-  else sourceProgress?.fail?.("Regression audit failed");
+  else {
+    const firstFailure = auditResult.failures?.[0];
+    const failureDetail = firstFailure?.message
+      ? `: ${firstFailure.plugin || "audit"}: ${firstFailure.message}`
+      : "";
+    sourceProgress?.fail?.(`Regression audit failed${failureDetail}`);
+  }
 
   return {
     ...source,
@@ -369,6 +383,45 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
   };
 }
 
+function runSourcePreflight(source, { operations = {}, progress = null, index = 1, total = 1 }) {
+  const sourceProgress = prefixProgress(progress, `[${index}/${total} ${source.version}] `, {
+    version: source.version,
+    bundleVersion: source.bundleVersion,
+    patchSet: source.patchSet,
+    sourceApp: source.sourceApp,
+  });
+  if (!source.supported) {
+    sourceProgress?.succeed?.("Skipped unsupported source");
+    return { ...source, ok: null, skipped: true, reason: source.unsupportedReason };
+  }
+
+  const selected = findPatchSet(source, operations.patchSets || patchSets);
+  const runPreflight = operations.preflightPatchSet || preflightPatchSet;
+  sourceProgress?.start?.(`Preflighting ${selected.id}`);
+  try {
+    const preflight = runPreflight({
+      sourceApp: source.sourceApp,
+      identity: {
+        version: source.version,
+        bundleVersion: source.bundleVersion,
+        asarSha256: source.asarSha256,
+        sourceFamily: source.sourceFamily,
+      },
+      patchSet: selected,
+      operations: operations.preflightOperations || {},
+    });
+    sourceProgress?.succeed?.("Preflight passed");
+    return { ...source, ok: true, preflight };
+  } catch (error) {
+    sourceProgress?.fail?.("Preflight failed");
+    return {
+      ...source,
+      ok: false,
+      failures: [{ plugin: "preflight", message: error.message || String(error) }],
+    };
+  }
+}
+
 async function runRegressionSources(args, operations = {}) {
   const cwd = operations.cwd || process.cwd();
   const visualContract = args.visualContract !== false;
@@ -376,6 +429,8 @@ async function runRegressionSources(args, operations = {}) {
   const regressionDir = defaultRegressionDirForSources(sourcesDir, { cwd });
   const now = operations.now ? operations.now() : new Date();
   const contractRoot = args.artifactDir || defaultContractRoot({ cwd, now });
+  const preflightRoot = defaultPreflightRoot({ cwd, now });
+  const preflightSummary = path.join(preflightRoot, "preflight-summary.json");
   const runArgs = {
     ...args,
     visualContract,
@@ -415,16 +470,45 @@ async function runRegressionSources(args, operations = {}) {
     };
   }
 
+
+  if (args.preflightOnly) {
+    const results = [];
+    for (let index = 0; index < sources.length; index += 1) {
+      const result = runSourcePreflight(sources[index], {
+        operations,
+        progress,
+        index: index + 1,
+        total: sources.length,
+      });
+      results.push(result);
+      if (result.supported && result.ok === false) break;
+    }
+    const runnableResults = results.filter((result) => result.supported);
+    const failedResults = runnableResults.filter((result) => !result.ok);
+    const summary = {
+      ok: runnableResults.length > 0 && failedResults.length === 0,
+      preflightOnly: true,
+      sourcesDir,
+      results,
+    };
+    const fsImpl = operations.fs || fs;
+    fsImpl.mkdirSync(preflightRoot, { recursive: true });
+    fsImpl.writeFileSync(preflightSummary, `${JSON.stringify(summary, null, 2)}\n`);
+    return { ...summary, regressionDir, preflightSummary };
+  }
+
   const results = [];
   for (let index = 0; index < sources.length; index += 1) {
-    results.push(await runSourceRegression(sources[index], {
+    const result = await runSourceRegression(sources[index], {
       args: runArgs,
       regressionDir,
       operations,
       progress,
       index: index + 1,
       total: sources.length,
-    }));
+    });
+    results.push(result);
+    if (result.supported && result.ok === false) break;
   }
   const runnableResults = results.filter((result) => result.supported);
   const failedResults = runnableResults.filter((result) => !result.ok);
@@ -445,7 +529,7 @@ async function runRegressionSources(args, operations = {}) {
 
 function formatHumanResult(result) {
   const lines = [
-    result.cleanOnly ? "Regression source cleanup" : "Regression source audit",
+    result.cleanOnly ? "Regression source cleanup" : result.preflightOnly ? "Regression source preflight" : "Regression source audit",
     `Sources: ${result.sourcesDir}`,
     `Regression output: ${result.regressionDir}`,
   ];
@@ -473,7 +557,7 @@ function formatHumanResult(result) {
     }
     lines.push(`${entry.ok ? "Passed" : "Failed"} ${entry.version} (${entry.bundleVersion})`);
     lines.push(`  Source: ${entry.sourceApp}`);
-    lines.push(`  Target: ${entry.targetApp}`);
+    if (entry.targetApp) lines.push(`  Target: ${entry.targetApp}`);
     lines.push(`  Patch set: ${entry.patchSet}`);
     if (entry.artifactDir) lines.push(`  Visual contract: ${entry.artifactDir}`);
     if (entry.cleaned) lines.push("  Cleanup: removed generated regression output");
@@ -538,6 +622,7 @@ module.exports = {
   cleanRegressionSources,
   compareVersionStrings,
   defaultContractRoot,
+  defaultPreflightRoot,
   defaultRegressionDirForSources,
   discoverSources,
   filterMatches,
@@ -553,5 +638,6 @@ module.exports = {
   prefixProgress,
   runRegressionSources,
   runSourceRegression,
+  runSourcePreflight,
   sourceMatchesFilter,
 };

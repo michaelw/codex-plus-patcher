@@ -4,6 +4,12 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.61825-4548",
   codexVersion: "26.623.61825",
   bundleVersion: "4548",
+  unchangedTransformVariants: [
+    "diagnostic-error-boundary/patchErrorBoundary",
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+    "project-selector-shortcut/patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   asarSha256: "5f3f8c6c6c842bf918a07c83806628ad246a370517e7829cc836fe45327f0cb8",
   files: {
     main: ".vite/build/main-CE4LBHPy.js",

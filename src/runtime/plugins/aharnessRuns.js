@@ -354,12 +354,12 @@
   }
 
   function discoverProjects() {
-    const projects = [];
+    const projects = CodexPlus.ui.sidebar.projects();
     for (const row of Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row]"))) {
       const label = row.getAttribute("data-app-action-sidebar-project-label") || row.textContent?.trim()?.split(/\n/)[0] || "Project";
       const id = row.getAttribute("data-app-action-sidebar-project-id") || label;
       const cwd = row.getAttribute("data-codex-plus-project-path") || (id.startsWith("/") ? id : null);
-      if (!cwd) continue;
+      if (!cwd || projects.some((project) => project.cwd === cwd)) continue;
       projects.push({ id, label, cwd });
     }
     for (const run of knownRuns) {

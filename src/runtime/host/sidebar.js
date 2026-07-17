@@ -5,6 +5,10 @@
     return globalObject.CodexPlus?.ui?.sidebar?.projectRowProps?.({ project });
   }
 
+  function projects() {
+    return globalObject.CodexPlus?.ui?.sidebar?.projects?.();
+  }
+
   function threadRowProps(project) {
     return globalObject.CodexPlus?.ui?.sidebar?.threadRowProps?.({ project });
   }
@@ -16,6 +20,7 @@
   globalObject.CodexPlusHost.adapters.sidebar = {
     mergeThreadRowAttributes,
     projectRowProps,
+    projects,
     threadRowProps,
   };
 })();

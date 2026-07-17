@@ -152,14 +152,16 @@ patch injection code.
    should still match exactly once.
 5. Copy the closest existing `src/patches/<codex-version>-<bundle>.js` file.
 6. Update `id`, `codexVersion`, `bundleVersion`, and `asarSha256` in the new
-   patch file.
+   patch file. Map every transform to the new patch set explicitly. Keep exact
+   source anchors inside that selected variant as validation, and declare any
+   intentional unchanged transform in `unchangedTransformVariants`.
 7. Register the new patch in `src/patches/index.js`, with the newest supported
    primary source-family patch set first.
 8. Update `npm run check` in `package.json` if it names patch files explicitly.
 9. If a patch or runtime plugin is added, removed, or renamed, update the
    README patch summary. Also verify the About dialog still reports the applied patch IDs.
-10. Run the dry-run, full workspace apply, codesign verification, and ASAR
-   marker/readback checks from the common commands section.
+10. Follow the newest-first proof sequence below. Restart from its focused
+    tests after any implementation change.
 
 Prefer copying a patch set and tightening it to the new build over making an
 older patch less strict.
@@ -171,6 +173,19 @@ After intaking mirror releases, audit every supported cached source app:
 ```sh
 npm run regression:sources
 ```
+
+Use the read-only preflight before copying, signing, or launching an app:
+
+```sh
+npm run regression:sources -- --preflight-only --newest 1 --jsonl
+npm run regression:sources -- --preflight-only
+```
+
+Preflight verifies the exact source identity, selected patch set, transform
+ownership and order, exact anchor replacements, final JavaScript syntax,
+runtime assets, and the host-adapter manifest entirely in memory. It writes a
+single ignored `preflight-summary.json` under `work/regression/preflight/` and
+stops on the first supported-source failure.
 
 The runner scans the main checkout's ignored `work/sources/*/ChatGPT.app` and
 `work/sources/*/Codex.app`, matches each source against the registered patch
@@ -186,22 +201,25 @@ npm run regression:sources -- --filter 61825
 npm run regression:sources -- --newest 2
 ```
 
-For new version ports, first prove the newest cached source with compact
-progress output:
+For new version ports, use this complete proof order:
 
 ```sh
+node --test --test-name-pattern='<focused transform>' tests/patch-selection.test.js
+npm run regression:sources -- --preflight-only --newest 1 --jsonl
 npm run regression:sources -- --newest 1 --jsonl
-```
-
-Then inspect the default visual contract under
-`work/regression/contracts/<timestamp>/<version>/`. Each contract includes
-`contract.json`, `audit-summary.json`, and screenshots for the shell/sidebar,
-Review, command-palette dispatch, and Settings. After the newest source passes,
-run the full sweep:
-
-```sh
+npm run regression:sources -- --preflight-only
 npm run regression:sources -- --auto-clean
 ```
+
+Inspect the newest default visual contract before starting either all-version
+command, then inspect every contract from the live sweep. Contracts live under
+`work/regression/contracts/<timestamp>/<version>/`. Each contract includes
+`contract.json`, `audit-summary.json`, and screenshots for the shell/sidebar,
+Review, command-palette dispatch, and Settings. If an older version fails,
+check the Git diff and its declared transform owner before editing the old
+hook. When its owned transform code did not change, treat the preflight,
+fixture, or audit as the leading suspect. After any fix, restart at the focused
+tests and newest-only preflight.
 
 Use `--auto-clean` to remove each generated app/home/user-data regression
 directory after its audit finishes, or run cleanup only:

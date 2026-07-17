@@ -332,13 +332,24 @@ function launchDevApp({
   const devRuntimeConfig = markDevRuntimeConfigImpl(options.targetApp);
   const devBundle = markDevBundleIdentityImpl(options.targetApp, options.devInstanceId);
   const devSignature = signDevAppImpl(options.targetApp);
-  const child = spawn(launch.command, launch.args, {
-    // Keep the direct Electron process independent of the audit CLI. In
-    // particular, --keep-open must survive after the CLI writes its result.
-    detached: true,
-    env: { ...env, ...launch.env },
-    stdio: "ignore",
-  });
+  const startupLogPath = options.startupLogPath ? path.resolve(options.startupLogPath) : null;
+  let startupLogFd = null;
+  if (startupLogPath) {
+    fs.mkdirSync(path.dirname(startupLogPath), { recursive: true });
+    startupLogFd = fs.openSync(startupLogPath, "a");
+  }
+  let child;
+  try {
+    child = spawn(launch.command, launch.args, {
+      // Keep the direct Electron process independent of the audit CLI. In
+      // particular, --keep-open must survive after the CLI writes its result.
+      detached: true,
+      env: { ...env, ...launch.env },
+      stdio: startupLogFd == null ? "ignore" : ["ignore", startupLogFd, startupLogFd],
+    });
+  } finally {
+    if (startupLogFd != null) fs.closeSync(startupLogFd);
+  }
   child.unref();
   return {
     ...launch,
@@ -348,6 +359,7 @@ function launchDevApp({
     devRuntimeConfig,
     devBundle,
     devSignature,
+    startupLogPath,
     pid: child.pid,
   };
 }

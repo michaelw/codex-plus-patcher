@@ -1,7 +1,60 @@
 const { replaceOnce } = require("./replace");
+const { patchSetOwnsTransformVariant } = require("./transform-ownership");
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
-function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
+function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.21425")) {
+    let patched = replaceOnce(
+      text,
+      "function M(e){let t=(0,N.c)(23),",
+      `${projectSelectorSearchHook()}function M(e){let t=(0,N.c)(23),`,
+      "26.715.21425 split project selector adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "h=(0,P.jsx)(E,{value:s,onChange:p,placeholder:m,className:`mb-1`})",
+      "h=(0,P.jsx)(E,{value:s,onChange:p,onKeyDown:CPXP.acceptCurrent,placeholder:m,className:`mb-1`})",
+      "26.715.21425 split project selector accept first anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,q.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,q.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,e.__codexPlusQuery,q.jsx)})",
+      "26.715.21425 split project selector highlight anchor",
+    );
+    return replaceOnce(
+      patched,
+      '(0,Q.jsx)(x,{"aria-label":n,"data-composer-navigation-target":r,categoryLabel:null,collapse:`xs`,disabled:C,icon:u,indicator:`none`,value:M,valueClassName:T})',
+      '(0,Q.jsx)(x,{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-codex-plus-project-selector-variant":`home`,"data-composer-navigation-target":r,categoryLabel:null,collapse:`xs`,disabled:C,icon:u,indicator:`none`,value:M,valueClassName:T})',
+      "26.715.21425 project selector visible trigger anchor",
+    );
+  }
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715")) {
+    let patched = replaceOnce(
+      text,
+      "function M(e){let t=(0,N.c)(23),",
+      `${projectSelectorSearchHook()}function M(e){let t=(0,N.c)(23),`,
+      "26.715 split project selector adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "h=(0,P.jsx)(O,{value:s,onChange:p,placeholder:m,className:`mb-1`})",
+      "h=(0,P.jsx)(O,{value:s,onChange:p,onKeyDown:CPXP.acceptCurrent,placeholder:m,className:`mb-1`})",
+      "26.715 split project selector accept first anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,q.jsx)(`span`,{className:`truncate`,children:e.label})",
+      "(0,q.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,e.__codexPlusQuery,q.jsx)})",
+      "26.715 split project selector highlight anchor",
+    );
+    return replaceOnce(
+      patched,
+      '(0,Q.jsx)(x,{"aria-label":n,"data-composer-navigation-target":r,categoryLabel:null,collapse:`xs`,disabled:C,icon:u,indicator:`none`,value:M,valueClassName:T})',
+      '(0,Q.jsx)(x,{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-codex-plus-project-selector-variant":`home`,"data-composer-navigation-target":r,categoryLabel:null,collapse:`xs`,disabled:C,icon:u,indicator:`none`,value:M,valueClassName:T})',
+      "26.715 project selector visible trigger anchor",
+    );
+  }
   if (text.includes("function zr(e){let t=(0,Br.c)(44),") && text.includes("function si({activeProjectIdOverride:e,")) {
     let patched = replaceOnce(
       text,
@@ -355,7 +408,83 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text) {
   );
 }
 
-function patchHomeProjectDropdownProjectSelectorShortcut(text) {
+function patchHomeProjectDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.21425")) {
+    let patched = replaceOnce(
+      text,
+      "function mt({activeProjectIdOverride:e,allowLocalProjects:t=!0,",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("gt")}function mt({activeProjectIdOverride:e,allowLocalProjects:t=!0,`,
+      "26.715.21425 home project selector helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "_=r.filter(e),t[0]=r,t[1]=h,t[2]=_",
+      "_=CPXP.fuzzyFilter(r,h).map(e=>({...e,__codexPlusQuery:h})),t[0]=r,t[1]=h,t[2]=_",
+      "26.715.21425 home project selector fuzzy search anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);let w;",
+      "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);CPXP.setAcceptFirstHandler(e=>CPXP.acceptFirst(e,v,C,h));let w;",
+      "26.715.21425 home project selector accept first binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "R=f??v,z=e=>{y(e),p?.(e)},B=",
+      "R=f??v,z=e=>{y(e),p?.(e)},CPXOH=CPXP.setOpenHandler(u,()=>{z(!0);return!0}),B=",
+      "26.715.21425 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,Z.jsx)(Ue,{open:f,onOpenChange:z,onCloseAutoFocus:M,side:`top`,triggerButton:h,contentWidth:`menu`,",
+      "(0,Z.jsx)(Ue,{open:R,onOpenChange:z,onCloseAutoFocus:M,side:`top`,triggerButton:CPXPST(h,u),contentWidth:`menu`,",
+      "26.715.21425 home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let Je=(0,Z.jsx)(Ue,{open:f,onOpenChange:z,onCloseAutoFocus:M,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:h??(u===`hero`?Ke():He()),contentWidth:`workspace`,",
+      "let Je=(0,Z.jsx)(Ue,{open:R,onOpenChange:z,onCloseAutoFocus:M,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:CPXPST(h??(u===`hero`?Ke():He()),u),contentWidth:`workspace`,",
+      "26.715.21425 home project selector workspace controlled trigger anchor",
+    );
+  }
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715")) {
+    let patched = replaceOnce(
+      text,
+      "function ht({activeProjectIdOverride:e,allowLocalProjects:t=!0,",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("_t")}function ht({activeProjectIdOverride:e,allowLocalProjects:t=!0,`,
+      "26.715 home project selector helper insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "_=r.filter(e),t[0]=r,t[1]=h,t[2]=_",
+      "_=CPXP.fuzzyFilter(r,h).map(e=>({...e,__codexPlusQuery:h})),t[0]=r,t[1]=h,t[2]=_",
+      "26.715 home project selector fuzzy search anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);let w;",
+      "t[9]===a?C=t[10]:(C=e=>{a(e.projectId)},t[9]=a,t[10]=C);CPXP.setAcceptFirstHandler(e=>CPXP.acceptFirst(e,v,C,h));let w;",
+      "26.715 home project selector accept first binding anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "I=f??v,L=e=>{y(e),p?.(e)},Te=",
+      "I=f??v,L=e=>{y(e),p?.(e)},CPXOH=CPXP.setOpenHandler(u,()=>{L(!0);return!0}),Te=",
+      "26.715 home project selector controlled open handler anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "(0,X.jsx)(qe,{open:f,onOpenChange:L,onCloseAutoFocus:j,side:`top`,triggerButton:h,contentWidth:`menu`,",
+      "(0,X.jsx)(qe,{open:I,onOpenChange:L,onCloseAutoFocus:j,side:`top`,triggerButton:CPXPST(h,u),contentWidth:`menu`,",
+      "26.715 home project selector empty controlled trigger anchor",
+    );
+    return replaceOnce(
+      patched,
+      "let q=(0,X.jsx)(qe,{open:f,onOpenChange:L,onCloseAutoFocus:j,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:h??(u===`hero`?Ge():We()),contentWidth:`workspace`,",
+      "let q=(0,X.jsx)(qe,{open:I,onOpenChange:L,onCloseAutoFocus:j,side:`top`,align:u===`hero`?`center`:`start`,disabled:s,triggerButton:CPXPST(h??(u===`hero`?Ge():We()),u),contentWidth:`workspace`,",
+      "26.715 home project selector workspace controlled trigger anchor",
+    );
+  }
   if (text.includes("function tY({activeProjectIdOverride:e,allowLocalProjects:t=!0,")) {
     let patched = replaceOnce(
       text,

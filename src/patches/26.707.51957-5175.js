@@ -6,6 +6,12 @@ module.exports = buildCodexPlusPatchSet({
   bundleVersion: "5175",
   asarSha256: "26708d5be316b43786ba00ea8581317426e44ff508e0d5cce40f53181582e027",
   sourceFamily: "chatgpt",
+  unchangedTransformVariants: [
+    "thread-side-panel-native-context/patchThreadSidePanelNativeProjectContext",
+    "native-composer-surface/patchComposerPrimitiveSurface",
+    "sidebar-name-blur/patchKeyboardShortcutsSearchInput",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   files: {
     main: ".vite/build/main-BHxSB3aK.js",
     electronCommandSource: ".vite/build/src-BlTl_Ip2.js",

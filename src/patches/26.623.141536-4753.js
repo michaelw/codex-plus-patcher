@@ -4,6 +4,11 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.141536-4753",
   codexVersion: "26.623.141536",
   bundleVersion: "4753",
+  unchangedTransformVariants: [
+    "diagnostic-error-boundary/patchErrorBoundary",
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+    "project-selector-shortcut/patchHomeProjectDropdownProjectSelectorShortcut",
+  ],
   asarSha256: "9169abf7427f8ceb2dab527f489a76f6e419e2602faa9b3b8a1b4e2c526fc537",
   files: {
     main: ".vite/build/main-8XtuV7fZ.js",

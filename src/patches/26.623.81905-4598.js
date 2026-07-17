@@ -4,6 +4,10 @@ module.exports = buildCodexPlusPatchSet({
   id: "codex-26.623.81905-4598",
   codexVersion: "26.623.81905",
   bundleVersion: "4598",
+  unchangedTransformVariants: [
+    "sidebar-name-blur/patchAppCommandPaletteRuntimeCommands",
+    "project-selector-shortcut/patchRunCommandProjectSelectorShortcut",
+  ],
   asarSha256: "f1b16417c47498bb922c57f66d12e039a90cadb8e4bc689039cb17e1dcbb0f39",
   files: {
     main: ".vite/build/main-CNod9zFW.js",

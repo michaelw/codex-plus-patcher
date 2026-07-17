@@ -42,6 +42,8 @@ function createElement(tag, className = "") {
       return child;
     },
     insertBefore(child, before = null) {
+      const currentIndex = this.children.indexOf(child);
+      if (currentIndex >= 0) this.children.splice(currentIndex, 1);
       child.parentElement = this;
       const index = before ? this.children.indexOf(before) : -1;
       if (index >= 0) this.children.splice(index, 0, child);
@@ -237,6 +239,29 @@ test("route context exposes stable set, active, clear, and project compatibility
   assert.equal(window.CodexPlus.ui.routeContext.clear("virtual:one").context, null);
   assert.equal(seen.length, 2);
   unsubscribe();
+});
+
+test("sidebar remembers normalized project identities for plugins", () => {
+  const { context, window } = createContext();
+  vm.runInNewContext(runtimeFile("api/sidebar.js"), context, { filename: "api/sidebar.js" });
+
+  window.CodexPlus.ui.sidebar.projectRowProps({
+    project: {
+      projectId: "local-alpha",
+      label: "alpha",
+      path: "/tmp/alpha",
+      hostId: "local",
+      projectKind: "git",
+    },
+  });
+
+  assert.deepEqual(plain(window.CodexPlus.ui.sidebar.projects()), [{
+    id: "local-alpha",
+    label: "alpha",
+    cwd: "/tmp/alpha",
+    hostId: "local",
+    projectKind: "git",
+  }]);
 });
 
 test("virtual conversations render through host slots without hiding outer controls", () => {
@@ -435,6 +460,51 @@ test("sidebar sections mount only into the native main sidebar model", () => {
   assert.equal(preferencesSidebar.children[0].textContent, "General");
 });
 
+test("sidebar sections follow nested semantic headings", () => {
+  const { context, window, body } = createContext();
+  vm.runInNewContext(runtimeFile("api/sidebar.js"), context, { filename: "api/sidebar.js" });
+  const sidebar = createElement("aside");
+  const pinnedSection = createElement("section");
+  const pinned = createElement("h2");
+  pinned.textContent = "Pinned";
+  pinned.setAttribute("data-app-action-sidebar-section-heading", "Pinned");
+  pinnedSection.appendChild(pinned);
+  const projectsSection = createElement("section");
+  const projects = createElement("h2");
+  projects.textContent = "Projects";
+  projects.setAttribute("data-app-action-sidebar-section-heading", "Projects");
+  projectsSection.appendChild(projects);
+  sidebar.appendChild(pinnedSection);
+  sidebar.appendChild(projectsSection);
+  body.appendChild(sidebar);
+
+  const result = window.CodexPlus.ui.sidebar.renderSection({ id: "sample", title: "Sample" });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(sidebar.children, [pinnedSection, result.section, projectsSection]);
+});
+
+test("sidebar sections reposition after delayed native headings mount", () => {
+  const { context, window, body } = createContext();
+  vm.runInNewContext(runtimeFile("api/sidebar.js"), context, { filename: "api/sidebar.js" });
+  const sidebar = createElement("aside");
+  const projects = createElement("h2");
+  projects.textContent = "Projects";
+  projects.setAttribute("data-app-action-sidebar-section-heading", "Projects");
+  sidebar.appendChild(projects);
+  body.appendChild(sidebar);
+  const first = window.CodexPlus.ui.sidebar.renderSection({ id: "sample", title: "Sample" });
+  const pinned = createElement("h2");
+  pinned.textContent = "Pinned";
+  pinned.setAttribute("data-app-action-sidebar-section-heading", "Pinned");
+  sidebar.insertBefore(pinned, projects);
+
+  const second = window.CodexPlus.ui.sidebar.renderSection({ id: "sample", title: "Sample" });
+
+  assert.equal(second.ok, true);
+  assert.deepEqual(sidebar.children, [pinned, first.section, projects]);
+});
+
 test("composer control exposes input, waiting, stop, and release behavior", () => {
   const { context, window, body, document } = createContext();
   vm.runInNewContext(runtimeFile("api/composer.js"), context, { filename: "api/composer.js" });
@@ -532,8 +602,12 @@ test("thread header reacts to canonical native and virtual context for title and
   vm.runInNewContext(runtimeFile("host/threadHeader.js"), context, { filename: "host/threadHeader.js" });
   window.CodexPlus.diagnostics = { log() {} };
   const versions = [];
+  const contextVersions = [];
   const unsubscribe = window.CodexPlusHost.adapters.threadHeader.subscribe(() => {
     versions.push(window.CodexPlusHost.adapters.threadHeader.snapshot());
+  });
+  const unsubscribeContext = window.CodexPlusHost.adapters.context.subscribe(() => {
+    contextVersions.push(window.CodexPlusHost.adapters.context.snapshot());
   });
 
   window.CodexPlusHost.adapters.context.bindActive({ cwd: "/native", threadId: "native-thread" });
@@ -566,5 +640,7 @@ test("thread header reacts to canonical native and virtual context for title and
   window.CodexPlusHost.adapters.context.clear("cpx-aharness-run:one");
   assert.equal(window.CodexPlusHost.adapters.threadHeader.title("Native title"), "Native title");
   assert.deepEqual(versions, [1, 2, 3, 4]);
+  assert.deepEqual(contextVersions, [1, 2, 3]);
   unsubscribe();
+  unsubscribeContext();
 });

@@ -530,6 +530,7 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /liveDiagramCount/);
   assert.match(defaultExpression, /Project sidebar child rows or list containers are not styled like their project rows/);
   assert.match(defaultExpression, /Mounted composer does not carry the selected project accent/);
+  assert.match(defaultExpression, /Mounted composer lost its rounded shape/);
   assert.match(defaultExpression, /waitForMountedProjectComposer/);
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
@@ -678,11 +679,29 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   assert.match(activation, /target\.title/);
   assert.match(activation, /data-app-action-sidebar-thread-title/);
   assert.match(activation, /target\.path/);
+  assert.match(activation, /data-app-action-sidebar-project-row.*aria-expanded='false'/);
+  assert.match(activation, /aria-label='Expand project'/);
+  assert.match(activation, /activateTargetWithKeyboard/);
+  assert.match(activation, /Input\.dispatchKeyEvent/);
+  assert.match(activation, /key: "Enter"/);
   assert.doesNotMatch(activation, /target\.rowText/);
   assert.doesNotMatch(activation, /replace\(\/\\s\+\/g/);
   assert.match(activation, /JSON\.stringify\(\{ target, active \}\)/);
   assert.doesNotMatch(activation, /active\.chipPath === target\.path/);
   assert.doesNotMatch(activation, /getAttribute\("data-codex-plus-project-path"\) ===/);
+});
+
+test("default audit closes the isolated Aharness route without reloading fixture state", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("if (splitAharnessProbe) {");
+  const end = source.indexOf("const live = await withAuditProgress", start);
+  const isolatedProbe = source.slice(start, end);
+
+  assert.match(isolatedProbe, /Closing isolated Aharness route/);
+  assert.match(isolatedProbe, /closeVirtualRoute\(cdp\)/);
+  assert.match(isolatedProbe, /activateFixture\(cdp, \{ nested: true \}\)/);
+  assert.doesNotMatch(isolatedProbe, /reloadRenderer/);
+  assert.doesNotMatch(isolatedProbe, /seedFixtureBrowserState/);
 });
 
 test("aharness artifact audit recognizes both native app-shell tab layouts", () => {
@@ -696,6 +715,17 @@ test("aharness artifact audit recognizes both native app-shell tab layouts", () 
   assert.match(artifactAudit, /data-app-shell-tab-panel-controller/);
   assert.match(artifactAudit, /artifactCommonShell/);
   assert.match(artifactAudit, /new Set/);
+});
+
+test("aharness sidebar placement uses document order instead of scroll-relative coordinates", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("const harnessSidebar = document.querySelector");
+  const end = source.indexOf("const waitForHarnessProjectColor", start);
+  const placementAudit = source.slice(start, end);
+
+  assert.match(placementAudit, /compareDocumentPosition/);
+  assert.match(placementAudit, /Node\.DOCUMENT_POSITION_FOLLOWING/);
+  assert.doesNotMatch(placementAudit, /harnessRect\.top/);
 });
 
 test("project selector shortcut verifier fails with fuzzy DOM details diagnostic", async () => {
@@ -2318,11 +2348,13 @@ test("launch-dev directly launches the ChatGPT executable with isolated identity
   });
 
   const calls = [];
+  const startupLogPath = path.join(tmpDir, "startup", "codex-plus.log");
   const launched = launchDevApp({
     targetApp,
     devHome: path.join(tmpDir, "dev-home"),
     electronUserDataPath: path.join(tmpDir, "electron-user-data"),
     remoteDebuggingPort: 9234,
+    startupLogPath,
     platform: "darwin",
     markDevRuntimeConfigImpl: () => ({ patchedAsarSha: "dev-sha" }),
     markDevBundleIdentityImpl: () => result.instanceIdentity,
@@ -2340,6 +2372,11 @@ test("launch-dev directly launches the ChatGPT executable with isolated identity
     "--remote-debugging-port=9234",
   ]);
   assert.deepEqual(calls[0].args, launched.args);
+  assert.deepEqual(calls[0].options.stdio.slice(0, 1), ["ignore"]);
+  assert.equal(Number.isInteger(calls[0].options.stdio[1]), true);
+  assert.equal(calls[0].options.stdio[1], calls[0].options.stdio[2]);
+  assert.equal(launched.startupLogPath, startupLogPath);
+  assert.equal(fs.existsSync(startupLogPath), true);
 
 });
 
