@@ -627,12 +627,16 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   assert.match(expressions[0], /startsWith\(\"New task\"\)/);
   assert.doesNotMatch(expressions[0], /\.click/);
   assert.match(expressions[3], /const currentMenu = \(\) =>/);
+  assert.match(expressions[3], /candidates\.find\(\(element\) => visible\(element\) && element\.contains\(input\)\)/);
+  assert.match(expressions[3], /input\[placeholder='Search projects'\], textarea\[placeholder='Search projects'\]/);
+  assert.match(expressions[3], /HTMLTextAreaElement\.prototype/);
   assert.match(expressions[3], /const menu = currentMenu\(\);/);
   assert.match(expressions[3], /const selectable = Array\.from\(menu\.querySelectorAll\("\[role='menuitem'\], \[role='option'\], button, a"\)\)\.filter\(visible\)/);
   assert.match(expressions[3], /const labelRoots = selectable\.length > 0/);
   assert.deepEqual(sent.map((call) => call.method), [
     "Input.dispatchMouseEvent",
     "Input.dispatchMouseEvent",
+    "Page.bringToFront",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
@@ -640,21 +644,21 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
   ]);
-  assert.deepEqual(sent[2].params, {
+  assert.deepEqual(sent[3].params, {
     type: "keyDown",
     key: "Escape",
     code: "Escape",
     windowsVirtualKeyCode: 27,
     nativeVirtualKeyCode: 53,
   });
-  assert.deepEqual(sent[3].params, {
+  assert.deepEqual(sent[4].params, {
     type: "keyUp",
     key: "Escape",
     code: "Escape",
     windowsVirtualKeyCode: 27,
     nativeVirtualKeyCode: 53,
   });
-  assert.deepEqual(sent[4].params, {
+  assert.deepEqual(sent[5].params, {
     type: "keyDown",
     key: ".",
     code: "Period",
@@ -662,7 +666,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     nativeVirtualKeyCode: 47,
     modifiers: 4,
   });
-  assert.deepEqual(sent[5].params, {
+  assert.deepEqual(sent[6].params, {
     type: "keyUp",
     key: ".",
     code: "Period",
@@ -763,7 +767,7 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
   assert.equal(result.fuzzyDom.suitableProjectFound, false);
   assert.match(result.message, /Project selector fuzzy filtering did not preserve/);
   assert.equal(JSON.stringify(result).includes("/"), false);
-  assert.deepEqual(sent.map((call) => call.params.key), ["Escape", "Escape", ".", ".", "Escape", "Escape"]);
+  assert.deepEqual(sent.filter((call) => call.method === "Input.dispatchKeyEvent").map((call) => call.params.key), ["Escape", "Escape", ".", ".", "Escape", "Escape"]);
 });
 
 test("sidebar blur command palette verifier uses trusted Enter key activation", async () => {
@@ -1957,8 +1961,9 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
         CdpSession: FakeCdpSession,
         reloadAuditRenderer: async () => ({ ok: true, readyState: "complete" }),
         closeActiveVirtualRoute: async () => ({ ok: true, activeRouteId: "", routeContext: null, hash: "" }),
-        waitForLiveRuntime() {
+        waitForLiveRuntime(_cdp, timeoutMs) {
           calls.push("runtime");
+          calls.push(["runtimeTimeoutMs", timeoutMs]);
           return Promise.resolve({ registered: 10, started: 10 });
         },
         waitForAppShellMounted(_cdp, timeoutMs) {
@@ -2014,6 +2019,7 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
     ["rendererTimeout", undefined],
   ]);
   assert.deepEqual(calls.find((call) => call[0] === "shellTimeoutMs"), ["shellTimeoutMs", 180000]);
+  assert.deepEqual(calls.find((call) => call[0] === "runtimeTimeoutMs"), ["runtimeTimeoutMs", 180000]);
   assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
     runtimePluginsDisabled: ["projectColors"],
   });
