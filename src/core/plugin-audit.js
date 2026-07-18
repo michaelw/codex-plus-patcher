@@ -320,6 +320,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
       await wait(100);
     }
   }
+  await cdp.send("Page.bringToFront");
   await cdp.send("Input.dispatchKeyEvent", {
     type: "keyDown",
     key: "Escape",
@@ -355,7 +356,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
   let status = null;
   while (Date.now() < deadline) {
     status = await cdp.evaluate(`(() => {
-      const searchInput = document.querySelector("input[placeholder='Search projects']");
+      const searchInput = document.querySelector("input[placeholder='Search projects'], textarea[placeholder='Search projects']");
       const menuCount = document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']").length;
       return {
         triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
@@ -374,9 +375,14 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
         };
         const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-        const currentMenu = () => Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"))
-          .find(visible) || document.body;
-        const input = document.querySelector("input[placeholder='Search projects']");
+        const input = document.querySelector("input[placeholder='Search projects'], textarea[placeholder='Search projects']") ||
+          (document.activeElement?.getAttribute?.("placeholder") === "Search projects" ? document.activeElement : null);
+        const currentMenu = () => {
+          const candidates = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"));
+          return candidates.find((element) => visible(element) && element.contains(input)) ||
+            candidates.find(visible) ||
+            document.body;
+        };
         const collectLabels = () => {
           const menu = currentMenu();
           const labels = [];
@@ -425,7 +431,8 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           });
           return;
         }
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        const valuePrototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
         setter?.call(input, query);
         input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
         const startedAt = Date.now();
@@ -4438,6 +4445,7 @@ async function runAudit(args, {
     );
     port = preflight.port;
     const appShellTimeoutMs = appShellTimeoutForSource(args.source);
+    const runtimeTimeoutMs = appShellTimeoutMs;
     if (args.apply) {
       applyResult = await withAuditProgress(
         progress,
@@ -4552,7 +4560,7 @@ async function runAudit(args, {
       progress,
       "Waiting for Codex Plus runtime",
       "Runtime ready",
-      () => waitRuntime(cdp),
+      () => waitRuntime(cdp, runtimeTimeoutMs),
     );
     appShellStatus = await withAuditProgress(
       progress,
