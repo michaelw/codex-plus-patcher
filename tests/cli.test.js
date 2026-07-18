@@ -626,6 +626,10 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   assert.match(expressions[0], /New chat|New task/);
   assert.match(expressions[0], /startsWith\(\"New task\"\)/);
   assert.doesNotMatch(expressions[0], /\.click/);
+  assert.match(expressions[3], /const currentMenu = \(\) =>/);
+  assert.match(expressions[3], /const menu = currentMenu\(\);/);
+  assert.match(expressions[3], /const selectable = Array\.from\(menu\.querySelectorAll\("\[role='menuitem'\], \[role='option'\], button, a"\)\)\.filter\(visible\)/);
+  assert.match(expressions[3], /const labelRoots = selectable\.length > 0/);
   assert.deepEqual(sent.map((call) => call.method), [
     "Input.dispatchMouseEvent",
     "Input.dispatchMouseEvent",
@@ -1605,6 +1609,8 @@ test("runAudit fails keep-open audits when the launched app exits after probes",
   assert.match(result.failures[0].message, /exited after probes/);
   assert.equal(result.cleanupResult.keptOpen, true);
   assert.equal(result.appStability.ok, false);
+  assert.equal(progressEvents.some(([status, text]) => status === "start" && text === "Checking kept-open audit app stability"), true);
+  assert.equal(progressEvents.some(([status, text]) => status === "fail" && text === "Checking kept-open audit app stability"), true);
   assert.deepEqual(progressEvents.at(-1), ["succeed", "Kept audit app open"]);
 });
 
@@ -1707,6 +1713,8 @@ test("running audit app process detection matches target and electron user data"
     "  123 /repo/work/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
     "  124 /repo/work/Codex Plus.app/Contents/Frameworks/Codex Helper.app/Contents/MacOS/Codex Helper --type=utility --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9234",
     "  125 /repo/work/codex-plus-dev-home/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+    "  126 /repo/work/Codex Plus.app/Contents/Frameworks/Codex Framework.framework/Helpers/browser_crashpad_handler --database=/repo/work/codex-plus-electron-user-data/Crashpad",
+    "  127 /repo/work/Codex Plus.app/Contents/Resources/codex app-server --analytics-default-enabled",
     "  456 /repo/work/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/tmp/other --remote-debugging-port=9235",
     "  789 /other/Codex Plus.app/Contents/MacOS/Codex --user-data-dir=/repo/work/codex-plus-electron-user-data --remote-debugging-port=9236",
   ].join("\n");
@@ -1734,6 +1742,17 @@ test("running audit app process detection matches target and electron user data"
     command: "/repo/work/codex-plus-dev-home/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
     remoteDebuggingPort: null,
   }]);
+
+  const cleanupProcesses = listRunningAuditApps({
+    targetApp: "/repo/work/Codex Plus.app",
+    devHome: "/repo/work/codex-plus-dev-home",
+    electronUserDataPath: "/repo/work/codex-plus-electron-user-data",
+    includeTargetProcesses: true,
+    execFileSync() {
+      return rows;
+    },
+  });
+  assert.deepEqual(cleanupProcesses.map(({ pid }) => pid), [123, 124, 125, 126, 127, 456]);
 });
 
 test("runAudit no-launch mode attaches to the requested port", async () => {
@@ -1998,6 +2017,8 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
   assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
     runtimePluginsDisabled: ["projectColors"],
   });
+  assert.equal(progressEvents.some(([, text]) => text === "Waiting for ChatGPT renderer 1/2 on port 9234"), true);
+  assert.equal(progressEvents.some(([, text]) => text === "Waiting before ChatGPT restart 1/2"), true);
   assert.equal(progressEvents.some(([, text]) => text === "Running plugin probes"), false);
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -2472,6 +2493,7 @@ test("audit cleanup stops matching app helpers for a direct launch", async () =>
         assert.equal(options.targetApp, "/repo/work/ChatGPT Plus.app");
         assert.equal(options.devHome, "/repo/work/dev-home");
         assert.equal(options.electronUserDataPath, "/repo/work/electron-user-data");
+        assert.equal(options.includeTargetProcesses, true);
         return [{ pid: 9753 }];
       },
       kill(pid, signal) {
@@ -2895,6 +2917,40 @@ test("audit jsonl progress emits active status and stops its timer", () => {
   assert.equal(writes[1].phase, "startup");
   assert.equal(writes[1].plugin, "audit");
   assert.equal(timers.size, 0);
+});
+
+test("audit jsonl progress reaches a supervising process steadily before exit", async () => {
+  const modulePath = require.resolve("../src/core/plugin-audit");
+  const script = [
+    `const { createJsonlProgress } = require(${JSON.stringify(modulePath)});`,
+    "const progress = createJsonlProgress({ intervalMs: 40 });",
+    "progress({ status: 'start', label: 'Long phase', phase: 'copy', version: '26.715.31251', patchSet: 'chatgpt-26.715.31251-5538', sourceIndex: 1, sourceTotal: 1 });",
+    "setTimeout(() => { progress.succeed('Long phase complete'); progress.close(); }, 500);",
+  ].join("");
+  const child = childProcess.spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+  const records = [];
+  let pending = "";
+  let exitedAt = null;
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    pending += chunk;
+    const lines = pending.split("\n");
+    pending = lines.pop();
+    for (const line of lines) records.push({ at: Date.now(), record: JSON.parse(line) });
+  });
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      exitedAt = Date.now();
+      resolve(code);
+    });
+  });
+
+  assert.equal(exitCode, 0);
+  assert.ok(records.length >= 5, `expected start, steady heartbeats, and completion; got ${records.length}`);
+  assert.ok(records[0].at < exitedAt, "first progress record must arrive before process exit");
+  assert.equal(records[0].record.version, "26.715.31251");
+  assert.equal(records.filter(({ record }) => record.status === "progress").length >= 3, true);
 });
 
 test("audit output supports detailed json in human and jsonl modes", () => {

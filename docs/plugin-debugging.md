@@ -169,11 +169,17 @@ ordered:
 Use these commands for steps 3 through 6:
 
 ```sh
-npm run regression:sources -- --preflight-only --newest 1 --jsonl
-npm run regression:sources -- --newest 1 --jsonl
-npm run regression:sources -- --preflight-only
-npm run regression:sources -- --auto-clean
+rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl
+rtk node scripts/regression-sources.js --newest 1 --jsonl
+rtk node scripts/regression-sources.js --preflight-only --jsonl
+rtk node scripts/regression-sources.js --auto-clean --jsonl
 ```
+
+These direct Node commands are required for agent supervision under RTK because
+the npm route buffers its child output. Continue reading the JSONL stream while
+the command runs; active phases report at least every two seconds. Interrupting
+the command stops the sweep before the next source and cleans up the active
+audit application.
 
 Restart from focused tests after any implementation change. For an older
 failure, compare its owned transform and file mapping with the Git diff before

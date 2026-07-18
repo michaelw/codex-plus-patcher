@@ -1,5 +1,6 @@
 const { replaceOnce } = require("./replace");
-const { patchSetOwnsTransformVariant } = require("./transform-ownership");
+// Reuse is declared separately from the exact owner recorded by each wrapper.
+const { patchSetUsesTransformVariant: patchSetOwnsTransformVariant } = require("./transform-ownership");
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, context = {}) {

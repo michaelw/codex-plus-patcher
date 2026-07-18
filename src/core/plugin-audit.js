@@ -374,14 +374,18 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
         };
         const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-        const menu = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"))
+        const currentMenu = () => Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"))
           .find(visible) || document.body;
         const input = document.querySelector("input[placeholder='Search projects']");
         const collectLabels = () => {
+          const menu = currentMenu();
           const labels = [];
           const seen = new Set();
-          for (const element of Array.from(menu.querySelectorAll("[role='menuitem'], [role='option'], button, a, div, span"))) {
-            if (!visible(element)) continue;
+          const selectable = Array.from(menu.querySelectorAll("[role='menuitem'], [role='option'], button, a")).filter(visible);
+          const labelRoots = selectable.length > 0
+            ? selectable
+            : Array.from(menu.querySelectorAll("div, span")).filter(visible);
+          for (const element of labelRoots) {
             for (const line of String(element.innerText || element.textContent || "").split(/\\n/)) {
               const label = normalize(line);
               if (
@@ -409,6 +413,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
         const query = queryFor(selectedLabel);
         if (!input || !selectedLabel || !query) {
+          const menu = currentMenu();
           resolve({
             codexVersion: window.CodexPlus?.config?.codexVersion || null,
             suitableProjectFound: false,
@@ -426,6 +431,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         const startedAt = Date.now();
         const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
         const finishWhenReady = () => {
+          const menu = currentMenu();
           const resultLabels = collectLabels();
           const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
           const selectedProjectStillVisible = resultLabels.some((label) => label.includes(selectedLabel));
@@ -1188,6 +1194,7 @@ function listRunningAuditApps({
   targetApp = DEFAULT_TARGET,
   devHome = null,
   electronUserDataPath = DEFAULT_ELECTRON_USER_DATA,
+  includeTargetProcesses = false,
   execFileSync = childProcess.execFileSync,
 } = {}) {
   let targetBinary;
@@ -1214,7 +1221,8 @@ function listRunningAuditApps({
       const match = line.match(/^\s*(\d+)\s+(.*)$/);
       if (!match) return null;
       const command = match[2];
-      const targetProcess = (command.startsWith(targetBinary) || command.startsWith(targetPrefix)) && command.includes(userDataArg);
+      const targetProcess = (command.startsWith(targetBinary) || command.startsWith(targetPrefix)) &&
+        (includeTargetProcesses || command.includes(userDataArg));
       const devHomeProcess = devHomePrefix != null && command.startsWith(devHomePrefix);
       if (!targetProcess && !devHomeProcess) return null;
       const portMatch = command.match(/--remote-debugging-port=(\d+)/);
@@ -1697,6 +1705,35 @@ function writeJsonl(stream, record) {
   stream.write(`${JSON.stringify(record)}\n`);
 }
 
+function createJsonlHeartbeatProcess({ intervalMs }) {
+  const script = `let active=null;process.on("message",message=>{if(message.type==="active")active=message.payload;else if(message.type==="clear")active=null;else if(message.type==="close")process.exit(0)});process.on("disconnect",()=>process.exit(0));setInterval(()=>{if(!active)return;let{startedAt,...record}=active;process.stdout.write(JSON.stringify({...record,time:new Date().toISOString(),elapsedMs:Math.max(0,Date.now()-startedAt)})+"\\n")},${JSON.stringify(intervalMs)});`;
+  const child = childProcess.spawn(process.execPath, ["-e", script], {
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+  });
+  child.unref();
+  child.channel?.unref?.();
+  const send = (message) => {
+    if (!child.connected) return;
+    try {
+      child.send(message, () => {});
+    } catch (error) {
+      if (error.code !== "ERR_IPC_CHANNEL_CLOSED") throw error;
+    }
+  };
+  return {
+    start(payload) {
+      send({ type: "active", payload });
+    },
+    clear() {
+      send({ type: "clear" });
+    },
+    close() {
+      send({ type: "close" });
+      child.disconnect?.();
+    },
+  };
+}
+
 function writeAuditOutput(result, args, { stream = process.stdout, now = () => new Date() } = {}) {
   if (args.jsonl) {
     if (args.json) {
@@ -1729,6 +1766,7 @@ function createJsonlProgress({
 } = {}) {
   let active = null;
   let timer = null;
+  let heartbeatProcess = null;
   const emit = (status, message, extra = {}) => writeJsonl(stream, jsonlRecord("progress", {
     status,
     message,
@@ -1738,9 +1776,22 @@ function createJsonlProgress({
   const stopTimer = () => {
     if (timer != null) clearIntervalImpl(timer);
     timer = null;
+    heartbeatProcess?.clear();
   };
   const startTimer = () => {
     stopTimer();
+    if (stream === process.stdout && setIntervalImpl === setInterval) {
+      heartbeatProcess ||= createJsonlHeartbeatProcess({ intervalMs });
+      heartbeatProcess.start({
+        type: "progress",
+        message: active.message,
+        ...context,
+        ...active.extra,
+        status: "progress",
+        startedAt: active.startedAt.getTime(),
+      });
+      return;
+    }
     timer = setIntervalImpl(() => {
       if (!active) return;
       emit("progress", active.message, {
@@ -1792,6 +1843,8 @@ function createJsonlProgress({
   reporter.close = () => {
     stopTimer();
     active = null;
+    heartbeatProcess?.close();
+    heartbeatProcess = null;
   };
   reporter.machineReadable = true;
   reporter.suppressCommandOutput = true;
@@ -2202,6 +2255,7 @@ async function cleanupLaunchedAuditApp(launchResult, {
       targetApp: launchResult.targetApp,
       devHome: launchResult.devHome,
       electronUserDataPath: launchResult.electronUserDataPath,
+      includeTargetProcesses: true,
     });
     for (const app of apps) {
       try {
@@ -4443,7 +4497,12 @@ async function runAudit(args, {
       if (launchResult.instanceIdentity?.bundleIdentifier?.startsWith("com.openai.chatgpt-plus.")) {
         for (let retry = 1; retry <= 2 && !target; retry += 1) {
           try {
-            target = await waitRenderer(port, 30000);
+            target = await withAuditProgress(
+              progress,
+              `Waiting for ChatGPT renderer ${retry}/2 on port ${port}`,
+              `Found ChatGPT renderer ${retry}/2 on port ${port}`,
+              () => waitRenderer(port, 30000),
+            );
           } catch {
             await withAuditProgress(
               progress,
@@ -4451,7 +4510,12 @@ async function runAudit(args, {
               `Cleaned failed ChatGPT start ${retry}/2 on port ${port}`,
               () => cleanupApp(launchResult, { keepOpen: false }),
             );
-            await waitForLaunchRetry(2000);
+            await withAuditProgress(
+              progress,
+              `Waiting before ChatGPT restart ${retry}/2`,
+              `Ready for ChatGPT restart ${retry}/2`,
+              () => waitForLaunchRetry(2000),
+            );
             launchResult = await withAuditProgress(
               progress,
               `Retrying ChatGPT start ${retry}/2 on port ${port}`,
@@ -4955,9 +5019,14 @@ async function runAudit(args, {
       if (result && args.keepOpen && launchResult) {
         let stability;
         try {
-          stability = await checkStability(launchResult, {
-            electronUserDataPath: args.electronUserDataPath,
-          });
+          stability = await withAuditCheckProgress(
+            progress,
+            "Checking kept-open audit app stability",
+            "Kept-open audit app remained stable",
+            () => checkStability(launchResult, {
+              electronUserDataPath: args.electronUserDataPath,
+            }),
+          );
         } catch (error) {
           stability = {
             checked: true,

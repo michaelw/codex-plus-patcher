@@ -26,15 +26,20 @@ This repo ships patch source only. Never commit `Codex.app`, generated
 - For version ports, use this order and restart at step 2 after any
   implementation change: (1) add the newest exact patch and explicitly owned
   transform variants; (2) run focused transform tests; (3) run
-  `npm run regression:sources -- --preflight-only --newest 1 --jsonl`; (4) run
-  `npm run regression:sources -- --newest 1 --jsonl` and inspect every newest
-  screenshot; (5) run `npm run regression:sources -- --preflight-only`; (6)
-  run `npm run regression:sources -- --auto-clean` and inspect every version's
+  `rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl`; (4) run
+  `rtk node scripts/regression-sources.js --newest 1 --jsonl` and inspect every newest
+  screenshot; (5) run `rtk node scripts/regression-sources.js --preflight-only --jsonl`; (6)
+  run `rtk node scripts/regression-sources.js --auto-clean --jsonl` and inspect every version's
   contract. If an old version fails, inspect the Git diff and transform
   ownership before touching its hook. When its owned code is unchanged, first
   suspect preflight, fixture, or audit changes. Source apps stay under the main
   checkout's `work/sources/`; generated output stays under the current
   worktree's `work/`.
+- Agent-supervised regression commands must stream a steady flow of JSONL
+  updates. Invoke the script directly through `rtk node`; `rtk npm run` buffers
+  child output and is not suitable for long supervised runs. Active phases
+  report at least every two seconds. Keep polling the running session so a
+  failure can be investigated or the run can be interrupted promptly.
 - Automated plugin audits use generated Codex home fixtures by default. Use
   `--use-live-source-home` or `--source-home <path>` only for manual live-state
   debugging, not as the normal regression path.

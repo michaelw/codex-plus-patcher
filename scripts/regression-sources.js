@@ -10,6 +10,7 @@ const {
   createJsonlProgress,
   findFreePort,
   jsonlRecord,
+  listRunningAuditApps,
   runAudit,
   writeJsonl,
 } = require("../src/core/plugin-audit");
@@ -303,6 +304,8 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     patchSet: source.patchSet,
     sourceApp: source.sourceApp,
     targetApp: paths.targetApp,
+    sourceIndex: index,
+    sourceTotal: total,
   };
   const label = `[${index}/${total} ${source.version}] `;
   const sourceProgress = prefixProgress(progress, label, sourceContext);
@@ -389,9 +392,12 @@ function runSourcePreflight(source, { operations = {}, progress = null, index = 
     bundleVersion: source.bundleVersion,
     patchSet: source.patchSet,
     sourceApp: source.sourceApp,
+    sourceIndex: index,
+    sourceTotal: total,
   });
   if (!source.supported) {
     sourceProgress?.succeed?.("Skipped unsupported source");
+    sourceProgress?.close?.();
     return { ...source, ok: null, skipped: true, reason: source.unsupportedReason };
   }
 
@@ -419,6 +425,8 @@ function runSourcePreflight(source, { operations = {}, progress = null, index = 
       ok: false,
       failures: [{ plugin: "preflight", message: error.message || String(error) }],
     };
+  } finally {
+    sourceProgress?.close?.();
   }
 }
 
@@ -450,7 +458,18 @@ async function runRegressionSources(args, operations = {}) {
     : operations.progress;
 
   if (args.clean) {
-    const cleaned = cleanRegressionSources({ regressionDir, sources, filter: args.filter, newest: args.newest, operations });
+    progress?.start?.("Cleaning generated regression sources", { phase: "cleanup" });
+    let cleaned;
+    try {
+      cleaned = cleanRegressionSources({ regressionDir, sources, filter: args.filter, newest: args.newest, operations });
+      const noun = cleaned.length === 1 ? "source" : "sources";
+      progress?.succeed?.(`Cleaned ${cleaned.length} generated regression ${noun}`, { phase: "cleanup" });
+    } catch (error) {
+      progress?.fail?.("Cleaning generated regression sources", { phase: "cleanup" });
+      throw error;
+    } finally {
+      progress?.close?.();
+    }
     return {
       ok: true,
       cleanOnly: true,
@@ -474,6 +493,7 @@ async function runRegressionSources(args, operations = {}) {
   if (args.preflightOnly) {
     const results = [];
     for (let index = 0; index < sources.length; index += 1) {
+      if (operations.signal?.aborted) break;
       const result = runSourcePreflight(sources[index], {
         operations,
         progress,
@@ -486,7 +506,8 @@ async function runRegressionSources(args, operations = {}) {
     const runnableResults = results.filter((result) => result.supported);
     const failedResults = runnableResults.filter((result) => !result.ok);
     const summary = {
-      ok: runnableResults.length > 0 && failedResults.length === 0,
+      ok: !operations.signal?.aborted && runnableResults.length > 0 && failedResults.length === 0,
+      interrupted: Boolean(operations.signal?.aborted),
       preflightOnly: true,
       sourcesDir,
       results,
@@ -499,21 +520,36 @@ async function runRegressionSources(args, operations = {}) {
 
   const results = [];
   for (let index = 0; index < sources.length; index += 1) {
-    const result = await runSourceRegression(sources[index], {
-      args: runArgs,
-      regressionDir,
-      operations,
-      progress,
+    if (operations.signal?.aborted) break;
+    const activeSource = {
+      source: sources[index],
+      paths: pathsForSource(regressionDir, sources[index]),
       index: index + 1,
       total: sources.length,
-    });
+    };
+    operations.onSourceStart?.(activeSource);
+    let result;
+    try {
+      result = await runSourceRegression(sources[index], {
+        args: runArgs,
+        regressionDir,
+        operations,
+        progress,
+        index: index + 1,
+        total: sources.length,
+      });
+    } finally {
+      operations.onSourceEnd?.(activeSource);
+    }
     results.push(result);
+    if (operations.signal?.aborted) break;
     if (result.supported && result.ok === false) break;
   }
   const runnableResults = results.filter((result) => result.supported);
   const failedResults = runnableResults.filter((result) => !result.ok);
   return {
-    ok: runnableResults.length > 0 && failedResults.length === 0,
+    ok: !operations.signal?.aborted && runnableResults.length > 0 && failedResults.length === 0,
+    interrupted: Boolean(operations.signal?.aborted),
     cleanOnly: false,
     sourcesDir,
     regressionDir,
@@ -579,13 +615,68 @@ function formatHumanResult(result) {
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
 }
 
+function terminateActiveSource(activeSource, {
+  listRunningApps = listRunningAuditApps,
+  kill = process.kill,
+} = {}) {
+  if (!activeSource?.paths) return [];
+  const apps = listRunningApps({
+    targetApp: activeSource.paths.targetApp,
+    devHome: activeSource.paths.devHome,
+    electronUserDataPath: activeSource.paths.electronUserDataPath,
+  });
+  for (const app of apps) {
+    try {
+      kill(-app.pid, "SIGTERM");
+    } catch (groupError) {
+      try {
+        kill(app.pid, "SIGTERM");
+      } catch (processError) {
+        if (processError.code !== "ESRCH" && groupError.code !== "ESRCH") throw processError;
+      }
+    }
+  }
+  return apps.map((app) => app.pid);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(helpText());
     return;
   }
-  const result = await runRegressionSources(args);
+  const controller = new AbortController();
+  let activeSource = null;
+  const handleInterrupt = () => {
+    if (controller.signal.aborted) return;
+    controller.abort();
+    const terminatedPids = terminateActiveSource(activeSource);
+    const context = activeSource?.source ? {
+      version: activeSource.source.version,
+      bundleVersion: activeSource.source.bundleVersion,
+      patchSet: activeSource.source.patchSet,
+      sourceIndex: activeSource.index,
+      sourceTotal: activeSource.total,
+    } : {};
+    if (args.jsonl) writeJsonl(process.stdout, jsonlRecord("interrupted", { ...context, terminatedPids }));
+    else process.stderr.write("Regression sweep interrupted; cleaning up the active source.\n");
+    process.exitCode = 130;
+  };
+  process.on("SIGINT", handleInterrupt);
+  let result;
+  try {
+    result = await runRegressionSources(args, {
+      signal: controller.signal,
+      onSourceStart(source) {
+        activeSource = source;
+      },
+      onSourceEnd(source) {
+        if (activeSource === source) activeSource = null;
+      },
+    });
+  } finally {
+    process.off("SIGINT", handleInterrupt);
+  }
   if (args.jsonl) {
     if (args.json) {
       writeJsonl(process.stdout, jsonlRecord("result", { result }));
@@ -603,7 +694,8 @@ async function main() {
   else {
     process.stdout.write(formatHumanResult(result));
   }
-  if (!result.ok) process.exitCode = 1;
+  if (result.interrupted) process.exitCode = 130;
+  else if (!result.ok) process.exitCode = 1;
 }
 
 if (require.main === module) {
@@ -640,4 +732,5 @@ module.exports = {
   runSourceRegression,
   runSourcePreflight,
   sourceMatchesFilter,
+  terminateActiveSource,
 };

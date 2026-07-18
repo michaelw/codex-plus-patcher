@@ -181,6 +181,15 @@ npm run regression:sources -- --preflight-only --newest 1 --jsonl
 npm run regression:sources -- --preflight-only
 ```
 
+When an agent supervises the run through RTK, invoke the Node entrypoint
+directly so each JSONL record is delivered immediately instead of being held
+until npm exits:
+
+```sh
+rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl
+rtk node scripts/regression-sources.js --preflight-only --jsonl
+```
+
 Preflight verifies the exact source identity, selected patch set, transform
 ownership and order, exact anchor replacements, final JavaScript syntax,
 runtime assets, and the host-adapter manifest entirely in memory. It writes a
@@ -205,10 +214,10 @@ For new version ports, use this complete proof order:
 
 ```sh
 node --test --test-name-pattern='<focused transform>' tests/patch-selection.test.js
-npm run regression:sources -- --preflight-only --newest 1 --jsonl
-npm run regression:sources -- --newest 1 --jsonl
-npm run regression:sources -- --preflight-only
-npm run regression:sources -- --auto-clean
+rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl
+rtk node scripts/regression-sources.js --newest 1 --jsonl
+rtk node scripts/regression-sources.js --preflight-only --jsonl
+rtk node scripts/regression-sources.js --auto-clean --jsonl
 ```
 
 Inspect the newest default visual contract before starting either all-version
@@ -266,6 +275,8 @@ regressions that have broken in real ports:
 - Use `--jsonl` for agent-supervised long audits or regression sweeps. Stdout is
   JSONL only, and active phases emit low-noise status at least every two seconds
   with elapsed time and current version, patch, or plugin context when known.
+- Read the stream throughout the run. `SIGINT` records the interruption,
+  terminates the active audit application, and stops before the next source.
 - Add `--json` for the detailed final result. By itself it follows human
   progress with a JSON document; with `--jsonl`, the last line is a detailed
   JSONL `result` record. This includes each failing audit probe's detailed
