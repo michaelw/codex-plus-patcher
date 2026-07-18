@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.19.0...v0.20.0) (2026-07-17)
+
+
+### Features
+
+* add all-version source preflight ([04e05bc](https://github.com/michaelw/codex-plus-patcher/commit/04e05bcec3fdd5ff0299e77418d47513c366e099))
+
 ## [0.19.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.18.0...v0.19.0) (2026-07-16)
 
 
