@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.20.0...v0.21.0) (2026-07-18)
+
+
+### Features
+
+* support ChatGPT 26.715.31251 with streaming regression proof ([49b3de3](https://github.com/michaelw/codex-plus-patcher/commit/49b3de3e58211e33eae8ca6ca3ec0ff55131ec9d))
+
 ## [0.20.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.19.0...v0.20.0) (2026-07-17)
 
 
