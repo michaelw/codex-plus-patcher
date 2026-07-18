@@ -15,6 +15,7 @@ const {
   parseArgs,
   pathsForSource,
   runRegressionSources,
+  terminateActiveSource,
 } = require("../scripts/regression-sources");
 
 async function withTempDir(callback) {
@@ -78,6 +79,76 @@ test("regression sources parses options and rejects unsafe combinations", () => 
   const detailedJsonl = parseArgs(["--json", "--jsonl"]);
   assert.equal(detailedJsonl.json, true);
   assert.equal(detailedJsonl.jsonl, true);
+});
+
+test("regression sweep stops before the next source when interrupted", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "2");
+    createSourceApp(sourcesDir, "1");
+    const controller = new AbortController();
+    const audited = [];
+
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: true,
+        keepOpen: false,
+        newest: null,
+        noProgress: false,
+        preflightOnly: false,
+        visualContract: false,
+        artifactDir: null,
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+        useLiveSourceHome: false,
+      },
+      {
+        signal: controller.signal,
+        getAppIdentity(app) {
+          const version = path.basename(path.dirname(app));
+          return identity(version, version, `sha-${version}`);
+        },
+        patchSets: [patchSet("2", "2", "sha-2"), patchSet("1", "1", "sha-1")],
+        progress: null,
+        async runAudit(args) {
+          audited.push(args.source);
+          controller.abort();
+          return { ok: true, failures: [] };
+        },
+      },
+    );
+
+    assert.equal(result.interrupted, true);
+    assert.equal(audited.length, 1);
+  });
+});
+
+test("interrupt cleanup terminates every process for the active source", () => {
+  const killed = [];
+  const activeSource = {
+    paths: {
+      targetApp: "/tmp/regression/ChatGPT Plus.app",
+      devHome: "/tmp/regression/codex-home",
+      electronUserDataPath: "/tmp/regression/electron-user-data",
+    },
+  };
+  const pids = terminateActiveSource(activeSource, {
+    listRunningApps(options) {
+      assert.equal(options.targetApp, activeSource.paths.targetApp);
+      return [{ pid: 123 }, { pid: 456 }];
+    },
+    kill(pid, signal) {
+      killed.push([pid, signal]);
+    },
+  });
+
+  assert.deepEqual(pids, [123, 456]);
+  assert.deepEqual(killed, [[-123, "SIGTERM"], [-456, "SIGTERM"]]);
 });
 
 test("preflight-only validates sources without creating or launching a target app", async () => {
@@ -599,6 +670,7 @@ test("regression sources cleanup removes generated dirs only and supports filter
     fs.mkdirSync(keepDir, { recursive: true });
     fs.mkdirSync(cleanDir, { recursive: true });
     createSourceApp(sourcesDir, "26.623.61825");
+    const progressEvents = [];
 
     const result = await runRegressionSources(
       {
@@ -615,6 +687,11 @@ test("regression sources cleanup removes generated dirs only and supports filter
       },
       {
         cwd: tmpDir,
+        progress: {
+          start(message) { progressEvents.push(["start", message]); },
+          succeed(message) { progressEvents.push(["succeed", message]); },
+          close() { progressEvents.push(["close"]); },
+        },
         getAppIdentity: () => identity("26.623.61825", "4548", "sha-b"),
         patchSets: [patchSet("26.623.61825", "4548", "sha-b", "codex-previous")],
       },
@@ -624,6 +701,11 @@ test("regression sources cleanup removes generated dirs only and supports filter
     assert.deepEqual(result.results.map((entry) => entry.version), ["26.623.61825"]);
     assert.equal(fs.existsSync(cleanDir), false);
     assert.equal(fs.existsSync(keepDir), true);
+    assert.deepEqual(progressEvents, [
+      ["start", "Cleaning generated regression sources"],
+      ["succeed", "Cleaned 1 generated regression source"],
+      ["close"],
+    ]);
     assert.throws(() => cleanRegressionDir(sourcesDir, regressionDir), /Refusing to clean outside regression directory/);
   });
 });

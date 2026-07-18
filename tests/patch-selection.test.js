@@ -18,7 +18,8 @@ const {
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
 const { replaceOnce } = require("../src/patches/lib/replace");
-const { patchSetOwnsTransformVariant } = require("../src/patches/lib/transform-ownership");
+const { makePatchSet } = require("../src/patches/lib/make-patch-set");
+const { patchSetOwnsTransformVariant, patchSetUsesTransformVariant } = require("../src/patches/lib/transform-ownership");
 const { patchHomeProjectDropdownProjectSelectorShortcut } = require("../src/patches/lib/project-selector-shortcut-patch");
 const {
   browserRuntimeFilesForConfig,
@@ -245,6 +246,27 @@ test("selectPatch chooses the exact version and asar hash", () => {
   );
 });
 
+test("patch sets defer runtime asset construction until selected", () => {
+  let calls = 0;
+  const patchSet = makePatchSet({
+    id: "test",
+    codexVersion: "1",
+    bundleVersion: "2",
+    asarSha256: "abc",
+    sourceFamily: "codex",
+    assetFiles() {
+      calls += 1;
+      return [["asset.js", "content"]];
+    },
+    patches: [],
+    runtimeConfig: {},
+  });
+  assert.equal(calls, 0);
+  assert.deepEqual(patchSet.assetFiles, [["asset.js", "content"]]);
+  assert.equal(patchSet.assetFiles, patchSet.assetFiles);
+  assert.equal(calls, 1);
+});
+
 test("selectPatch fails closed for unsupported Codex builds", () => {
   assert.throws(
     () => selectPatch([], { version: "1", bundleVersion: "2", asarSha256: "abc" }),
@@ -253,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.715.21425-5488");
-  assert.equal(chatgptPatchSets.length, 10);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.31251-5538");
+  assert.equal(chatgptPatchSets.length, 11);
 
   for (const identity of [
+    ["26.715.31251", "5538", "8142e0848fe49097c129a1093f80061c13de04c2893525ee7c751d26b5a7bd4f"],
     ["26.715.21425", "5488", "5db4c67090c0521fa717e83e46cb0a6175cb6c16fb89064223753bdf05cff0aa"],
     ["26.715.21316", "5484", "38e79e68f970a3a0d85bfe856911e1c5f24d8e267c4637565ca64f65da268ca1"],
     ["26.707.91948", "5440", "85b11c8d93d377f82161ba9b7b1af6f95b2a0490f01993dbc4d3a107dce77591"],
@@ -298,6 +321,11 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715.31251"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "chatgpt-26.715.31251"), false);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715.21425"), true);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21316-5484", "chatgpt-26.715"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "chatgpt-26.715"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "chatgpt-26.715.21425"), true);
@@ -332,6 +360,47 @@ test("21425 binds the moved review parser and current Mermaid asset", () => {
   assert.match(source, /"oe\.push\(\.\.\.globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)/);
   assert.match(source, /CPXCommandPaletteItem\(\{command:e,close:t\}\).*\(0,V4\.jsx\)\(aO,/);
   assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-BfTk2v0k.js");
+});
+
+test("31251 owns and applies its moved app shell, composer, command, and startup anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.31251-5538");
+  const byName = (name) => collectFileTransforms(newest).find(([, transform]) => transform.name === name)?.[1];
+  const appShell = byName("patchAppShell");
+  const composerBubble = byName("patchComposerBubbleColors");
+  const composerProject = byName("patchComposerProjectColors");
+  const commands = byName("patchCommandMenuRuntimeCommands");
+  const startup = byName("patchChatGptStartupAnnouncements");
+
+  const shell = appShell([
+    "function qN(){let e=(0,XN.c)(3),t,n;",
+    "children:[t,n,(0,ZN.jsx)(rr,{onClick:JN,children:(0,ZN.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join(""));
+  assert.match(shell, /CPXDiagnosticDetails\(\{jsx:ZN\.jsx,error:null\}\)/);
+
+  const bubble = composerBubble([
+    "function qk(e){let t=(0,Jk.c)(55),",
+    "p=(0,Yk.jsx)(`div`,{className:n,onDragEnter:r,",
+    "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
+    "A=(0,Yk.jsx)(Gy,{...p,className:C,",
+  ].join(""));
+  const composer = composerProject(`${bubble}Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.equal(composer.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(composer, /CPXOpenFile=CPXSP\.bindOpenFile/);
+
+  const commandText = commands([
+    "function o4(e){let t=(0,z4.c)(134),",
+    "!i&&c!=null&&oe.push(c),t[30]=U,",
+    "c=()=>{ph(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandText, /CPXCommandPaletteItem\(\{command:e,close:t\}\).*\(0,V4\.jsx\)\(nO,/);
+  assert.match(commandText, /bindNativeDispatch\(e=>\(ph\(e,`command_menu`\),!0\)\)/);
+
+  const startupText = startup("function SR({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ze.ChatGPT&&t!=null&&t!==vt.Agent&&t!==vt.Dev}");
+  assert.match(startupText, /function SR\([^)]*\)\{return false\}/);
+  assert.throws(
+    () => appShell("function qN(){let e=(0,XN.c)(3),t,n;", { patchSetId: "chatgpt-26.715.21425-5488" }),
+    /belongs to chatgpt-26\.715\.31251-5538/,
+  );
 });
 
 test("collects named patch queue transforms and plist changes", () => {
@@ -3054,6 +3123,7 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.31251-5538" ||
       patchSet.id === "chatgpt-26.715.21425-5488" ||
       patchSet.id === "chatgpt-26.715.21316-5484" ||
       patchSet.id === "chatgpt-26.707.31428-5059" ||
