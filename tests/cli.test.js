@@ -676,6 +676,37 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   });
 });
 
+test("project selector shortcut verifier retries the trusted shortcut while the menu stays closed", async () => {
+  const sent = [];
+  const evaluations = [
+    { triggerCount: 1, newTask: null },
+    { triggerCount: 1, menuCount: 0, opened: false, activePlaceholder: "" },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    {
+      suitableProjectFound: true,
+      queryLength: 3,
+      visibleResultCount: 1,
+      selectedProjectStillVisible: true,
+      noProjectsFoundVisible: false,
+      highlightCount: 1,
+    },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent" && call.params.key === ".").length, 4);
+});
+
 test("fixture activation verifies the canonical active cwd and retries the stable thread identity", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("async function activateFixtureThread");

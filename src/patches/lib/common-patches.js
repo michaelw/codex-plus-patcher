@@ -85,6 +85,43 @@ function patchAboutDialog(text, context = {}) {
     sourceAsarSha256: context.sourceAsarSha256 || "unknown",
     appliedPatches: context.appliedPatches || [],
   };
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.52143")) {
+    let patched = replaceOnce(
+      text,
+      "let r=l.app.getName(),o=l.app.getVersion(),s=b5(o),",
+      `let CPXAbout=${aboutMetadataRequire()}.aboutPayload(${JSON.stringify(aboutContext)}),r=CPXAbout.appDisplayName,o=l.app.getVersion(),s=b5(o),`,
+      "52143 about dialog app name anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "_=f.formatMessage({messageId:u5,defaultMessage:d5}),v=x5(o),y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
+      "_=f.formatMessage({messageId:u5,defaultMessage:d5}),v=x5(o),CPXAboutLines=CPXAbout.buildInfoLines,y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v,...CPXAboutLines].join(`\n`),",
+      "52143 about dialog build information anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "E5({appDisplayName:r,buildInfoLabel:_,buildInfoText:y,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+      "E5({appDisplayName:r,buildInfoLabel:_,buildInfoText:y,codexPlusDisclaimerHeading:CPXAbout.disclaimerHeading,codexPlusDisclaimerBody:CPXAbout.disclaimerBody,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+      "52143 about dialog renderer call anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function E5({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
+      "function E5({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,codexPlusDisclaimerHeading:D,codexPlusDisclaimerBody:O,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let CPXAboutMetadata=" +
+        aboutMetadataRequire() +
+        ",q=CPXAboutMetadata.disclaimerMarkup({escape:Hz.default,heading:D,body:O}),s=r==null?``:",
+      "52143 about dialog renderer signature anchor",
+    );
+    patched = replaceOnce(patched, "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;", "${CPXAboutMetadata.disclaimerStyles()}\n\n    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;", "52143 about dialog disclaimer styles anchor");
+    patched = replaceOnce(patched, "      color: var(--muted-text);\n      white-space: pre-wrap;", "      color: var(--muted-text);\n      text-align: left;\n      white-space: pre-wrap;", "52143 about dialog build info left align anchor");
+    patched = replaceOnce(patched, "    .app-name,\n    .build-info,\n    .copyright {", "    .app-name,\n    .codex-plus-disclaimer,\n    .build-info,\n    .copyright {", "52143 about dialog selectable disclaimer anchor");
+    return replaceOnce(
+      patched,
+      '      <div class="app-name" id="app-name">${(0,Hz.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,Hz.default)(t)}">${(0,Hz.default)(n)}</pre>',
+      '      <div class="app-name" id="app-name">${(0,Hz.default)(e)}</div>\n      ${q}\n      <pre class="build-info" aria-label="${(0,Hz.default)(t)}">${(0,Hz.default)(n)}</pre>',
+      "52143 about dialog disclaimer insertion anchor",
+    );
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715")) {
     let patched = replaceOnce(
       text,
@@ -2919,7 +2956,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:OF.jsx,jsxs:OF.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:OF.jsx,jsxs:OF.jsxs,useSyncExternalStore:DF.useSyncExternalStore})),v=h.length>0,",
       "42026 thread header native end-action anchor",
     );
   }
@@ -5882,6 +5919,15 @@ function patchAppProtocolRoutes(text) {
 }
 
 function patchMainNativeBridge(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.52143")) {
+    let patched = replaceOnce(text, "async function kae(){a.n(q9);", `${nativeMainHook({ electronName: "l" })}async function kae(){a.n(q9);`, "52143 codex plus native main helper insertion anchor");
+    return replaceOnce(
+      patched,
+      "Il({chunkedMessageSender:R,isTrustedIpcEvent:B}),e5({buildFlavor:s,getContextForWebContents:z.getContextForWebContents,isTrustedIpcEvent:B}),l.ipcMain.on",
+      "Il({chunkedMessageSender:R,isTrustedIpcEvent:B}),e5({buildFlavor:s,getContextForWebContents:z.getContextForWebContents,isTrustedIpcEvent:B}),CPXNative.registerNativeRequest({isTrustedIpcEvent:B}),l.ipcMain.on",
+      "52143 codex plus native main registration anchor",
+    );
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.31925")) {
     let patched = replaceOnce(text, "async function Aae(){a.n(q9);", `${nativeMainHook({ electronName: "c" })}async function Aae(){a.n(q9);`, "31925 codex plus native main helper insertion anchor");
     return replaceOnce(
@@ -5985,6 +6031,20 @@ function patchMainNativeBridge(text, context = {}) {
 }
 
 function patchMainMenuDiagnostics(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715.52143")) {
+    let patched = replaceOnce(
+      text,
+      "Ne,...c.browserPane?[Pe]:[],nt,...c.browserPane?",
+      "Ne,...c.browserPane?[Pe]:[],nt,...CPXNative.templateItems(`view-menu`),...c.browserPane?",
+      "52143 codex plus view menu template items anchor",
+    );
+    return replaceOnce(
+      patched,
+      "pe=be.refreshApplicationMenu;let xe=",
+      "pe=be.refreshApplicationMenu,CPXNative.setRefreshApplicationMenu(()=>be.refreshApplicationMenu()),CPXNative.logMenuDiagnostics();let xe=",
+      "52143 codex plus menu diagnostics refresh anchor",
+    );
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.715")) {
     let patched = replaceOnce(
       text,

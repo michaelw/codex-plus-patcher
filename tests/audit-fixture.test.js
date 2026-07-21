@@ -42,6 +42,10 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     assert.equal(fs.existsSync(path.join(devHome, "session_index.jsonl")), true);
     assert.equal(sqliteValue(path.join(devHome, "state_5.sqlite"), "select count(*) from threads;"), "10");
     assert.equal(
+      sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select enabled from local_app_server_feature_enablement where feature_name = 'remote_control';"),
+      "0",
+    );
+    assert.equal(
       sqliteValue(path.join(devHome, "sqlite", "codex-dev.db"), "select count(*) from local_thread_catalog;"),
       "10",
     );
@@ -319,6 +323,13 @@ test("audit fixture can seed an app-created empty-home baseline", () => {
                 child_thread_id text not null primary key,
                 status text not null
               );
+              create table local_app_server_feature_enablement (
+                feature_name text primary key,
+                enabled integer not null,
+                updated_at integer not null
+              );
+              insert into local_app_server_feature_enablement(feature_name, enabled, updated_at)
+                values('remote_control', 1, 1);
               create table local_thread_catalog_hosts (
                 host_id text primary key,
                 host_kind text not null
@@ -361,6 +372,10 @@ test("audit fixture can seed an app-created empty-home baseline", () => {
     assert.equal(fixture.baseline.created, true);
     assert.equal(fixture.files.includes("sqlite/codex-dev.db"), true);
     assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from threads;"), "10");
+    assert.equal(
+      sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select enabled from local_app_server_feature_enablement where feature_name = 'remote_control';"),
+      "0",
+    );
     assert.equal(sqliteValue(path.join(fixture.devHome, "state_5.sqlite"), "select count(*) from local_thread_catalog;"), "10");
     const appServerCall = calls.find((call) => call.command === "/fixture/Codex.app/Contents/Resources/codex");
     assert.equal(appServerCall.env.CODEX_HOME, fixture.devHome);
