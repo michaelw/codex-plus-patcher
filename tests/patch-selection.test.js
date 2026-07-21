@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.715.31925-5551");
-  assert.equal(chatgptPatchSets.length, 12);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.52143-5591");
+  assert.equal(chatgptPatchSets.length, 13);
 
   for (const identity of [
+    ["26.715.52143", "5591", "4dc2ca0aac6e4f6f858c504223bcdedf0b2d768fbc948d9f449f2da656f1b98f"],
     ["26.715.31925", "5551", "0c9dd677134340cb944e7642b8bc2504c7b73c7dc334d9d756547858171eea41"],
     ["26.715.31251", "5538", "8142e0848fe49097c129a1093f80061c13de04c2893525ee7c751d26b5a7bd4f"],
     ["26.715.21425", "5488", "5db4c67090c0521fa717e83e46cb0a6175cb6c16fb89064223753bdf05cff0aa"],
@@ -322,6 +323,8 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.52143-5591", "chatgpt-26.715.52143"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31925-5551", "chatgpt-26.715.52143"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31925-5551", "chatgpt-26.715.31925"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715.31925"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31251-5538", "chatgpt-26.715.31251"), true);
@@ -481,6 +484,45 @@ test("31925 owns its moved native main registration anchor", () => {
 
   assert.match(transformed, /CPXNative/);
   assert.match(transformed, /registerNativeRequest\(\{isTrustedIpcEvent:R\}\)/);
+});
+
+test("52143 owns its split-startup Electron main anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.52143-5591");
+  const byName = (name) => collectFileTransforms(newest).find(([, transform]) => transform.name === name)?.[1];
+  const about = byName("patchAboutDialog");
+  const bridge = byName("patchMainNativeBridge");
+  const menu = byName("patchMainMenuDiagnostics");
+
+  const aboutText = about([
+    "let r=l.app.getName(),o=l.app.getVersion(),s=b5(o),",
+    "_=f.formatMessage({messageId:u5,defaultMessage:d5}),v=x5(o),y=[...i.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
+    "E5({appDisplayName:r,buildInfoLabel:_,buildInfoText:y,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+    "function E5({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
+    "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+    "      color: var(--muted-text);\n      white-space: pre-wrap;",
+    "    .app-name,\n    .build-info,\n    .copyright {",
+    '      <div class="app-name" id="app-name">${(0,Hz.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,Hz.default)(t)}">${(0,Hz.default)(n)}</pre>',
+  ].join(""));
+  assert.match(aboutText, /CPXAboutMetadata\.disclaimerMarkup/);
+  assert.match(aboutText, /codex-plus-disclaimer/);
+
+  const bridgeText = bridge([
+    "async function kae(){a.n(q9);",
+    "Il({chunkedMessageSender:R,isTrustedIpcEvent:B}),e5({buildFlavor:s,getContextForWebContents:z.getContextForWebContents,isTrustedIpcEvent:B}),l.ipcMain.on",
+  ].join(""));
+  assert.match(bridgeText, /CPXNative/);
+  assert.match(bridgeText, /registerNativeRequest\(\{isTrustedIpcEvent:B\}\)/);
+
+  const menuText = menu([
+    "Ne,...c.browserPane?[Pe]:[],nt,...c.browserPane?",
+    "pe=be.refreshApplicationMenu;let xe=",
+  ].join(""));
+  assert.match(menuText, /CPXNative\.templateItems\(`view-menu`\)/);
+  assert.match(menuText, /setRefreshApplicationMenu\(\(\)=>be\.refreshApplicationMenu\(\)\)/);
+  assert.throws(
+    () => bridge("async function kae(){a.n(q9);", { patchSetId: "chatgpt-26.715.31925-5551" }),
+    /belongs to chatgpt-26\.715\.52143-5591/,
+  );
 });
 
 test("31925 owns its moved ChatGPT migration eligibility anchor", () => {
@@ -2844,7 +2886,7 @@ test("42026 binds native context and title while prepending the path accessory t
     "function aGe({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:OF\.jsx,jsxs:OF\.jsxs\}\)\)/);
+  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:OF\.jsx,jsxs:OF\.jsxs,useSyncExternalStore:DF\.useSyncExternalStore\}\)\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
 });
 
@@ -3246,6 +3288,7 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.52143-5591" ||
       patchSet.id === "chatgpt-26.715.31925-5551" ||
       patchSet.id === "chatgpt-26.715.31251-5538" ||
       patchSet.id === "chatgpt-26.715.21425-5488" ||

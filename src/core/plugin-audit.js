@@ -291,7 +291,7 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
   }
 }
 
-async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 30000 } = {}) {
+async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 30000, retryIntervalMs = 2000 } = {}) {
   const selectorSetup = async () => cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
@@ -335,24 +335,29 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     windowsVirtualKeyCode: 27,
     nativeVirtualKeyCode: 53,
   });
-  await cdp.send("Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: ".",
-    code: "Period",
-    windowsVirtualKeyCode: 190,
-    nativeVirtualKeyCode: 47,
-    modifiers: 4,
-  });
-  await cdp.send("Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: ".",
-    code: "Period",
-    windowsVirtualKeyCode: 190,
-    nativeVirtualKeyCode: 47,
-    modifiers: 4,
-  });
+  const dispatchShortcut = async () => {
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: ".",
+      code: "Period",
+      windowsVirtualKeyCode: 190,
+      nativeVirtualKeyCode: 47,
+      modifiers: 4,
+    });
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: ".",
+      code: "Period",
+      windowsVirtualKeyCode: 190,
+      nativeVirtualKeyCode: 47,
+      modifiers: 4,
+    });
+  };
+  await dispatchShortcut();
 
   const deadline = Date.now() + timeoutMs;
+  const retryAt = Date.now() + retryIntervalMs;
+  let retried = false;
   let status = null;
   while (Date.now() < deadline) {
     status = await cdp.evaluate(`(() => {
@@ -482,6 +487,10 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         strictFuzzyVersion,
         message: fuzzyOk ? undefined : `Project selector fuzzy filtering did not preserve and highlight a visible project: ${JSON.stringify(fuzzyDom)}`,
       };
+    }
+    if (!retried && Date.now() >= retryAt) {
+      retried = true;
+      await dispatchShortcut();
     }
     await wait(100);
   }

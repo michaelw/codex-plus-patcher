@@ -456,7 +456,7 @@ function createCatalogDatabase(dbPath, threads, { fsImpl = fs, execFileSync = ch
         updated_at integer not null
       );
       insert into local_app_server_feature_enablement(feature_name, enabled, updated_at)
-        values('remote_control', 1, ${FIXTURE_NOW_SECONDS * 1000});
+        values('remote_control', 0, ${FIXTURE_NOW_SECONDS * 1000});
       create table local_thread_catalog_hosts (
         host_id text primary key,
         host_kind text not null check (host_kind in ('local', 'ssh', 'wsl', 'remote-control'))
@@ -585,7 +585,7 @@ function seedStateDatabase(dbPath, threads, { execFileSync = childProcess.execFi
     ? `
       delete from local_app_server_feature_enablement;
       insert into local_app_server_feature_enablement(feature_name, enabled, updated_at)
-        values('remote_control', 1, ${FIXTURE_NOW_SECONDS * 1000});
+        values('remote_control', 0, ${FIXTURE_NOW_SECONDS * 1000});
     `
     : "";
   const catalogSql = sqliteTableExists(dbPath, "local_thread_catalog", execFileSync)
