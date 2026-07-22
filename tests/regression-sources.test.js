@@ -5,8 +5,10 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  classifyImpact,
   cleanRegressionDir,
   cleanRegressionSources,
+  collectGitImpact,
   compareVersionStrings,
   defaultRegressionDirForSources,
   discoverSources,
@@ -15,6 +17,7 @@ const {
   parseArgs,
   pathsForSource,
   runRegressionSources,
+  selectAffectedSources,
   terminateActiveSource,
 } = require("../scripts/regression-sources");
 
@@ -47,6 +50,7 @@ function patchSet(version, bundleVersion, asarSha256, id = `codex-${version}-${b
 
 test("regression sources parses options and rejects unsafe combinations", () => {
   assert.deepEqual(parseArgs(["--filter", "61825", "--auto-clean", "--json"]), {
+    affectedSince: null,
     autoClean: true,
     clean: false,
     filter: "61825",
@@ -66,6 +70,7 @@ test("regression sources parses options and rejects unsafe combinations", () => 
   });
 
   assert.equal(parseArgs(["--clean"]).clean, true);
+  assert.equal(parseArgs(["--affected-since", "abc123"]).affectedSince, "abc123");
   assert.equal(parseArgs(["--jsonl"]).jsonl, true);
   assert.equal(parseArgs(["--preflight-only"]).preflightOnly, true);
   assert.equal(parseArgs(["--no-visual-contract"]).visualContract, false);
@@ -76,9 +81,191 @@ test("regression sources parses options and rejects unsafe combinations", () => 
   assert.throws(() => parseArgs(["--newest", "0"]), /--newest must be a positive integer/);
   assert.throws(() => parseArgs(["--remote-debugging-port", "0"]), /must be a positive integer/);
   assert.throws(() => parseArgs(["--auto-clean", "--keep-open"]), /cannot be combined/);
+  assert.throws(() => parseArgs(["--affected-since", "main", "--preflight-only"]), /cannot be combined/);
+  assert.throws(() => parseArgs(["--affected-since", "main", "--clean"]), /cannot be combined/);
   const detailedJsonl = parseArgs(["--json", "--jsonl"]);
   assert.equal(detailedJsonl.json, true);
   assert.equal(detailedJsonl.jsonl, true);
+});
+
+test("impact selection keeps additive ports local and orders them newest-first", () => {
+  const sources = [
+    { version: "26.715.70719", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-26.715.70719-5650" },
+    { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-26.715.72359-5718" },
+    { version: "26.715.61943", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-26.715.61943-5628" },
+    { version: "26.623.141536", sourceFamily: "codex", supported: true, patchSet: "codex-26.623.141536-4753" },
+  ];
+  const changes = [
+    { status: "A", path: "src/patches/26.715.72359-5718.js", additions: 70, deletions: 0 },
+    { status: "A", path: "src/patches/26.715.70719-5650.js", additions: 70, deletions: 0 },
+    { status: "M", path: "src/patches/index.js", additions: 4, deletions: 0 },
+    { status: "M", path: "src/patches/lib/transform-ownership.js", additions: 12, deletions: 0 },
+    { status: "M", path: "tests/patch-selection.test.js", additions: 20, deletions: 2 },
+  ];
+
+  const result = selectAffectedSources(sources, classifyImpact(changes));
+
+  assert.equal(result.scope, "new-patches");
+  assert.deepEqual(result.selected.map((source) => source.version), ["26.715.72359", "26.715.70719"]);
+  assert.deepEqual(result.skipped.map((source) => source.version), ["26.715.61943", "26.623.141536"]);
+  assert.match(result.selected[0].impactReason, /new versioned patch/);
+});
+
+test("impact selection keeps owner-gated shared transform additions local to new ports", () => {
+  const sources = [
+    { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },
+    { version: "26.715.61943", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-old" },
+  ];
+  const impact = classifyImpact([
+    { status: "A", path: "src/patches/26.715.72359-5718.js", additions: 70, deletions: 0 },
+    {
+      status: "M",
+      path: "src/patches/lib/common-patches.js",
+      additions: 4,
+      deletions: 0,
+      patch: [
+        "@@ -10,0 +11,4 @@ function patchComposer(text, context = {}) {",
+        "+  if (patchSetOwnsTransformVariant(context.patchSetId, \"chatgpt-26.715.72359\")) {",
+        "+    const patched = replaceOnce(text, \"old\", \"new\", \"new owner anchor\");",
+        "+    return patched;",
+        "+  }",
+      ].join("\n"),
+    },
+  ]);
+
+  const result = selectAffectedSources(sources, impact);
+  assert.equal(result.scope, "new-patches");
+  assert.deepEqual(result.selected.map((source) => source.version), ["26.715.72359"]);
+  assert.deepEqual(result.ownerGatedPaths, ["src/patches/lib/common-patches.js"]);
+});
+
+test("impact selection adds one newest representative per family for audit harness changes", () => {
+  const sources = [
+    { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },
+    { version: "26.715.61943", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-old" },
+    { version: "26.623.141536", sourceFamily: "codex", supported: true, patchSet: "codex-new" },
+    { version: "26.623.101652", sourceFamily: "codex", supported: true, patchSet: "codex-old" },
+  ];
+  const impact = classifyImpact([
+    { status: "M", path: "scripts/regression-sources.js", additions: 100, deletions: 5 },
+    { status: "M", path: "src/core/plugin-audit.js", additions: 4, deletions: 1 },
+  ]);
+
+  const result = selectAffectedSources(sources, impact);
+
+  assert.equal(result.scope, "family-representatives");
+  assert.deepEqual(result.selected.map((source) => source.version), ["26.715.72359", "26.623.141536"]);
+  assert.ok(result.selected.every((source) => /proof harness/.test(source.impactReason)));
+});
+
+test("impact selection fails closed for shared, existing-registry, and unknown changes", () => {
+  const sources = [
+    { version: "2", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-2" },
+    { version: "1", sourceFamily: "codex", supported: true, patchSet: "codex-1" },
+  ];
+  for (const changes of [
+    [{ status: "M", path: "src/runtime/api/patches.js", additions: 1, deletions: 1 }],
+    [{ status: "M", path: "src/patches/lib/hooks/sidebar.js", additions: 1, deletions: 1 }],
+    [{ status: "M", path: "src/patches/index.js", additions: 1, deletions: 1 }],
+    [{ status: "M", path: "src/patches/lib/common-patches.js", additions: 2, deletions: 0, patch: "@@ -1,0 +2 @@\n+  return changed;" }],
+    [{ status: "M", path: "mystery/build-input.js", additions: 1, deletions: 0 }],
+  ]) {
+    const result = selectAffectedSources(sources, classifyImpact(changes));
+    assert.equal(result.scope, "all-supported");
+    assert.deepEqual(result.selected.map((source) => source.version), ["2", "1"]);
+  }
+});
+
+test("git impact collection resolves the base and rejects invalid refs", () => {
+  const calls = [];
+  const execFileSync = (command, args) => {
+    calls.push([command, args]);
+    if (args[0] === "rev-parse") return "base-sha\n";
+    if (args.includes("--name-status")) return "A\tsrc/patches/26.715.72359-5718.js\nM\tscripts/regression-sources.js\n";
+    if (args.includes("--numstat")) return "70\t0\tsrc/patches/26.715.72359-5718.js\n10\t2\tscripts/regression-sources.js\n";
+    if (args[0] === "ls-files") return "";
+    throw new Error(`unexpected call ${args.join(" ")}`);
+  };
+
+  const result = collectGitImpact({ cwd: "/repo", baseRef: "main", execFileSync });
+
+  assert.equal(result.baseSha, "base-sha");
+  assert.deepEqual(result.changes, [
+    { status: "M", path: "scripts/regression-sources.js", additions: 10, deletions: 2 },
+    { status: "A", path: "src/patches/26.715.72359-5718.js", additions: 70, deletions: 0 },
+  ]);
+  assert.equal(calls[0][0], "git");
+
+  assert.throws(
+    () => collectGitImpact({ cwd: "/repo", baseRef: "missing", execFileSync: () => { throw new Error("bad ref"); } }),
+    /Cannot resolve --affected-since ref missing/,
+  );
+});
+
+test("affected live regression writes an impact summary and audits only selected sources", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "sources");
+    const chatgptNew = createSourceApp(sourcesDir, "26.715.72359", "ChatGPT.app");
+    const chatgptOld = createSourceApp(sourcesDir, "26.715.61943", "ChatGPT.app");
+    const codexNew = createSourceApp(sourcesDir, "26.623.141536", "Codex.app");
+    const identities = new Map([
+      [chatgptNew, familyIdentity("26.715.72359", "5718", "sha-new", "chatgpt")],
+      [chatgptOld, familyIdentity("26.715.61943", "5628", "sha-old", "chatgpt")],
+      [codexNew, familyIdentity("26.623.141536", "4753", "sha-codex", "codex")],
+    ]);
+    const audited = [];
+    const result = await runRegressionSources(
+      {
+        affectedSince: "base",
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: false,
+        json: false,
+        jsonl: false,
+        keepOpen: false,
+        newest: null,
+        noProgress: true,
+        preflightOnly: false,
+        visualContract: false,
+        artifactDir: null,
+        remoteDebuggingPort: 9234,
+        sourcesDir,
+        useLiveSourceHome: false,
+      },
+      {
+        cwd: tmpDir,
+        collectGitImpact: () => ({
+          baseRef: "base",
+          baseSha: "base-sha",
+          changes: [
+            { status: "M", path: "scripts/regression-sources.js", additions: 50, deletions: 2 },
+            { status: "A", path: "src/patches/26.715.72359-5718.js", additions: 70, deletions: 0 },
+          ],
+        }),
+        getAppIdentity: (appPath) => identities.get(appPath),
+        patchSets: [
+          { ...patchSet("26.715.72359", "5718", "sha-new", "chatgpt-new"), sourceFamily: "chatgpt" },
+          { ...patchSet("26.715.61943", "5628", "sha-old", "chatgpt-old"), sourceFamily: "chatgpt" },
+          patchSet("26.623.141536", "4753", "sha-codex", "codex-new"),
+        ],
+        runAudit: async ({ source }) => {
+          audited.push(source);
+          return { ok: true, failures: [] };
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.results.map((entry) => entry.version), ["26.715.72359", "26.623.141536"]);
+    assert.deepEqual(audited, [chatgptNew, codexNew]);
+    assert.equal(fs.existsSync(result.impactSummary), true);
+    const summary = JSON.parse(fs.readFileSync(result.impactSummary, "utf8"));
+    assert.equal(summary.baseSha, "base-sha");
+    assert.equal(summary.scope, "family-representatives");
+    assert.deepEqual(summary.selected.map((entry) => entry.version), ["26.715.72359", "26.623.141536"]);
+    assert.deepEqual(summary.skipped.map((entry) => entry.version), ["26.715.61943"]);
+  });
 });
 
 test("regression sweep stops before the next source when interrupted", async () => {

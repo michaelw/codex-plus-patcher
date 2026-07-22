@@ -164,7 +164,7 @@ ordered:
 3. Run the newest-only in-memory preflight.
 4. Run the newest live regression and inspect all four contract screenshots.
 5. Run all-version preflight.
-6. Run the all-version live sweep and inspect every contract.
+6. Run the affected-version live sweep and inspect every selected contract.
 
 Use these commands for steps 3 through 6:
 
@@ -172,7 +172,7 @@ Use these commands for steps 3 through 6:
 rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl
 rtk node scripts/regression-sources.js --newest 1 --jsonl
 rtk node scripts/regression-sources.js --preflight-only --jsonl
-rtk node scripts/regression-sources.js --auto-clean --jsonl
+rtk node scripts/regression-sources.js --affected-since <base-commit> --auto-clean --jsonl
 ```
 
 These direct Node commands are required for agent supervision under RTK because
@@ -180,6 +180,16 @@ the npm route buffers its child output. Continue reading the JSONL stream while
 the command runs; active phases report at least every two seconds. Interrupting
 the command stops the sweep before the next source and cleans up the active
 audit application.
+
+Affected selection is fail-closed. Additive version-only ports select the new
+versions. Addition-only shared-transform hunks stay local only when every hunk
+is explicitly guarded by a newly registered transform owner. Audit or fixture changes also select the newest supported source from
+each source family. Shared runtime, host adapter, public API, patch-engine,
+hook, existing registry, or unclassified application changes select every
+supported version. The runner writes an ignored `impact-summary.json` with the
+resolved base SHA and a reason for every selected or skipped source.
+`--affected-since` is deliberately incompatible with `--preflight-only` so the
+complete cached-source preflight cannot be narrowed.
 
 Restart from focused tests after any implementation change. For an older
 failure, compare its owned transform and file mapping with the Git diff before

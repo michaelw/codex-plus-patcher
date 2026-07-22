@@ -29,10 +29,16 @@ This repo ships patch source only. Never commit `Codex.app`, generated
   `rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl`; (4) run
   `rtk node scripts/regression-sources.js --newest 1 --jsonl` and inspect every newest
   screenshot; (5) run `rtk node scripts/regression-sources.js --preflight-only --jsonl`; (6)
-  run `rtk node scripts/regression-sources.js --auto-clean --jsonl` and inspect every version's
-  contract. If an old version fails, inspect the Git diff and transform
-  ownership before touching its hook. When its owned code is unchanged, first
-  suspect preflight, fixture, or audit changes. Source apps stay under the main
+  run `rtk node scripts/regression-sources.js --affected-since <base-commit> --auto-clean --jsonl`
+  and inspect every selected contract. A version-only additive port selects only
+  the new version; addition-only shared-transform hunks stay local only when
+  every hunk is explicitly guarded by a newly registered transform owner. Audit or fixture changes add the newest supported source from
+  each source family. Shared runtime, adapter, API, patch-engine, hook, existing
+  registry, or unclassified application changes fail closed to every supported
+  version. `--affected-since` cannot narrow preflight. If an old version fails,
+  inspect the Git diff and transform ownership before touching its hook. When
+  its owned code is unchanged, first suspect preflight, fixture, or audit changes.
+  Source apps stay under the main
   checkout's `work/sources/`; generated output stays under the current
   worktree's `work/`.
 - Agent-supervised regression commands must stream a steady flow of JSONL

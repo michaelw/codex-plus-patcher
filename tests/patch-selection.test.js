@@ -275,10 +275,14 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.715.61943-5628");
-  assert.equal(chatgptPatchSets.length, 14);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.72359-5718");
+  assert.equal(chatgptPatchSets.length, 18);
 
   for (const identity of [
+    ["26.715.72359", "5718", "6c6528eb1e8450cdc506a59586f8caffe87576e200977e2a11bdea0cecf1c718"],
+    ["26.715.72028", "5706", "8271e8b537b1f3a87c8453812bac580d9eec05674f05a1faae8f76e56499ffad"],
+    ["26.715.71837", "5702", "11292b6a04d8aef36c30940b94ce3a744844dc5a52797228fbebb87f8529f102"],
+    ["26.715.70719", "5650", "954760af20a1b74275a9db50c99a09266da4f5d1e08f4b613c8a46f97adc9ce4"],
     ["26.715.61943", "5628", "7501dd25c22e090bb131fe3fe6423e5c3b21b7f275c7e45b86ebe00a68052c80"],
     ["26.715.52143", "5591", "4dc2ca0aac6e4f6f858c504223bcdedf0b2d768fbc948d9f449f2da656f1b98f"],
     ["26.715.31925", "5551", "0c9dd677134340cb944e7642b8bc2504c7b73c7dc334d9d756547858171eea41"],
@@ -324,6 +328,9 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.72359"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.72359"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.52143"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.61943"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.52143-5591", "chatgpt-26.715.61943"), false);
   assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.52143"), true);
@@ -342,6 +349,157 @@ test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", 
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21316-5484", "chatgpt-26.715.21425"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.707.91948-5440", "chatgpt-26.715"), false);
   assert.throws(() => patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "unknown"), /Unknown transform variant unknown/);
+});
+
+test("72359 maps its exact assets and required runtime", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72359-5718");
+  const transformedPaths = new Set(collectFileTransforms(newest).map(([filePath]) => filePath));
+
+  for (const filePath of [
+    ".vite/build/main-2laZZXle.js",
+    ".vite/build/src-DVXSULz2.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-C1AmS95p.js",
+    "webview/assets/general-settings-CM4Mcgcy.js",
+    "webview/assets/thread-app-shell-chrome-DMc8DBvS.js",
+    "webview/assets/local-conversation-page-MX2XDodp.js",
+    "webview/assets/mermaid-diagram-DWglEZVp.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-Q-7mP-kM.js");
+  assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72028 registers its exact identity and distinct transform owner", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72028-5706");
+  assert.ok(patchSet);
+  assert.equal(patchSet.codexVersion, "26.715.72028");
+  assert.equal(patchSet.bundleVersion, "5706");
+  assert.equal(patchSet.asarSha256, "8271e8b537b1f3a87c8453812bac580d9eec05674f05a1faae8f76e56499ffad");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.715.72028"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.72028"), false);
+  const transformedPaths = new Set(collectFileTransforms(patchSet).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-DXmUjwbb.js",
+    ".vite/build/src-DVXSULz2.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-CXJ5tIyg.js",
+    "webview/assets/general-settings-BfleeL7z.js",
+    "webview/assets/thread-app-shell-chrome-C7tru4y2.js",
+    "webview/assets/local-conversation-page-CwwU4NJh.js",
+    "webview/assets/mermaid-diagram-C_CaUvVd.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-B6BLbxeh.js");
+  assert.ok(patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72028 owns its moved app shell, command menu, and startup anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72028-5706");
+  const transforms = collectFileTransforms(patchSet);
+  const appShell = transforms.find(([, transform]) => transform.name === "patchAppShell")[1];
+  const commands = transforms.find(([, transform]) => transform.name === "patchCommandMenuRuntimeCommands")[1];
+  const startup = transforms.find(([, transform]) => transform.name === "patchChatGptStartupAnnouncements")[1];
+  assert.match(appShell([
+    "function nP(){let e=(0,aP.c)(3),t,n;",
+    "children:[t,n,(0,oP.jsx)(nr,{onClick:rP,children:(0,oP.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join("")), /CPXDiagnosticDetails\(\{jsx:oP\.jsx,error:null\}\)/);
+  const commandText = commands([
+    "function y4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "},V=[],H=N.filter",
+    "function b4(e){let t=(0,R4.c)(13),",
+    "c=()=>{gh(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandText, /CPXCommandPaletteItem/);
+  assert.match(commandText, /metadata\(\)\.map/);
+  assert.match(commandText, /bindNativeDispatch\(e=>\(gh\(e,`command_menu`\),!0\)\)/);
+  assert.match(
+    startup("function jR({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ze.ChatGPT&&t!=null&&t!==vt.Agent&&t!==vt.Dev}"),
+    /function jR\([^)]*\)\{return false\}/,
+  );
+});
+
+test("71837 registers its exact identity and distinct transform owner", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.71837-5702");
+  assert.ok(patchSet);
+  assert.equal(patchSet.codexVersion, "26.715.71837");
+  assert.equal(patchSet.bundleVersion, "5702");
+  assert.equal(patchSet.asarSha256, "11292b6a04d8aef36c30940b94ce3a744844dc5a52797228fbebb87f8529f102");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.715.71837"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72028-5706", "chatgpt-26.715.71837"), false);
+  assert.equal(patchSetUsesTransformVariant(patchSet.id, "chatgpt-26.715.72028"), true);
+  const transformedPaths = new Set(collectFileTransforms(patchSet).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-DMSDCThi.js",
+    ".vite/build/src-DU0S2Fqi.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-hQSurq1e.js",
+    "webview/assets/general-settings-BOz8t03P.js",
+    "webview/assets/thread-app-shell-chrome-C57XrWTY.js",
+    "webview/assets/local-conversation-page-BuhSNKrc.js",
+    "webview/assets/mermaid-diagram-C1oQ4rXT.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-B6BLbxeh.js");
+  assert.ok(patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("70719 registers its exact identity and distinct transform owner", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.70719-5650");
+  assert.ok(patchSet);
+  assert.equal(patchSet.codexVersion, "26.715.70719");
+  assert.equal(patchSet.bundleVersion, "5650");
+  assert.equal(patchSet.asarSha256, "954760af20a1b74275a9db50c99a09266da4f5d1e08f4b613c8a46f97adc9ce4");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.715.70719"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.71837-5702", "chatgpt-26.715.70719"), false);
+  assert.equal(patchSetUsesTransformVariant(patchSet.id, "chatgpt-26.715.72028"), true);
+  const transformedPaths = new Set(collectFileTransforms(patchSet).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-DKX5oYKu.js",
+    ".vite/build/src-DU0S2Fqi.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-hQSurq1e.js",
+    "webview/assets/general-settings-BOz8t03P.js",
+    "webview/assets/thread-app-shell-chrome-C57XrWTY.js",
+    "webview/assets/local-conversation-page-BuhSNKrc.js",
+    "webview/assets/mermaid-diagram-C1oQ4rXT.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-B6BLbxeh.js");
+  assert.ok(patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72359 owns its moved app shell and composer anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72359-5718");
+  const appShell = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchAppShell")?.[1];
+  const composerBubble = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchComposerBubbleColors")?.[1];
+  const composerProject = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchComposerProjectColors")?.[1];
+  const commands = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchCommandMenuRuntimeCommands")?.[1];
+  const startup = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchChatGptStartupAnnouncements")?.[1];
+  const transformed = appShell([
+    "function rP(){let e=(0,oP.c)(3),t,n;",
+    "children:[t,n,(0,sP.jsx)(nr,{onClick:iP,children:(0,sP.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join(""));
+
+  assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:sP\.jsx,error:null\}\)/);
+  const composer = composerBubble([
+    "function qk(e){let t=(0,Jk.c)(55),",
+    "p=(0,Yk.jsx)(`div`,{className:n,onDragEnter:r,",
+    "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
+    "A=(0,Yk.jsx)(Gy,{...p,className:C,",
+  ].join(""));
+  assert.equal(composer.match(/CPXSurfaceProps\(\{\}\)/g)?.length, 3);
+  const composerWithProject = composerProject(`${composer}Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.equal(composerWithProject.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(composerWithProject, /CPXOpenFile=CPXSP\.bindOpenFile.*Ll\(\{scope:U/);
+  const commandText = commands([
+    "function b4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "},V=[],H=N.filter",
+    "c=()=>{hh(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandText, /CPXCommandPaletteItem/);
+  assert.match(commandText, /metadata\(\)\.map/);
+  assert.match(commandText, /bindNativeDispatch\(e=>\(hh\(e,`command_menu`\),!0\)\)/);
+  assert.match(
+    startup("function MR({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ze.ChatGPT&&t!=null&&t!==vt.Agent&&t!==vt.Dev}"),
+    /function MR\([^)]*\)\{return false\}/,
+  );
+  assert.throws(
+    () => appShell("function rP(){let e=(0,oP.c)(3),t,n;", { patchSetId: "chatgpt-26.715.61943-5628" }),
+    /belongs to chatgpt-26\.715\.72359-5718/,
+  );
 });
 
 test("newest patch omits transforms for host seams that no longer exist", () => {
@@ -915,7 +1073,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 1608, `src/patches/*.js line count ${totalLines} exceeds 1608`);
+  assert.ok(totalLines <= 1872, `src/patches/*.js line count ${totalLines} exceeds 1872`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -3293,6 +3451,10 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.72359-5718" ||
+      patchSet.id === "chatgpt-26.715.72028-5706" ||
+      patchSet.id === "chatgpt-26.715.71837-5702" ||
+      patchSet.id === "chatgpt-26.715.70719-5650" ||
       patchSet.id === "chatgpt-26.715.61943-5628" ||
       patchSet.id === "chatgpt-26.715.52143-5591" ||
       patchSet.id === "chatgpt-26.715.31925-5551" ||

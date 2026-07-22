@@ -217,18 +217,36 @@ node --test --test-name-pattern='<focused transform>' tests/patch-selection.test
 rtk node scripts/regression-sources.js --preflight-only --newest 1 --jsonl
 rtk node scripts/regression-sources.js --newest 1 --jsonl
 rtk node scripts/regression-sources.js --preflight-only --jsonl
-rtk node scripts/regression-sources.js --auto-clean --jsonl
+rtk node scripts/regression-sources.js --affected-since <base-commit> --auto-clean --jsonl
 ```
 
-Inspect the newest default visual contract before starting either all-version
-command, then inspect every contract from the live sweep. Contracts live under
+Inspect the newest default visual contract before starting either complete
+proof command, then inspect every contract from the affected live sweep.
+`--affected-since` records its resolved base, changed files, classifications,
+selected versions, skipped versions, and reasons in an ignored
+`impact-summary.json` under `work/regression/impact/`. It rejects
+`--preflight-only`; preflight must continue to cover every cached supported
+source.
+
+Additive versioned patch files plus additive registration and ownership entries
+select only the new versions. Addition-only changes in the shared transform
+file also stay local when every hunk is explicitly guarded by a newly registered
+transform owner; any unguarded or destructive shared-transform change still
+selects every supported version. Changes to the audit runner or fixture add the
+newest supported source in each source family. Shared runtime, host adapter,
+public API, patch-engine, hook, existing registry, or unclassified application
+changes select every supported version. This keeps version-only ports fast
+without weakening the fail-closed behavior for changes that can reach older
+apps.
+
+Contracts live under
 `work/regression/contracts/<timestamp>/<version>/`. Each contract includes
 `contract.json`, `audit-summary.json`, and screenshots for the shell/sidebar,
 Review, command-palette dispatch, and Settings. If an older version fails,
 check the Git diff and its declared transform owner before editing the old
 hook. When its owned transform code did not change, treat the preflight,
 fixture, or audit as the leading suspect. After any fix, restart at the focused
-tests and newest-only preflight.
+tests and newest affected preflight/live proof.
 
 Use `--auto-clean` to remove each generated app/home/user-data regression
 directory after its audit finishes, or run cleanup only:
