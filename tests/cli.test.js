@@ -49,6 +49,7 @@ const {
   runAudit,
   summarizeCdpEvents,
   verifyProjectSelectorShortcutKey,
+  reviewPanelNeedsWarmRetry,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForAppShellMounted,
@@ -532,6 +533,11 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Mounted composer does not carry the selected project accent/);
   assert.match(defaultExpression, /Mounted composer lost its rounded shape/);
   assert.match(defaultExpression, /waitForMountedProjectComposer/);
+  assert.match(defaultExpression, /await replyVisibleOwnerChoice\("red", 60000\)/);
+  assert.match(defaultExpression, /const visuallyExposed = \(element\) =>/);
+  assert.match(defaultExpression, /document\.elementFromPoint/);
+  assert.match(defaultExpression, /if \(stalePathChip\) \{\s*press\(runRow\);\s*stalePathChip = await waitForSettledVirtualPathHeader\(\);/);
+  assert.match(defaultExpression, /if \(nativeHeader && !nativeHeaderText\.includes\(expectedVirtualTitle\)\)/);
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
@@ -626,13 +632,22 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   assert.match(expressions[0], /New chat|New task/);
   assert.match(expressions[0], /startsWith\(\"New task\"\)/);
   assert.doesNotMatch(expressions[0], /\.click/);
+  assert.match(expressions[2], /opened: Boolean\(searchInput\)/);
+  assert.match(expressions[2], /Array\.from\(document\.querySelectorAll/);
+  assert.match(expressions[2], /\.find\(visible\)/);
+  assert.doesNotMatch(expressions[2], /searchInput \|\| menuCount > 0/);
   assert.match(expressions[3], /const currentMenu = \(\) =>/);
+  assert.match(expressions[3], /const waitForInput = \(\) =>/);
+  assert.match(expressions[3], /const findInput = \(\) =>/);
+  assert.match(expressions[3], /setTimeout\(waitForInput, 100\)/);
   assert.match(expressions[3], /candidates\.find\(\(element\) => visible\(element\) && element\.contains\(input\)\)/);
   assert.match(expressions[3], /input\[placeholder='Search projects'\], textarea\[placeholder='Search projects'\]/);
   assert.match(expressions[3], /HTMLTextAreaElement\.prototype/);
   assert.match(expressions[3], /const menu = currentMenu\(\);/);
   assert.match(expressions[3], /const selectable = Array\.from\(menu\.querySelectorAll\("\[role='menuitem'\], \[role='option'\], button, a"\)\)\.filter\(visible\)/);
   assert.match(expressions[3], /const labelRoots = selectable\.length > 0/);
+  assert.match(expressions[3], /const fuzzyMatchesQuery = \(label, query\) =>/);
+  assert.match(expressions[3], /resultLabels\.some\(\(label\) => fuzzyMatchesQuery\(label, query\)\)/);
   assert.deepEqual(sent.map((call) => call.method), [
     "Input.dispatchMouseEvent",
     "Input.dispatchMouseEvent",
@@ -689,6 +704,39 @@ test("project selector shortcut verifier retries the trusted shortcut while the 
       selectedProjectStillVisible: true,
       noProjectsFoundVisible: false,
       highlightCount: 1,
+    },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent" && call.params.key === ".").length, 4);
+});
+
+test("project selector shortcut verifier retries when a visible picker disappears before fuzzy input", async () => {
+  const sent = [];
+  const evaluations = [
+    { triggerCount: 1, newTask: null },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { retryable: true, suitableProjectFound: false },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    {
+      suitableProjectFound: true,
+      queryLength: 3,
+      visibleResultCount: 1,
+      selectedProjectStillVisible: true,
+      noProjectsFoundVisible: false,
+      highlightCount: 1,
+      codexVersion: "26.715.61943",
     },
   ];
   const cdp = {
@@ -952,6 +1000,42 @@ test("review panel verifier rejects Branch proof and nested toolbar failures", a
 
   assert.equal(branch.ok, false);
   assert.equal(toolbarFailure.ok, false);
+});
+
+test("Review panel audit retries only a cold nested branch preload", () => {
+  const otherwiseReady = {
+    ok: false,
+    reviewControlFound: true,
+    clickedReview: true,
+    selectedReview: true,
+    boundaryVisible: false,
+    boundaryEverVisible: false,
+    tryAgainVisible: false,
+    repoHeaderVisible: true,
+    mainVisible: true,
+    nativeReviewSourceVisible: true,
+    unstagedReviewSourceSelected: true,
+    reviewToolbarFailureVisible: false,
+    nestedRepoVisible: true,
+    strictNestedBranchPreload: true,
+    nestedBranchPickerPreloadBeforeOpen: false,
+    nestedBranchPickerPreloadComplete: true,
+    nestedBranchPickerPopulated: true,
+    nestedBranchPickerCount: 2,
+    nestedBranchPickerOptionCounts: [3, 3],
+    rawNestedDiffFallbackCount: 0,
+    reviewDiffCardCount: 7,
+    reviewLoadingPlaceholderCount: 0,
+    nestedDiffCardCount: 2,
+    nestedDiffDisclosureExpanded: true,
+    nestedDiffDisclosureCollapsed: true,
+  };
+
+  assert.equal(reviewPanelNeedsWarmRetry(otherwiseReady), true);
+  assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, nestedRepoVisible: false }), false);
+  assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, rawNestedDiffFallbackCount: 1 }), false);
+  assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, boundaryVisible: true }), false);
+  assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, strictNestedBranchPreload: false }), false);
 });
 
 test("review panel verifier scopes Unstaged selection to the native Branch menu", () => {
@@ -3024,7 +3108,7 @@ test("visual contract writes screenshots and compact readbacks", async () => {
           title: "Codex Plus",
           shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects General" },
           sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
-          review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, rawDiffFallbackCount: 0 },
+          review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, loadingPlaceholderCount: 0, rawDiffFallbackCount: 0 },
           commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
           settings: { generalVisible: true, backToAppVisible: true, blank: false },
         };
@@ -3064,6 +3148,44 @@ test("visual contract writes screenshots and compact readbacks", async () => {
   }
 });
 
+test("visual contract rejects Review screenshots while diff cards are still loading", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-review-loading-"));
+  try {
+    const png = Buffer.from("png").toString("base64");
+    const cdp = {
+      async send(method) {
+        if (method === "Page.captureScreenshot") return { data: png };
+        return {};
+      },
+      async evaluate() {
+        return {
+          url: "app://-/index.html",
+          title: "Codex Plus",
+          shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects" },
+          sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
+          review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, loadingPlaceholderCount: 2, rawDiffFallbackCount: 0 },
+          commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
+          settings: { generalVisible: true, backToAppVisible: true, blank: false },
+        };
+      },
+    };
+
+    const contract = await captureVisualContract(cdp, {
+      artifactDir: tmpDir,
+      result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
+      wait() {},
+      activateFixture: async () => ({ ok: true }),
+      verifyReview: async () => ({ ok: true }),
+      verifyCommand: async () => ({ ok: true }),
+    });
+
+    assert.equal(contract.ok, false);
+    assert.match(contract.message, /capture-ready/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test("visual contract waits for General settings before capturing the settings screenshot", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-settings-ready-"));
   try {
@@ -3075,7 +3197,7 @@ test("visual contract waits for General settings before capturing the settings s
       title: "Codex Plus",
       shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects" },
       sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
-      review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, rawDiffFallbackCount: 0 },
+      review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, loadingPlaceholderCount: 0, rawDiffFallbackCount: 0 },
       commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
       settings: { generalVisible: settingsReady, backToAppVisible: settingsReady, blank: !settingsReady },
     });

@@ -2928,7 +2928,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),v=u.filter(({align:e})=>e===`end`),y=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),v=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:uR.jsx,jsxs:uR.jsxs})),y=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),v=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(QL.useSyncExternalStore,{jsx:uR.jsx,jsxs:uR.jsxs})),y=h.length>0,",
       "31921 thread header native end-action anchor",
     );
   }
@@ -2942,7 +2942,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:rq.jsx,jsxs:rq.jsxs,useSyncExternalStore:nq.useSyncExternalStore})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(nq.useSyncExternalStore,{jsx:rq.jsx,jsxs:rq.jsxs})),v=h.length>0,",
       "41415 thread header native end-action anchor",
     );
   }
@@ -2956,7 +2956,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:OF.jsx,jsxs:OF.jsxs,useSyncExternalStore:DF.useSyncExternalStore})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(DF.useSyncExternalStore,{jsx:OF.jsx,jsxs:OF.jsxs})),v=h.length>0,",
       "42026 thread header native end-action anchor",
     );
   }
@@ -2970,7 +2970,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:yb.jsx,jsxs:yb.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(sb.useSyncExternalStore,{jsx:yb.jsx,jsxs:yb.jsxs})),v=h.length>0,",
       "61825 thread header native end-action anchor",
     );
   }
@@ -2984,7 +2984,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:K5.jsx,jsxs:K5.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(G5.useSyncExternalStore,{jsx:K5.jsx,jsxs:K5.jsxs})),v=h.length>0,",
       "70822 thread header native end-action anchor",
     );
   }
@@ -2998,7 +2998,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:EU.jsx,jsxs:EU.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(TU.useSyncExternalStore,{jsx:EU.jsx,jsxs:EU.jsxs})),v=h.length>0,",
       "81905 thread header native end-action anchor",
     );
   }
@@ -3012,7 +3012,7 @@ function patchThreadHeaderActionShell(text) {
     return replaceOnce(
       patched,
       "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:Uk.jsx,jsxs:Uk.jsxs})),v=h.length>0,",
+      "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(jk.useSyncExternalStore,{jsx:Uk.jsx,jsxs:Uk.jsxs})),v=h.length>0,",
       "101652 thread header native end-action anchor",
     );
   }
@@ -3025,7 +3025,7 @@ function patchThreadHeaderActionShell(text) {
   return replaceOnce(
     patched,
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
-    "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXThreadHeaderActiveAccessories({jsx:oV.jsx,jsxs:oV.jsxs})),v=h.length>0,",
+    "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(u.filter(({align:e})=>e===`end`),CPXHA(aV.useSyncExternalStore,{jsx:oV.jsx,jsxs:oV.jsxs})),v=h.length>0,",
     "141536 thread header native end-action anchor",
   );
 }
