@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.24.0...v0.25.0) (2026-07-22)
+
+
+### Features
+
+* support four ChatGPT versions with impact-aware regression ([bbe807b](https://github.com/michaelw/codex-plus-patcher/commit/bbe807b9ea09fdecf82cff0ce5164aef533c0492))
+
 ## [0.24.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.23.0...v0.24.0) (2026-07-22)
 
 
