@@ -151,6 +151,8 @@ const ADDITIVE_METADATA_PATHS = new Set([
   "src/patches/lib/transform-ownership.js",
 ]);
 
+const SHARED_TRANSFORM_PATH = "src/patches/lib/common-patches.js";
+
 const PROOF_HARNESS_PATHS = new Set([
   "scripts/regression-sources.js",
   "src/core/audit-fixture.js",
@@ -196,6 +198,14 @@ function collectGitImpact({ cwd = process.cwd(), baseRef, execFileSync = childPr
   for (const filePath of untracked) {
     if (!byPath.has(filePath)) byPath.set(filePath, { status: "A", path: filePath, additions: null, deletions: 0 });
   }
+  const sharedTransform = byPath.get(SHARED_TRANSFORM_PATH);
+  if (sharedTransform) {
+    sharedTransform.patch = String(execFileSync(
+      "git",
+      ["diff", "--unified=0", baseSha, "--", SHARED_TRANSFORM_PATH],
+      { cwd, encoding: "utf8" },
+    ));
+  }
   return { baseRef, baseSha, changes: [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path)) };
 }
 
@@ -204,21 +214,37 @@ function newPatchVersion(change) {
   return /^src\/patches\/(\d+\.\d+\.\d+)-\d+\.js$/.exec(change.path)?.[1] || null;
 }
 
+function isOwnerGatedTransformAddition(change, newVersions) {
+  if (change.path !== SHARED_TRANSFORM_PATH || change.status !== "M" || change.deletions !== 0 || !change.patch) return false;
+  const allowedOwners = new Set([...newVersions].flatMap((version) => [`chatgpt-${version}`, `codex-${version}`]));
+  const hunks = String(change.patch).split(/^@@/m).slice(1);
+  if (hunks.length === 0) return false;
+  return hunks.every((hunk) => {
+    const added = hunk.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++"));
+    const guards = added.filter((line) => /^\+  if \(patchSetOwnsTransformVariant\(context\.patchSetId, ["']([^"']+)["']\)\) \{$/.test(line));
+    if (guards.length === 0) return false;
+    if (guards.some((line) => !allowedOwners.has(line.match(/["']([^"']+)["']/)?.[1]))) return false;
+    return added.every((line) => !/^\+  \S/.test(line) || line === "+  }" || guards.includes(line));
+  });
+}
+
 function classifyImpact(changes = []) {
-  const newVersions = new Set();
+  const newVersions = new Set(changes.map(newPatchVersion).filter(Boolean));
   const harnessPaths = [];
   const allPaths = [];
   const ignoredPaths = [];
   const metadataPaths = [];
+  const ownerGatedPaths = [];
   for (const change of changes) {
     const version = newPatchVersion(change);
-    if (version) {
-      newVersions.add(version);
-      continue;
-    }
+    if (version) continue;
     if (ADDITIVE_METADATA_PATHS.has(change.path)) {
       if ((change.deletions ?? 1) === 0 && !String(change.status).startsWith("D")) metadataPaths.push(change.path);
       else allPaths.push(change.path);
+      continue;
+    }
+    if (isOwnerGatedTransformAddition(change, newVersions)) {
+      ownerGatedPaths.push(change.path);
       continue;
     }
     if (PROOF_HARNESS_PATHS.has(change.path)) {
@@ -237,6 +263,7 @@ function classifyImpact(changes = []) {
     harnessPaths,
     allPaths,
     metadataPaths,
+    ownerGatedPaths,
     ignoredPaths,
   };
 }
@@ -598,12 +625,13 @@ async function runRegressionSources(args, operations = {}) {
       affectedSince: args.affectedSince,
       baseSha: impact.baseSha,
       scope: impact.scope,
-      changes: impact.changes,
+      changes: impact.changes.map(({ patch, ...change }) => change),
       classifications: {
         newVersions: impact.newVersions,
         harnessPaths: impact.harnessPaths,
         allPaths: impact.allPaths,
         metadataPaths: impact.metadataPaths,
+        ownerGatedPaths: impact.ownerGatedPaths,
         ignoredPaths: impact.ignoredPaths,
       },
       selected: impact.selected.map((source) => ({ version: source.version, patchSet: source.patchSet, reason: source.impactReason })),

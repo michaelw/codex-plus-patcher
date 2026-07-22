@@ -111,6 +111,34 @@ test("impact selection keeps additive ports local and orders them newest-first",
   assert.match(result.selected[0].impactReason, /new versioned patch/);
 });
 
+test("impact selection keeps owner-gated shared transform additions local to new ports", () => {
+  const sources = [
+    { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },
+    { version: "26.715.61943", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-old" },
+  ];
+  const impact = classifyImpact([
+    { status: "A", path: "src/patches/26.715.72359-5718.js", additions: 70, deletions: 0 },
+    {
+      status: "M",
+      path: "src/patches/lib/common-patches.js",
+      additions: 4,
+      deletions: 0,
+      patch: [
+        "@@ -10,0 +11,4 @@ function patchComposer(text, context = {}) {",
+        "+  if (patchSetOwnsTransformVariant(context.patchSetId, \"chatgpt-26.715.72359\")) {",
+        "+    const patched = replaceOnce(text, \"old\", \"new\", \"new owner anchor\");",
+        "+    return patched;",
+        "+  }",
+      ].join("\n"),
+    },
+  ]);
+
+  const result = selectAffectedSources(sources, impact);
+  assert.equal(result.scope, "new-patches");
+  assert.deepEqual(result.selected.map((source) => source.version), ["26.715.72359"]);
+  assert.deepEqual(result.ownerGatedPaths, ["src/patches/lib/common-patches.js"]);
+});
+
 test("impact selection adds one newest representative per family for audit harness changes", () => {
   const sources = [
     { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },
@@ -139,6 +167,7 @@ test("impact selection fails closed for shared, existing-registry, and unknown c
     [{ status: "M", path: "src/runtime/api/patches.js", additions: 1, deletions: 1 }],
     [{ status: "M", path: "src/patches/lib/hooks/sidebar.js", additions: 1, deletions: 1 }],
     [{ status: "M", path: "src/patches/index.js", additions: 1, deletions: 1 }],
+    [{ status: "M", path: "src/patches/lib/common-patches.js", additions: 2, deletions: 0, patch: "@@ -1,0 +2 @@\n+  return changed;" }],
     [{ status: "M", path: "mystery/build-input.js", additions: 1, deletions: 0 }],
   ]) {
     const result = selectAffectedSources(sources, classifyImpact(changes));

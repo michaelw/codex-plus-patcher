@@ -182,7 +182,8 @@ the command stops the sweep before the next source and cleans up the active
 audit application.
 
 Affected selection is fail-closed. Additive version-only ports select the new
-versions. Audit or fixture changes also select the newest supported source from
+versions. Addition-only shared-transform hunks stay local only when every hunk
+is explicitly guarded by a newly registered transform owner. Audit or fixture changes also select the newest supported source from
 each source family. Shared runtime, host adapter, public API, patch-engine,
 hook, existing registry, or unclassified application changes select every
 supported version. The runner writes an ignored `impact-summary.json` with the

@@ -229,7 +229,10 @@ selected versions, skipped versions, and reasons in an ignored
 source.
 
 Additive versioned patch files plus additive registration and ownership entries
-select only the new versions. Changes to the audit runner or fixture add the
+select only the new versions. Addition-only changes in the shared transform
+file also stay local when every hunk is explicitly guarded by a newly registered
+transform owner; any unguarded or destructive shared-transform change still
+selects every supported version. Changes to the audit runner or fixture add the
 newest supported source in each source family. Shared runtime, host adapter,
 public API, patch-engine, hook, existing registry, or unclassified application
 changes select every supported version. This keeps version-only ports fast
