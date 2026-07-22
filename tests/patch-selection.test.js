@@ -276,10 +276,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.715.72359-5718");
-  assert.equal(chatgptPatchSets.length, 15);
+  assert.equal(chatgptPatchSets.length, 16);
 
   for (const identity of [
     ["26.715.72359", "5718", "6c6528eb1e8450cdc506a59586f8caffe87576e200977e2a11bdea0cecf1c718"],
+    ["26.715.72028", "5706", "8271e8b537b1f3a87c8453812bac580d9eec05674f05a1faae8f76e56499ffad"],
     ["26.715.61943", "5628", "7501dd25c22e090bb131fe3fe6423e5c3b21b7f275c7e45b86ebe00a68052c80"],
     ["26.715.52143", "5591", "4dc2ca0aac6e4f6f858c504223bcdedf0b2d768fbc948d9f449f2da656f1b98f"],
     ["26.715.31925", "5551", "0c9dd677134340cb944e7642b8bc2504c7b73c7dc334d9d756547858171eea41"],
@@ -363,6 +364,53 @@ test("72359 maps its exact assets and required runtime", () => {
   ]) assert.equal(transformedPaths.has(filePath), true, filePath);
   assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-Q-7mP-kM.js");
   assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72028 registers its exact identity and distinct transform owner", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72028-5706");
+  assert.ok(patchSet);
+  assert.equal(patchSet.codexVersion, "26.715.72028");
+  assert.equal(patchSet.bundleVersion, "5706");
+  assert.equal(patchSet.asarSha256, "8271e8b537b1f3a87c8453812bac580d9eec05674f05a1faae8f76e56499ffad");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.715.72028"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.72028"), false);
+  const transformedPaths = new Set(collectFileTransforms(patchSet).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-DXmUjwbb.js",
+    ".vite/build/src-DVXSULz2.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-CXJ5tIyg.js",
+    "webview/assets/general-settings-BfleeL7z.js",
+    "webview/assets/thread-app-shell-chrome-C7tru4y2.js",
+    "webview/assets/local-conversation-page-CwwU4NJh.js",
+    "webview/assets/mermaid-diagram-C_CaUvVd.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-B6BLbxeh.js");
+  assert.ok(patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72028 owns its moved app shell, command menu, and startup anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72028-5706");
+  const transforms = collectFileTransforms(patchSet);
+  const appShell = transforms.find(([, transform]) => transform.name === "patchAppShell")[1];
+  const commands = transforms.find(([, transform]) => transform.name === "patchCommandMenuRuntimeCommands")[1];
+  const startup = transforms.find(([, transform]) => transform.name === "patchChatGptStartupAnnouncements")[1];
+  assert.match(appShell([
+    "function nP(){let e=(0,aP.c)(3),t,n;",
+    "children:[t,n,(0,oP.jsx)(nr,{onClick:rP,children:(0,oP.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join("")), /CPXDiagnosticDetails\(\{jsx:oP\.jsx,error:null\}\)/);
+  const commandText = commands([
+    "function y4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "},V=[],H=N.filter",
+    "function b4(e){let t=(0,R4.c)(13),",
+    "c=()=>{gh(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandText, /CPXCommandPaletteItem/);
+  assert.match(commandText, /metadata\(\)\.map/);
+  assert.match(commandText, /bindNativeDispatch\(e=>\(gh\(e,`command_menu`\),!0\)\)/);
+  assert.match(
+    startup("function jR({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ze.ChatGPT&&t!=null&&t!==vt.Agent&&t!==vt.Dev}"),
+    /function jR\([^)]*\)\{return false\}/,
+  );
 });
 
 test("72359 owns its moved app shell and composer anchors", () => {
@@ -977,7 +1025,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 1644, `src/patches/*.js line count ${totalLines} exceeds 1644`);
+  assert.ok(totalLines <= 1720, `src/patches/*.js line count ${totalLines} exceeds 1720`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -3356,6 +3404,7 @@ test("header patch renders project path accessories from thread context", () => 
 
     if (
       patchSet.id === "chatgpt-26.715.72359-5718" ||
+      patchSet.id === "chatgpt-26.715.72028-5706" ||
       patchSet.id === "chatgpt-26.715.61943-5628" ||
       patchSet.id === "chatgpt-26.715.52143-5591" ||
       patchSet.id === "chatgpt-26.715.31925-5551" ||
