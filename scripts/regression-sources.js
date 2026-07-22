@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -25,6 +26,7 @@ function expandPath(input) {
 
 function parseArgs(argv) {
   const args = {
+    affectedSince: null,
     autoClean: false,
     clean: false,
     filter: null,
@@ -51,7 +53,8 @@ function parseArgs(argv) {
       return argv[index];
     };
 
-    if (arg === "--auto-clean") args.autoClean = true;
+    if (arg === "--affected-since") args.affectedSince = next();
+    else if (arg === "--auto-clean") args.autoClean = true;
     else if (arg === "--clean") args.clean = true;
     else if (arg === "--filter") args.filter = next();
     else if (arg === "--include-native-open-probes") args.includeNativeOpenProbes = true;
@@ -80,6 +83,8 @@ function parseArgs(argv) {
 
   if (args.autoClean && args.keepOpen) throw new Error("--auto-clean cannot be combined with --keep-open");
   if (args.clean && args.preflightOnly) throw new Error("--clean cannot be combined with --preflight-only");
+  if (args.affectedSince && args.preflightOnly) throw new Error("--affected-since cannot be combined with --preflight-only; preflight every cached source");
+  if (args.affectedSince && args.clean) throw new Error("--affected-since cannot be combined with --clean");
   return args;
 }
 
@@ -88,6 +93,7 @@ function helpText() {
   npm run regression:sources -- [options]
 
 Options:
+  --affected-since <commit>    Live-test only versions affected since this commit
   --sources-dir <path>         Source cache root. Default: main checkout work/sources
   --filter <text>              Case-insensitive match against version, path, or patch set id
   --newest <N>                 Limit to the newest N matching cached sources
@@ -118,6 +124,10 @@ function defaultPreflightRoot({ cwd = process.cwd(), now = new Date() } = {}) {
   return path.join(cwd, "work", "regression", "preflight", now.toISOString().replace(/[:.]/g, "-"));
 }
 
+function defaultImpactRoot({ cwd = process.cwd(), now = new Date() } = {}) {
+  return path.join(cwd, "work", "regression", "impact", now.toISOString().replace(/[:.]/g, "-"));
+}
+
 function compareVersionStrings(left, right) {
   const leftParts = String(left || "").split(".").map((part) => Number(part));
   const rightParts = String(right || "").split(".").map((part) => Number(part));
@@ -134,6 +144,132 @@ function newestSources(sources, count) {
   return [...sources]
     .sort((left, right) => compareVersionStrings(right.version, left.version))
     .slice(0, count == null ? undefined : count);
+}
+
+const ADDITIVE_METADATA_PATHS = new Set([
+  "src/patches/index.js",
+  "src/patches/lib/transform-ownership.js",
+]);
+
+const PROOF_HARNESS_PATHS = new Set([
+  "scripts/regression-sources.js",
+  "src/core/audit-fixture.js",
+  "src/core/plugin-audit.js",
+]);
+
+function parseNameStatus(output) {
+  return String(output || "").trim().split("\n").filter(Boolean).map((line) => {
+    const fields = line.split("\t");
+    return { status: fields[0], path: fields.at(-1) };
+  });
+}
+
+function parseNumstat(output) {
+  const stats = new Map();
+  for (const line of String(output || "").trim().split("\n").filter(Boolean)) {
+    const [added, deleted, ...pathParts] = line.split("\t");
+    const filePath = pathParts.at(-1);
+    stats.set(filePath, {
+      additions: added === "-" ? null : Number(added),
+      deletions: deleted === "-" ? null : Number(deleted),
+    });
+  }
+  return stats;
+}
+
+function collectGitImpact({ cwd = process.cwd(), baseRef, execFileSync = childProcess.execFileSync } = {}) {
+  let baseSha;
+  try {
+    baseSha = String(execFileSync("git", ["rev-parse", "--verify", `${baseRef}^{commit}`], { cwd, encoding: "utf8" })).trim();
+  } catch (error) {
+    throw new Error(`Cannot resolve --affected-since ref ${baseRef}: ${error.message || String(error)}`);
+  }
+  const nameStatus = parseNameStatus(execFileSync("git", ["diff", "--name-status", "--find-renames", baseSha, "--"], { cwd, encoding: "utf8" }));
+  const numstat = parseNumstat(execFileSync("git", ["diff", "--numstat", "--find-renames", baseSha, "--"], { cwd, encoding: "utf8" }));
+  const untracked = String(execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd, encoding: "utf8" }))
+    .trim().split("\n").filter(Boolean);
+  const byPath = new Map();
+  for (const change of nameStatus) {
+    const stats = numstat.get(change.path) || { additions: null, deletions: null };
+    byPath.set(change.path, { ...change, ...stats });
+  }
+  for (const filePath of untracked) {
+    if (!byPath.has(filePath)) byPath.set(filePath, { status: "A", path: filePath, additions: null, deletions: 0 });
+  }
+  return { baseRef, baseSha, changes: [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path)) };
+}
+
+function newPatchVersion(change) {
+  if (change.status !== "A") return null;
+  return /^src\/patches\/(\d+\.\d+\.\d+)-\d+\.js$/.exec(change.path)?.[1] || null;
+}
+
+function classifyImpact(changes = []) {
+  const newVersions = new Set();
+  const harnessPaths = [];
+  const allPaths = [];
+  const ignoredPaths = [];
+  const metadataPaths = [];
+  for (const change of changes) {
+    const version = newPatchVersion(change);
+    if (version) {
+      newVersions.add(version);
+      continue;
+    }
+    if (ADDITIVE_METADATA_PATHS.has(change.path)) {
+      if ((change.deletions ?? 1) === 0 && !String(change.status).startsWith("D")) metadataPaths.push(change.path);
+      else allPaths.push(change.path);
+      continue;
+    }
+    if (PROOF_HARNESS_PATHS.has(change.path)) {
+      harnessPaths.push(change.path);
+      continue;
+    }
+    if (change.path === "AGENTS.md" || change.path === "DEVELOPMENT.md" || change.path.startsWith("docs/") || change.path.startsWith("tests/")) {
+      ignoredPaths.push(change.path);
+      continue;
+    }
+    allPaths.push(change.path);
+  }
+  return {
+    scope: allPaths.length > 0 ? "all-supported" : harnessPaths.length > 0 ? "family-representatives" : newVersions.size > 0 ? "new-patches" : "none",
+    newVersions: [...newVersions].sort((left, right) => compareVersionStrings(right, left)),
+    harnessPaths,
+    allPaths,
+    metadataPaths,
+    ignoredPaths,
+  };
+}
+
+function selectAffectedSources(sources, impact) {
+  const supported = newestSources(sources.filter((source) => source.supported));
+  const selectedVersions = new Set();
+  const reasons = new Map();
+  if (impact.scope === "all-supported") {
+    for (const source of supported) {
+      selectedVersions.add(source.version);
+      reasons.set(source.version, `shared or unclassified application code changed: ${impact.allPaths.join(", ")}`);
+    }
+  } else {
+    for (const version of impact.newVersions) {
+      selectedVersions.add(version);
+      reasons.set(version, `new versioned patch ${version}`);
+    }
+    if (impact.scope === "family-representatives") {
+      const families = new Set();
+      for (const source of supported) {
+        if (families.has(source.sourceFamily)) continue;
+        families.add(source.sourceFamily);
+        selectedVersions.add(source.version);
+        if (!reasons.has(source.version)) reasons.set(source.version, `proof harness changed: ${impact.harnessPaths.join(", ")}`);
+      }
+    }
+  }
+  const selected = supported.filter((source) => selectedVersions.has(source.version))
+    .map((source) => ({ ...source, impactReason: reasons.get(source.version) || "affected by current diff" }));
+  const skipped = supported.filter((source) => !selectedVersions.has(source.version))
+    .map((source) => ({ ...source, impactReason: "no packaged code dependency or required harness representative changed" }));
+  return { ...impact, selected, skipped };
 }
 
 function prefixProgress(progress, prefix, context = {}) {
@@ -439,12 +575,41 @@ async function runRegressionSources(args, operations = {}) {
   const contractRoot = args.artifactDir || defaultContractRoot({ cwd, now });
   const preflightRoot = defaultPreflightRoot({ cwd, now });
   const preflightSummary = path.join(preflightRoot, "preflight-summary.json");
+  const impactRoot = defaultImpactRoot({ cwd, now });
+  const impactSummary = path.join(impactRoot, "impact-summary.json");
   const runArgs = {
     ...args,
     visualContract,
     contractRoot,
   };
-  const sources = discoverSources({ sourcesDir, filter: args.filter, newest: args.newest, operations });
+  let sources = discoverSources({ sourcesDir, filter: args.filter, newest: args.newest, operations });
+  let impact = null;
+  if (args.affectedSince) {
+    const collected = (operations.collectGitImpact || collectGitImpact)({
+      cwd,
+      baseRef: args.affectedSince,
+      execFileSync: operations.execFileSync || childProcess.execFileSync,
+    });
+    impact = selectAffectedSources(sources, collected.scope ? collected : { ...collected, ...classifyImpact(collected.changes) });
+    sources = impact.selected;
+    const fsImpl = operations.fs || fs;
+    fsImpl.mkdirSync(impactRoot, { recursive: true });
+    fsImpl.writeFileSync(impactSummary, `${JSON.stringify({
+      affectedSince: args.affectedSince,
+      baseSha: impact.baseSha,
+      scope: impact.scope,
+      changes: impact.changes,
+      classifications: {
+        newVersions: impact.newVersions,
+        harnessPaths: impact.harnessPaths,
+        allPaths: impact.allPaths,
+        metadataPaths: impact.metadataPaths,
+        ignoredPaths: impact.ignoredPaths,
+      },
+      selected: impact.selected.map((source) => ({ version: source.version, patchSet: source.patchSet, reason: source.impactReason })),
+      skipped: impact.skipped.map((source) => ({ version: source.version, patchSet: source.patchSet, reason: source.impactReason })),
+    }, null, 2)}\n`);
+  }
   const makeProgress = operations.createAuditProgress || createAuditProgress;
   const makeJsonlProgress = operations.createJsonlProgress || createJsonlProgress;
   const progress = operations.progress === undefined
@@ -456,6 +621,20 @@ async function runRegressionSources(args, operations = {}) {
         quiet: false,
       }, operations.progressOptions || {})
     : operations.progress;
+
+  if (impact) {
+    progress?.item?.("impact", `${impact.selected.length} selected, ${impact.skipped.length} skipped`, {
+      phase: "impact",
+      scope: impact.scope,
+      impactSummary,
+    });
+    for (const source of impact.selected) {
+      progress?.item?.("source", source.version, { phase: "impact", selected: true, reason: source.impactReason, patchSet: source.patchSet });
+    }
+    for (const source of impact.skipped) {
+      progress?.item?.("source", source.version, { phase: "impact", selected: false, reason: source.impactReason, patchSet: source.patchSet });
+    }
+  }
 
   if (args.clean) {
     progress?.start?.("Cleaning generated regression sources", { phase: "cleanup" });
@@ -475,6 +654,9 @@ async function runRegressionSources(args, operations = {}) {
       cleanOnly: true,
       sourcesDir,
       regressionDir,
+      affectedSince: args.affectedSince,
+      impact: impact ? { ...impact, selected: impact.selected, skipped: impact.skipped } : null,
+      impactSummary: impact ? impactSummary : null,
       filter: args.filter,
       newest: args.newest,
       autoClean: args.autoClean,
@@ -553,6 +735,9 @@ async function runRegressionSources(args, operations = {}) {
     cleanOnly: false,
     sourcesDir,
     regressionDir,
+    affectedSince: args.affectedSince,
+    impact: impact ? { ...impact, selected: impact.selected, skipped: impact.skipped } : null,
+    impactSummary: impact ? impactSummary : null,
     filter: args.filter,
     newest: args.newest,
     autoClean: args.autoClean,
@@ -571,6 +756,8 @@ function formatHumanResult(result) {
   ];
   if (result.filter) lines.push(`Filter: ${result.filter}`);
   if (result.newest != null) lines.push(`Newest: ${result.newest}`);
+  if (result.affectedSince) lines.push(`Affected since: ${result.affectedSince}`);
+  if (result.impactSummary) lines.push(`Impact summary: ${result.impactSummary}`);
   lines.push("");
 
   if (result.results.length === 0) {
@@ -688,6 +875,7 @@ async function main() {
         failed: result.results.filter((entry) => entry.supported && entry.ok === false).length,
         skipped: result.results.filter((entry) => !entry.supported).length,
         contractRoot: result.contractRoot,
+        impactSummary: result.impactSummary,
       }));
     }
   } else if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -710,10 +898,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  classifyImpact,
   cleanRegressionDir,
   cleanRegressionSources,
+  collectGitImpact,
   compareVersionStrings,
   defaultContractRoot,
+  defaultImpactRoot,
   defaultPreflightRoot,
   defaultRegressionDirForSources,
   discoverSources,
@@ -731,6 +922,7 @@ module.exports = {
   runRegressionSources,
   runSourceRegression,
   runSourcePreflight,
+  selectAffectedSources,
   sourceMatchesFilter,
   terminateActiveSource,
 };
