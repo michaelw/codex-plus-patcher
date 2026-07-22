@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.715.61943-5628");
-  assert.equal(chatgptPatchSets.length, 14);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.72359-5718");
+  assert.equal(chatgptPatchSets.length, 15);
 
   for (const identity of [
+    ["26.715.72359", "5718", "6c6528eb1e8450cdc506a59586f8caffe87576e200977e2a11bdea0cecf1c718"],
     ["26.715.61943", "5628", "7501dd25c22e090bb131fe3fe6423e5c3b21b7f275c7e45b86ebe00a68052c80"],
     ["26.715.52143", "5591", "4dc2ca0aac6e4f6f858c504223bcdedf0b2d768fbc948d9f449f2da656f1b98f"],
     ["26.715.31925", "5551", "0c9dd677134340cb944e7642b8bc2504c7b73c7dc334d9d756547858171eea41"],
@@ -324,6 +325,9 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.72359"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.72359"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.52143"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.61943"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.52143-5591", "chatgpt-26.715.61943"), false);
   assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.52143"), true);
@@ -342,6 +346,64 @@ test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", 
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.21316-5484", "chatgpt-26.715.21425"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.707.91948-5440", "chatgpt-26.715"), false);
   assert.throws(() => patchSetOwnsTransformVariant("chatgpt-26.715.21425-5488", "unknown"), /Unknown transform variant unknown/);
+});
+
+test("72359 maps its exact assets and required runtime", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72359-5718");
+  const transformedPaths = new Set(collectFileTransforms(newest).map(([filePath]) => filePath));
+
+  for (const filePath of [
+    ".vite/build/main-2laZZXle.js",
+    ".vite/build/src-DVXSULz2.js",
+    "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-C1AmS95p.js",
+    "webview/assets/general-settings-CM4Mcgcy.js",
+    "webview/assets/thread-app-shell-chrome-DMc8DBvS.js",
+    "webview/assets/local-conversation-page-MX2XDodp.js",
+    "webview/assets/mermaid-diagram-DWglEZVp.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-Q-7mP-kM.js");
+  assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("72359 owns its moved app shell and composer anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72359-5718");
+  const appShell = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchAppShell")?.[1];
+  const composerBubble = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchComposerBubbleColors")?.[1];
+  const composerProject = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchComposerProjectColors")?.[1];
+  const commands = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchCommandMenuRuntimeCommands")?.[1];
+  const startup = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchChatGptStartupAnnouncements")?.[1];
+  const transformed = appShell([
+    "function rP(){let e=(0,oP.c)(3),t,n;",
+    "children:[t,n,(0,sP.jsx)(nr,{onClick:iP,children:(0,sP.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
+  ].join(""));
+
+  assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:sP\.jsx,error:null\}\)/);
+  const composer = composerBubble([
+    "function qk(e){let t=(0,Jk.c)(55),",
+    "p=(0,Yk.jsx)(`div`,{className:n,onDragEnter:r,",
+    "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
+    "A=(0,Yk.jsx)(Gy,{...p,className:C,",
+  ].join(""));
+  assert.equal(composer.match(/CPXSurfaceProps\(\{\}\)/g)?.length, 3);
+  const composerWithProject = composerProject(`${composer}Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.equal(composerWithProject.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(composerWithProject, /CPXOpenFile=CPXSP\.bindOpenFile.*Ll\(\{scope:U/);
+  const commandText = commands([
+    "function b4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "},V=[],H=N.filter",
+    "c=()=>{hh(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""));
+  assert.match(commandText, /CPXCommandPaletteItem/);
+  assert.match(commandText, /metadata\(\)\.map/);
+  assert.match(commandText, /bindNativeDispatch\(e=>\(hh\(e,`command_menu`\),!0\)\)/);
+  assert.match(
+    startup("function MR({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ze.ChatGPT&&t!=null&&t!==vt.Agent&&t!==vt.Dev}"),
+    /function MR\([^)]*\)\{return false\}/,
+  );
+  assert.throws(
+    () => appShell("function rP(){let e=(0,oP.c)(3),t,n;", { patchSetId: "chatgpt-26.715.61943-5628" }),
+    /belongs to chatgpt-26\.715\.72359-5718/,
+  );
 });
 
 test("newest patch omits transforms for host seams that no longer exist", () => {
@@ -915,7 +977,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 1608, `src/patches/*.js line count ${totalLines} exceeds 1608`);
+  assert.ok(totalLines <= 1644, `src/patches/*.js line count ${totalLines} exceeds 1644`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -3293,6 +3355,7 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.72359-5718" ||
       patchSet.id === "chatgpt-26.715.61943-5628" ||
       patchSet.id === "chatgpt-26.715.52143-5591" ||
       patchSet.id === "chatgpt-26.715.31925-5551" ||
