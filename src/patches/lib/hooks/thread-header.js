@@ -3,7 +3,7 @@ function threadHeaderHook() {
 }
 
 function threadHeaderActiveHook() {
-  return "let CPXH=window.CodexPlusHost.adapters;function CPXThreadHeaderActiveAccessories(e){return CPXH.threadHeader.accessories(CPXH.context.active(),e)}";
+  return "let CPXH=window.CodexPlusHost.adapters;function CPXHA(u,e){let h=CPXH.threadHeader;u(h.subscribe,h.snapshot,h.snapshot);return h.accessories(CPXH.context.active(),e)}";
 }
 
 function threadHeaderContextHook() {

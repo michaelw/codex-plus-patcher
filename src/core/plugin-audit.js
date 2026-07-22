@@ -361,12 +361,18 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
   let status = null;
   while (Date.now() < deadline) {
     status = await cdp.evaluate(`(() => {
-      const searchInput = document.querySelector("input[placeholder='Search projects'], textarea[placeholder='Search projects']");
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const searchInput = Array.from(document.querySelectorAll("input[placeholder='Search projects'], textarea[placeholder='Search projects']")).find(visible);
       const menuCount = document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']").length;
       return {
         triggerCount: document.querySelectorAll("[data-codex-plus-project-selector-trigger]").length,
         menuCount,
-        opened: Boolean(searchInput || menuCount > 0),
+        opened: Boolean(searchInput),
         activePlaceholder: document.activeElement?.getAttribute?.("placeholder") ?? "",
       };
     })()`);
@@ -380,8 +386,12 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
         };
         const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-        const input = document.querySelector("input[placeholder='Search projects'], textarea[placeholder='Search projects']") ||
-          (document.activeElement?.getAttribute?.("placeholder") === "Search projects" ? document.activeElement : null);
+        const findInput = () => Array.from(document.querySelectorAll("input[placeholder='Search projects'], textarea[placeholder='Search projects']")).find(visible) ||
+          (document.activeElement?.getAttribute?.("placeholder") === "Search projects" && visible(document.activeElement) ? document.activeElement : null);
+        let input = null;
+        const inputStartedAt = Date.now();
+        const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
+        const inputWaitMs = Math.min(1000, timeoutMs);
         const currentMenu = () => {
           const candidates = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"));
           return candidates.find((element) => visible(element) && element.contains(input)) ||
@@ -420,52 +430,90 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           const indexes = [0, Math.max(1, Math.floor((letters.length - 1) / 2)), letters.length - 1];
           return indexes.map((index) => letters[index]).join("");
         };
-        const labels = collectLabels();
-        const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
-        const query = queryFor(selectedLabel);
-        if (!input || !selectedLabel || !query) {
-          const menu = currentMenu();
-          resolve({
-            codexVersion: window.CodexPlus?.config?.codexVersion || null,
-            suitableProjectFound: false,
-            queryLength: query.length,
-            visibleResultCount: labels.length,
-            selectedProjectStillVisible: false,
-            noProjectsFoundVisible: Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found")),
-            highlightCount: 0,
-          });
-          return;
-        }
-        const valuePrototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
-        setter?.call(input, query);
-        input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
-        const startedAt = Date.now();
-        const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
-        const finishWhenReady = () => {
-          const menu = currentMenu();
-          const resultLabels = collectLabels();
-          const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
-          const selectedProjectStillVisible = resultLabels.some((label) => label.includes(selectedLabel));
-          const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
-          if (!selectedProjectStillVisible || highlightCount === 0) {
-            if (Date.now() - startedAt < timeoutMs) {
-              setTimeout(finishWhenReady, 100);
+        const runAudit = () => {
+          const labels = collectLabels();
+          const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
+          const query = queryFor(selectedLabel);
+          if (!selectedLabel || !query) {
+            const menu = currentMenu();
+            resolve({
+              codexVersion: window.CodexPlus?.config?.codexVersion || null,
+              suitableProjectFound: false,
+              queryLength: query.length,
+              visibleResultCount: labels.length,
+              selectedProjectStillVisible: false,
+              noProjectsFoundVisible: Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found")),
+              highlightCount: 0,
+            });
+            return;
+          }
+          const valuePrototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
+          setter?.call(input, query);
+          input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
+          const startedAt = Date.now();
+          const fuzzyMatchesQuery = (label, query) => {
+            const candidate = String(label || "").toLowerCase();
+            let offset = 0;
+            for (const character of String(query || "").toLowerCase()) {
+              const match = candidate.indexOf(character, offset);
+              if (match < 0) return false;
+              offset = match + 1;
+            }
+            return true;
+          };
+          const finishWhenReady = () => {
+            const menu = currentMenu();
+            const resultLabels = collectLabels();
+            const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
+            const selectedProjectStillVisible = resultLabels.some((label) => fuzzyMatchesQuery(label, query));
+            const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
+            if (!selectedProjectStillVisible || highlightCount === 0) {
+              if (Date.now() - startedAt < timeoutMs) {
+                setTimeout(finishWhenReady, 100);
+                return;
+              }
+            }
+            resolve({
+              codexVersion: window.CodexPlus?.config?.codexVersion || null,
+              suitableProjectFound: true,
+              queryLength: query.length,
+              visibleResultCount: resultLabels.length,
+              selectedProjectStillVisible,
+              noProjectsFoundVisible,
+              highlightCount,
+            });
+          };
+          setTimeout(finishWhenReady, 100);
+        };
+        const waitForInput = () => {
+          input = findInput();
+          if (!input) {
+            if (Date.now() - inputStartedAt < inputWaitMs) {
+              setTimeout(waitForInput, 100);
               return;
             }
+            resolve({
+              retryable: true,
+              codexVersion: window.CodexPlus?.config?.codexVersion || null,
+              suitableProjectFound: false,
+              queryLength: 0,
+              visibleResultCount: 0,
+              selectedProjectStillVisible: false,
+              noProjectsFoundVisible: false,
+              highlightCount: 0,
+            });
+            return;
           }
-          resolve({
-            codexVersion: window.CodexPlus?.config?.codexVersion || null,
-            suitableProjectFound: true,
-            queryLength: query.length,
-            visibleResultCount: resultLabels.length,
-            selectedProjectStillVisible,
-            noProjectsFoundVisible,
-            highlightCount,
-          });
+          runAudit();
         };
-        setTimeout(finishWhenReady, 100);
+        waitForInput();
       })`);
+      if (fuzzyDom?.retryable) {
+        await dispatchShortcut();
+        await wait(100);
+        continue;
+      }
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       const versionParts = String(fuzzyDom?.codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -841,6 +889,9 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       .filter((element) => /diff --git/.test(element.textContent || ""))
       .length;
     const reviewDiffCardCount = () => visibleElements(".codex-review-diff-card").length;
+    const reviewLoadingPlaceholderCount = () => visibleElements("[aria-busy='true'], [class*='animate-pulse']")
+      .filter((element) => element.getBoundingClientRect().left >= innerWidth / 2)
+      .length;
     const snapshot = (extra = {}) => ({
       candidateCount: extra.candidateCount ?? 0,
       attemptedCandidates: extra.attemptedCandidates ?? 0,
@@ -877,6 +928,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       nestedBranchPickerDetails: nestedBranchPickerDetails(),
       rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
       reviewDiffCardCount: reviewDiffCardCount(),
+      reviewLoadingPlaceholderCount: reviewLoadingPlaceholderCount(),
       reviewTabCount: visibleElements("button, [role='tab'], [role='button']").filter((element) => normalize(element.textContent) === "Review").length,
     });
     const candidates = visibleElements("[data-app-action-sidebar-thread-row]")
@@ -932,7 +984,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
             current.nestedBranchPickerCount >= 2 &&
             current.nestedBranchPickerOptionCounts.every((count) => count >= 3) &&
             current.rawNestedDiffFallbackCount === 0 &&
-            current.reviewDiffCardCount >= 2
+            current.reviewDiffCardCount >= 2 &&
+            current.reviewLoadingPlaceholderCount === 0
           ) || Date.now() >= reviewDeadline) {
             resolve(current);
             return;
@@ -1204,6 +1257,36 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         ? "Review panel did not render nested repository content"
         : "No review-capable thread was found",
   };
+}
+
+function reviewPanelNeedsWarmRetry(status) {
+  return Boolean(
+    status?.ok === false &&
+    status.reviewControlFound &&
+    status.clickedReview &&
+    status.selectedReview &&
+    !status.boundaryVisible &&
+    !status.boundaryEverVisible &&
+    !status.tryAgainVisible &&
+    status.repoHeaderVisible &&
+    status.mainVisible &&
+    status.nativeReviewSourceVisible &&
+    status.unstagedReviewSourceSelected &&
+    !status.reviewToolbarFailureVisible &&
+    status.nestedRepoVisible &&
+    status.strictNestedBranchPreload &&
+    !status.nestedBranchPickerPreloadBeforeOpen &&
+    status.nestedBranchPickerPreloadComplete &&
+    status.nestedBranchPickerPopulated &&
+    status.nestedBranchPickerCount >= 2 &&
+    status.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
+    status.rawNestedDiffFallbackCount === 0 &&
+    status.reviewDiffCardCount >= 3 &&
+    status.reviewLoadingPlaceholderCount === 0 &&
+    status.nestedDiffCardCount >= 2 &&
+    status.nestedDiffDisclosureExpanded &&
+    status.nestedDiffDisclosureCollapsed
+  );
 }
 
 function listRunningAuditApps({
@@ -2103,6 +2186,9 @@ async function visualReadback(cdp) {
         tabVisible: visibleElements("button, [role='tab'], [role='button']").some((element) => normalize(element.textContent) === "Review"),
         repoHeaderVisible: textIncludes("Codex Plus repositories"),
         diffCardCount: visibleElements(".codex-review-diff-card").length,
+        loadingPlaceholderCount: visibleElements("[aria-busy='true'], [class*='animate-pulse']")
+          .filter((element) => element.getBoundingClientRect().left >= innerWidth / 2)
+          .length,
         rawDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
       },
       commandPalette: {
@@ -2197,7 +2283,7 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || !reviewState?.ok || !commandState?.ok || !review.review.repoHeaderVisible || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || !reviewState?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
     contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, reviewState, commandState, review: review.review, command: command.commandPalette })}`;
   }
@@ -3904,25 +3990,35 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!virtualProjectContext?.cwd?.includes("aharness-examples") || virtualProjectContext?.label !== "aharness-examples") {
         throw new Error(`Aharness virtual route did not expose the aharness project context: ${JSON.stringify(virtualProjectContext)}`);
       }
+      const visuallyExposed = (element) => {
+        if (!visible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(topmost && (topmost === element || element.contains(topmost)));
+      };
       const waitForSettledVirtualPathHeader = async (timeoutMs = 10000) => {
         const startedAt = Date.now();
         let stalePathChip = null;
         while (Date.now() - startedAt < timeoutMs) {
-          const visiblePathChips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter((chip) => visible(chip));
+          const visiblePathChips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter(visuallyExposed);
           stalePathChip = visiblePathChips.find((chip) => chip.getAttribute("title") && !chip.getAttribute("title").includes("aharness-examples")) || null;
           if (!stalePathChip) return null;
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return stalePathChip;
       };
-      const stalePathChip = await waitForSettledVirtualPathHeader();
+      let stalePathChip = await waitForSettledVirtualPathHeader();
+      if (stalePathChip) {
+        press(runRow);
+        stalePathChip = await waitForSettledVirtualPathHeader();
+      }
       if (stalePathChip) throw new Error(`Aharness virtual route left a stale native header path chip visible: ${stalePathChip.getAttribute("title")}`);
       const expectedVirtualTitle = window.CodexPlus?.ui?.routeContext?.active?.()?.title || "";
       if (!expectedVirtualTitle) throw new Error("Aharness virtual route did not expose a canonical header title");
       const nativeHeader = Array.from(document.querySelectorAll("header"))
-        .find((element) => visible(element) && element.querySelector("[data-codex-plus-project-path-header]"));
+        .find((element) => visible(element) && Array.from(element.querySelectorAll("[data-codex-plus-project-path-header]")).some(visuallyExposed));
       const nativeHeaderText = normalize(nativeHeader?.textContent || "");
-      if (!nativeHeaderText.includes(expectedVirtualTitle)) {
+      if (nativeHeader && !nativeHeaderText.includes(expectedVirtualTitle)) {
         throw new Error(`Aharness virtual route left a stale native header title: ${nativeHeaderText}`);
       }
       const routeBackground = getComputedStyle(route).backgroundColor;
@@ -4040,7 +4136,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (!routeElement || !activeRunId) throw new Error(`Aharness route did not open for ${target}`);
         return { row, routeElement, activeRunId };
       };
-      await replyVisibleOwnerChoice("red");
+      await replyVisibleOwnerChoice("red", 60000);
       const progressRow = await waitForAharness(
         "[data-codex-plus-aharness-route] [data-codex-plus-aharness-anchor]:not(.cpx-ah-row-user)",
         20000,
@@ -4803,12 +4899,22 @@ async function runAudit(args, {
       }
     }
     if (live.pluginResults?.nestedRepositories?.ok) {
-      const reviewPanel = await withAuditCheckProgress(
+      let reviewPanel = await withAuditCheckProgress(
         progress,
         "Verifying Review panel render",
         "Review panel rendered",
         () => verifyReviewPanel(cdp),
       );
+      if (reviewPanelNeedsWarmRetry(reviewPanel)) {
+        const coldProbe = reviewPanel;
+        reviewPanel = await withAuditCheckProgress(
+          progress,
+          "Rechecking Review panel after cold branch preload",
+          "Review panel rendered after cold branch preload",
+          () => verifyReviewPanel(cdp),
+        );
+        reviewPanel.coldProbe = coldProbe;
+      }
       live.pluginResults.nestedRepositories.reviewPanel = reviewPanel;
       if (reviewPanel.ok && args.visualContract === true) {
         const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" });
@@ -5147,6 +5253,7 @@ module.exports = {
   waitForLiveRuntime,
   verifyMermaidViewerRender,
   verifyProjectSelectorShortcutKey,
+  reviewPanelNeedsWarmRetry,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   writeJsonl,

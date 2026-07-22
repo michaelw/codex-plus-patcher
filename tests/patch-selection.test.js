@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.715.52143-5591");
-  assert.equal(chatgptPatchSets.length, 13);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.715.61943-5628");
+  assert.equal(chatgptPatchSets.length, 14);
 
   for (const identity of [
+    ["26.715.61943", "5628", "7501dd25c22e090bb131fe3fe6423e5c3b21b7f275c7e45b86ebe00a68052c80"],
     ["26.715.52143", "5591", "4dc2ca0aac6e4f6f858c504223bcdedf0b2d768fbc948d9f449f2da656f1b98f"],
     ["26.715.31925", "5551", "0c9dd677134340cb944e7642b8bc2504c7b73c7dc334d9d756547858171eea41"],
     ["26.715.31251", "5538", "8142e0848fe49097c129a1093f80061c13de04c2893525ee7c751d26b5a7bd4f"],
@@ -323,6 +324,9 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.61943"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.52143-5591", "chatgpt-26.715.61943"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.715.61943-5628", "chatgpt-26.715.52143"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.52143-5591", "chatgpt-26.715.52143"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31925-5551", "chatgpt-26.715.52143"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.31925-5551", "chatgpt-26.715.31925"), true);
@@ -2243,9 +2247,10 @@ test("141536 binds native context and title while prepending the path accessory 
     "function zyt({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /function CPXThreadHeaderActiveAccessories\(e\)/);
+  assert.match(actionShell, /function CPXHA\(u,e\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:oV\.jsx,jsxs:oV\.jsxs\}\)\)/);
+  assert.match(actionShell, /u\(h\.subscribe,h\.snapshot,h\.snapshot\)/);
+  assert.match(actionShell, /CPXHA\(aV\.useSyncExternalStore,\{jsx:oV\.jsx,jsxs:oV\.jsxs\}\)\)/);
   assert.equal(actionShell.match(/_=/g)?.length, 1);
 });
 
@@ -2807,9 +2812,9 @@ test("81905 binds native context and title while prepending the path accessory t
     "function THt({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /function CPXThreadHeaderActiveAccessories\(e\)/);
+  assert.match(actionShell, /function CPXHA\(u,e\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:EU\.jsx,jsxs:EU\.jsxs\}\)\)/);
+  assert.match(actionShell, /CPXHA\(TU\.useSyncExternalStore,\{jsx:EU\.jsx,jsxs:EU\.jsxs\}\)\)/);
 });
 
 test("70822 binds native context and title while prepending the path accessory to the end-action slot", () => {
@@ -2835,9 +2840,9 @@ test("70822 binds native context and title while prepending the path accessory t
     "function a7e({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /function CPXThreadHeaderActiveAccessories\(e\)/);
+  assert.match(actionShell, /function CPXHA\(u,e\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:K5\.jsx,jsxs:K5\.jsxs\}\)\)/);
+  assert.match(actionShell, /CPXHA\(G5\.useSyncExternalStore,\{jsx:K5\.jsx,jsxs:K5\.jsxs\}\)\)/);
 });
 
 test("61825 binds native context and title while prepending the path accessory to the end-action slot", () => {
@@ -2861,7 +2866,7 @@ test("61825 binds native context and title while prepending the path accessory t
     "function lb({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:yb\.jsx,jsxs:yb\.jsxs\}\)\)/);
+  assert.match(actionShell, /CPXHA\(sb\.useSyncExternalStore,\{jsx:yb\.jsx,jsxs:yb\.jsxs\}\)\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
 });
 
@@ -2886,7 +2891,7 @@ test("42026 binds native context and title while prepending the path accessory t
     "function aGe({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:OF\.jsx,jsxs:OF\.jsxs,useSyncExternalStore:DF\.useSyncExternalStore\}\)\)/);
+  assert.match(actionShell, /CPXHA\(DF\.useSyncExternalStore,\{jsx:OF\.jsx,jsxs:OF\.jsxs\}\)\)/);
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
 });
 
@@ -2913,7 +2918,7 @@ test("41415 binds native context and title while prepending the path accessory t
   ].join(""));
   assert.match(
     actionShell,
-    /CPXThreadHeaderActiveAccessories\(\{jsx:rq\.jsx,jsxs:rq\.jsxs,useSyncExternalStore:nq\.useSyncExternalStore\}\)\)/,
+    /CPXHA\(nq\.useSyncExternalStore,\{jsx:rq\.jsx,jsxs:rq\.jsxs\}\)\)/,
   );
   assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
 });
@@ -2939,7 +2944,7 @@ test("31921 binds native context and title while prepending the path accessory t
     "function eR({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
     "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),v=u.filter(({align:e})=>e===`end`),y=h.length>0,",
   ].join(""));
-  assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:uR\.jsx,jsxs:uR\.jsxs\}\)\)/);
+  assert.match(actionShell, /CPXHA\(QL\.useSyncExternalStore,\{jsx:uR\.jsx,jsxs:uR\.jsxs\}\)\)/);
   assert.match(actionShell, /CPXScope=ge\(q\)/);
   assert.match(actionShell, /v=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
   assert.match(actionShell, /CPXSP\.bindMount\(\(\)=>\(\{scope:CPXScope\}\)\)/);
@@ -3076,7 +3081,7 @@ test("header patch renders project path accessories from thread context", () => 
         "function eR({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
         "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),v=u.filter(({align:e})=>e===`end`),y=h.length>0,",
       ].join(""));
-      assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:uR\.jsx,jsxs:uR\.jsxs\}\)\)/);
+      assert.match(actionShell, /CPXHA\(QL\.useSyncExternalStore,\{jsx:uR\.jsx,jsxs:uR\.jsxs\}\)\)/);
       assert.match(actionShell, /v=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
       continue;
     }
@@ -3162,9 +3167,9 @@ test("header patch renders project path accessories from thread context", () => 
         "function Nk({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
         "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
       ].join(""));
-      assert.match(actionShell, /function CPXThreadHeaderActiveAccessories\(e\)/);
+      assert.match(actionShell, /function CPXHA\(u,e\)/);
       assert.match(actionShell, /_=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(u\.filter/);
-      assert.match(actionShell, /CPXThreadHeaderActiveAccessories\(\{jsx:Uk\.jsx,jsxs:Uk\.jsxs\}\)\)/);
+      assert.match(actionShell, /CPXHA\(jk\.useSyncExternalStore,\{jsx:Uk\.jsx,jsxs:Uk\.jsxs\}\)\)/);
       continue;
     }
     if (patchSet.id === "codex-26.623.42026-4514") {
@@ -3288,6 +3293,7 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.715.61943-5628" ||
       patchSet.id === "chatgpt-26.715.52143-5591" ||
       patchSet.id === "chatgpt-26.715.31925-5551" ||
       patchSet.id === "chatgpt-26.715.31251-5538" ||
