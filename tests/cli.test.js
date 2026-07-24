@@ -769,6 +769,9 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   assert.match(activation, /data-app-action-sidebar-project-row.*aria-expanded='false'/);
   assert.match(activation, /aria-label='Expand project'/);
   assert.match(activation, /activateTargetWithKeyboard/);
+  assert.match(activation, /clickTarget = async \(preferRow = false\)/);
+  assert.match(activation, /preferRow \? "row" : "\(labels\[0\] \|\| row\)"/);
+  assert.match(activation, /await clickTarget\(true\)/);
   assert.match(activation, /Input\.dispatchKeyEvent/);
   assert.match(activation, /key: "Enter"/);
   assert.doesNotMatch(activation, /target\.rowText/);
@@ -1048,6 +1051,17 @@ test("review panel verifier scopes Unstaged selection to the native Branch menu"
   assert.match(source, /Math\.min\(initialHeight, toggledHeight\)/);
   assert.doesNotMatch(source, /selectUnstagedReviewSource/);
   assert.doesNotMatch(source, /loadNestedBranchPickers/);
+});
+
+test("live review audit opens the native Review control with trusted input", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("async function activateReviewControlWithTrustedInput");
+  const end = source.indexOf("async function verifyReviewPanelRender", start);
+  const activation = source.slice(start, end);
+
+  assert.match(activation, /Input\.dispatchMouseEvent/);
+  assert.match(activation, /text === "Review" \|\| label === "Review"/);
+  assert.match(activation, /clickCount: 1/);
 });
 
 test("review panel verifier fails when no review-capable thread exists", async () => {

@@ -591,7 +591,7 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
     await wait(250);
   }
   if (!target) return { ok: false, message: "Fixture thread row was not visible" };
-  const clickTarget = async () => {
+  const clickTarget = async (preferRow = false) => {
     const point = await cdp.evaluate(`(() => {
       const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
         .find((element) => element.getAttribute("data-app-action-sidebar-thread-title") === ${JSON.stringify(target.title)} &&
@@ -606,7 +606,7 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
           const b = right.getBoundingClientRect();
           return a.width * a.height - b.width * b.height;
         });
-      const rect = (labels[0] || row).getBoundingClientRect();
+      const rect = (${preferRow ? "row" : "(labels[0] || row)"}).getBoundingClientRect();
       return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     })()`);
     if (!point) return false;
@@ -636,7 +636,7 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
     return true;
   };
-  await clickTarget();
+  await clickTarget(true);
   const deadline = Date.now() + timeoutMs;
   let nextRetry = Date.now() + 1000;
   let retries = 0;
@@ -805,6 +805,25 @@ async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeAct
     ...status,
     message: `Selecting Toggle sidebar blur did not blur sidebar rows: ${JSON.stringify(status)}`,
   };
+}
+
+async function activateReviewControlWithTrustedInput(cdp) {
+  const point = await cdp.evaluate(`(() => {
+    const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"; };
+    const control = Array.from(document.querySelectorAll("button, [role='tab'], [role='button']")).filter(visible).find((element) => {
+      const text = String(element.textContent || "").trim();
+      const label = String(element.getAttribute("aria-label") || "").trim();
+      const rect = element.getBoundingClientRect();
+      return (text === "Review" || label === "Review") && rect.left >= innerWidth / 2 && rect.top < 80;
+    });
+    if (!control) return null;
+    const rect = control.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  if (!point) return false;
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+  return true;
 }
 
 async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandidates = 12 } = {}) {
@@ -4899,6 +4918,7 @@ async function runAudit(args, {
       }
     }
     if (live.pluginResults?.nestedRepositories?.ok) {
+      await activateReviewControlWithTrustedInput(cdp);
       let reviewPanel = await withAuditCheckProgress(
         progress,
         "Verifying Review panel render",

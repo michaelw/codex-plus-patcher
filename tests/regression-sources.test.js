@@ -139,6 +139,75 @@ test("impact selection keeps owner-gated shared transform additions local to new
   assert.deepEqual(result.ownerGatedPaths, ["src/patches/lib/common-patches.js"]);
 });
 
+test("impact selection keeps owner-gated project selector transform additions local to new ports", () => {
+  const sources = [
+    { version: "26.721.30844", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },
+    { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-old" },
+  ];
+  const impact = classifyImpact([
+    { status: "A", path: "src/patches/26.721.30844-5813.js", additions: 70, deletions: 0 },
+    {
+      status: "M",
+      path: "src/patches/lib/project-selector-shortcut-patch.js",
+      additions: 4,
+      deletions: 0,
+      patch: [
+        "@@ -10,0 +11,4 @@ function patchSelector(text, context = {}) {",
+        "+  if (patchSetOwnsTransformVariant(context.patchSetId, \"chatgpt-26.721.30844\")) {",
+        "+    const patched = replaceOnce(text, \"old\", \"new\", \"new owner anchor\");",
+        "+    return patched;",
+        "+  }",
+      ].join("\n"),
+    },
+  ]);
+
+  const result = selectAffectedSources(sources, impact);
+  assert.equal(result.scope, "new-patches");
+  assert.deepEqual(result.selected.map((source) => source.version), ["26.721.30844"]);
+  assert.deepEqual(result.ownerGatedPaths, ["src/patches/lib/project-selector-shortcut-patch.js"]);
+});
+
+test("impact selection accepts owner guards that read an unchanged function's second argument", () => {
+  const impact = classifyImpact([
+    { status: "A", path: "src/patches/26.721.30844-5813.js", additions: 70, deletions: 0 },
+    {
+      status: "M",
+      path: "src/patches/lib/common-patches.js",
+      additions: 4,
+      deletions: 0,
+      patch: [
+        "@@ -10,0 +11,4 @@ function patchMermaidDiagramShell(text) {",
+        "+  if (patchSetOwnsTransformVariant((arguments[1] || {}).patchSetId, \"chatgpt-26.721.30844\")) {",
+        "+    const patched = replaceOnce(text, \"old\", \"new\", \"new owner anchor\");",
+        "+    return patched;",
+        "+  }",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.equal(impact.scope, "new-patches");
+  assert.deepEqual(impact.ownerGatedPaths, ["src/patches/lib/common-patches.js"]);
+});
+
+test("impact selection accepts an exact-owner single-line no-op guard", () => {
+  const impact = classifyImpact([
+    { status: "A", path: "src/patches/26.721.30844-5813.js", additions: 70, deletions: 0 },
+    {
+      status: "M",
+      path: "src/patches/lib/common-patches.js",
+      additions: 1,
+      deletions: 0,
+      patch: [
+        "@@ -10,0 +11 @@ function patchComposerPrimitiveSurface(text, context) {",
+        "+  if (patchSetOwnsTransformVariant(context.patchSetId, \"chatgpt-26.721.30844\")) return text;",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.equal(impact.scope, "new-patches");
+  assert.deepEqual(impact.ownerGatedPaths, ["src/patches/lib/common-patches.js"]);
+});
+
 test("impact selection adds one newest representative per family for audit harness changes", () => {
   const sources = [
     { version: "26.715.72359", sourceFamily: "chatgpt", supported: true, patchSet: "chatgpt-new" },

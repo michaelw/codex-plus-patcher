@@ -151,7 +151,10 @@ const ADDITIVE_METADATA_PATHS = new Set([
   "src/patches/lib/transform-ownership.js",
 ]);
 
-const SHARED_TRANSFORM_PATH = "src/patches/lib/common-patches.js";
+const SHARED_TRANSFORM_PATHS = new Set([
+  "src/patches/lib/common-patches.js",
+  "src/patches/lib/project-selector-shortcut-patch.js",
+]);
 
 const PROOF_HARNESS_PATHS = new Set([
   "scripts/regression-sources.js",
@@ -198,11 +201,12 @@ function collectGitImpact({ cwd = process.cwd(), baseRef, execFileSync = childPr
   for (const filePath of untracked) {
     if (!byPath.has(filePath)) byPath.set(filePath, { status: "A", path: filePath, additions: null, deletions: 0 });
   }
-  const sharedTransform = byPath.get(SHARED_TRANSFORM_PATH);
-  if (sharedTransform) {
+  for (const sharedTransformPath of SHARED_TRANSFORM_PATHS) {
+    const sharedTransform = byPath.get(sharedTransformPath);
+    if (!sharedTransform) continue;
     sharedTransform.patch = String(execFileSync(
       "git",
-      ["diff", "--unified=0", baseSha, "--", SHARED_TRANSFORM_PATH],
+      ["diff", "--unified=0", baseSha, "--", sharedTransformPath],
       { cwd, encoding: "utf8" },
     ));
   }
@@ -215,15 +219,16 @@ function newPatchVersion(change) {
 }
 
 function isOwnerGatedTransformAddition(change, newVersions) {
-  if (change.path !== SHARED_TRANSFORM_PATH || change.status !== "M" || change.deletions !== 0 || !change.patch) return false;
+  if (!SHARED_TRANSFORM_PATHS.has(change.path) || change.status !== "M" || change.deletions !== 0 || !change.patch) return false;
   const allowedOwners = new Set([...newVersions].flatMap((version) => [`chatgpt-${version}`, `codex-${version}`]));
   const hunks = String(change.patch).split(/^@@/m).slice(1);
   if (hunks.length === 0) return false;
   return hunks.every((hunk) => {
     const added = hunk.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++"));
-    const guards = added.filter((line) => /^\+  if \(patchSetOwnsTransformVariant\(context\.patchSetId, ["']([^"']+)["']\)\) \{$/.test(line));
+    const guardPattern = /^\+  if \(patchSetOwnsTransformVariant\((?:context\.patchSetId|\(arguments\[1\] \|\| \{\}\)\.patchSetId), ["']([^"']+)["']\)\) (?:\{|return text;)$/;
+    const guards = added.filter((line) => guardPattern.test(line));
     if (guards.length === 0) return false;
-    if (guards.some((line) => !allowedOwners.has(line.match(/["']([^"']+)["']/)?.[1]))) return false;
+    if (guards.some((line) => !allowedOwners.has(line.match(guardPattern)?.[1]))) return false;
     return added.every((line) => !/^\+  \S/.test(line) || line === "+  }" || guards.includes(line));
   });
 }
