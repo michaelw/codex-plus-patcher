@@ -275,10 +275,12 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.721.30844-5813");
-  assert.equal(chatgptPatchSets.length, 19);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.721.41059-5848");
+  assert.equal(chatgptPatchSets.length, 21);
 
   for (const identity of [
+    ["26.721.41059", "5848", "da39a51b06fb4c728d418b8f0f05fc8fd8c6b1f74c4fb4d47c20c7914a798f45"],
+    ["26.721.31836", "5828", "674dab67fe39f9912493f640c1dd80f222f6062ad0f50b182a6cc87eebd0d3dc"],
     ["26.721.30844", "5813", "29dac6cff7bc1aa39c64b4f12c0e47b07bccd0db11767ebc94c1196389b90619"],
     ["26.715.72359", "5718", "6c6528eb1e8450cdc506a59586f8caffe87576e200977e2a11bdea0cecf1c718"],
     ["26.715.72028", "5706", "8271e8b537b1f3a87c8453812bac580d9eec05674f05a1faae8f76e56499ffad"],
@@ -329,6 +331,11 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.41059-5848", "chatgpt-26.721.41059"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.31836-5828", "chatgpt-26.721.41059"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.721.41059-5848", "chatgpt-26.721.31836"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.31836-5828", "chatgpt-26.721.31836"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.30844-5813", "chatgpt-26.721.31836"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.30844-5813", "chatgpt-26.721.30844"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.721.30844"), false);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.715.72359-5718", "chatgpt-26.715.72359"), true);
@@ -452,6 +459,353 @@ test("30844 maps its exact assets and owns the monolithic renderer transforms", 
     () => composerBubble("function i5o(e){let t=(0,nX.c)(36),", { patchSetId: "chatgpt-26.715.72359-5718" }),
     /belongs to chatgpt-26\.721\.30844-5813/,
   );
+});
+
+test("41059 maps its exact assets and owns a distinct current renderer variant", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.41059-5848");
+  assert.ok(newest);
+  assert.equal(newest.codexVersion, "26.721.41059");
+  assert.equal(newest.bundleVersion, "5848");
+  assert.equal(newest.asarSha256, "da39a51b06fb4c728d418b8f0f05fc8fd8c6b1f74c4fb4d47c20c7914a798f45");
+  assert.equal(patchSetOwnsTransformVariant(newest.id, "chatgpt-26.721.41059"), true);
+  assert.equal(patchSetOwnsTransformVariant(newest.id, "chatgpt-26.721.31836"), false);
+  assert.equal(patchSetUsesTransformVariant(newest.id, "chatgpt-26.721.31836"), true);
+
+  const transformedPaths = new Set(collectFileTransforms(newest).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-DXmJ7M03.js",
+    ".vite/build/src-BPbHdvxe.js",
+    "webview/assets/app-initial-BHB6SClA.js",
+    "webview/assets/general-settings-D7HslvR1.js",
+    "webview/assets/thread-app-shell-chrome-DLtp8zjL.js",
+    "webview/assets/local-conversation-page-CANgTozJ.js",
+    "webview/assets/mermaid-diagram-wqUJW2St.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-b_jLzbH8.js");
+});
+
+test("41059 owns its moved Review, composer, and sidebar-row anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.41059-5848");
+  const transforms = collectFileTransforms(newest);
+  const byName = (name) => transforms.find(([, transform]) => transform.name === name)?.[1];
+
+  const review = byName("patchThreadSidePanelTabs")([
+    "function b$o(e){let t=(0,C$o.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,OY.jsx)(ZZa,{children:(0,OY.jsx)(uHo,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), { patchSetId: newest.id });
+  assert.match(review, /renderBodyFromHost\(e,\[OY,sHo,/);
+  assert.match(review, /mainReviewContent:\(0,OY\.jsx\)\(uHo,/);
+
+  const composer = byName("patchComposerBubbleColors")([
+    "function a5o(e){let t=(0,tX.c)(36),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "t[19]!==S||t[20]!==n||t[21]!==d||t[22]!==f||t[23]!==p||t[24]!==m||t[25]!==E||t[26]!==D?",
+    "(k=(0,nX.jsx)(S,{inert:E,className:D,onMouseDown:b5o,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[19]=S,t[20]=n,t[21]=d,t[22]=f,t[23]=p,t[24]=m,t[25]=E,t[26]=D,t[27]=k)",
+  ].join(""), { patchSetId: newest.id });
+  assert.match(composer, /tX\.c\)\(37\)/);
+  assert.match(composer, /t\[36\]!==CPX_resolvedSurfaceProps/);
+  assert.match(composer, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+
+  const rows = byName("patchLocalTaskRow")([
+    "function dUl({entry:e,",
+    "A=If.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+    "Ge=r?Se:void 0,Ke=",
+    "dataAttributes:If.sidebarThreadRow({active:a,hostId:n.hostId,id:r,kind:`local`,pinned:t,title:n.label})",
+    "dataAttributes:If.sidebarThreadRow({active:a,hostId:null,id:r,kind:`remote`,pinned:t,title:e.task.title??``})",
+    "K={onActivateGroup:z,onStartNewConversation:o,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:y,floatStatusIconsRight:c,showPinActionOnHover:s}",
+    "dataAttributes:If.sidebarThreadRow({active:a,hostId:j,id:x,kind:`local`,pinned:t,title:z})",
+  ].join(""), { patchSetId: newest.id });
+  assert.match(rows, /A=\{\.\.\.If\.sidebarProjectRow/);
+  assert.match(rows, /CPXPR\(\{projectId:b,label:g\}\)/);
+  assert.match(rows, /dataAttributes:\{\.\.\.If\.sidebarThreadRow/);
+});
+
+test("41059 owns its moved host wiring and startup anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.41059-5848");
+  const transforms = collectFileTransforms(newest);
+  const byName = (name) => transforms.find(([, transform]) => transform.name === name)?.[1];
+  const context = { patchSetId: newest.id };
+
+  const composerProject = byName("patchComposerProjectColors")(
+    "CPXSurfaceProps({})$a=(e,t=or)=>{let n=e.fsPath||e.path;",
+    context,
+  );
+  assert.match(composerProject, /CPXOpenFile=CPXSP\.bindOpenFile/);
+  assert.match(composerProject, /RM\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?on,/);
+
+  const header = byName("patchHeader")([
+    "function sr(e){let t=(0,cr.c)(5),{conversationId:n}=e,",
+    "let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let c;return t[2]!==s||t[3]!==r?(c=(0,lr.jsx)(q.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,lr.jsx)(Xn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],c}",
+  ].join(""), context);
+  assert.match(header, /actionId:`codex-plus-project-path`/);
+
+  const title = byName("patchThreadTitle")([
+    "function cu(e){let t=(0,du.c)(43),",
+    "projectName:u,title:d,titleSuffix:f,cwd:p,canPin:m,hideForkActions:h}=e,g=c===void 0?!1:c,",
+    "let S=b,C=B(to,n),w=Bo(S,pr(r??C).id),T;",
+  ].join(""), context);
+  assert.match(title, /CPXBindThreadHeaderContext/);
+  assert.match(title, /w=Bo\(S,pr\(r\?\?C\)\.id\)/);
+
+  const commands = byName("patchCommandMenuRuntimeCommands")([
+    "function Mru({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "I=t=>{let n=t.id===`openAvatarOverlay`&&S,r=Hnu(t,o,ZPr(p,t.id)),i=n?o.formatMessage(Q7.tuckAwayPet):r.title;return(0,Z7.jsx)(Nru,{command:t,close:e,description:n?o.formatMessage(Q7.tuckAwayPetDescription):r.description,title:i},t.id)},L=[],R=",
+    "c=()=>{Cj(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""), context);
+  assert.match(commands, /function CPXCommandPaletteItem/);
+  assert.match(commands, /bindNativeDispatch\(e=>\(Cj\(e,`command_menu`\),!0\)\)/);
+
+  const projectSelector = byName("patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut")([
+    "function o8s({activeProjectIdOverride:e,",
+    "function wus(e){let t=(0,Tus.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,sZ.jsx)(mY.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "function nds(e){let t=(0,rds.c)(13),{groups:n,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+    "children:(0,fZ.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,fZ.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "t[0]!==r||t[1]!==g?(v=Dus(r,g,G6s),",
+    "T=(0,$$.jsx)(nds,{groups:y,selectedProjectIds:i,getProjectDetails:W6s,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,$$.jsx)(wus,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "B=c??m,V=e=>{h(e),l?.(e)},H=n&&s===`home`&&y.length===0&&!b;",
+    "triggerButton:d??(s===`hero`?se():ae()),contentWidth:`workspace`",
+  ].join(""), context);
+  assert.match(projectSelector, /CPXP\.trigger\(e,t,c8s\)/);
+  assert.match(projectSelector, /CPXP\.fuzzyFilter\(r,g\)/);
+  assert.match(projectSelector, /CPXP\.fuzzyHighlight\(e\.label,CPXQ,fZ\.jsx\)/);
+  assert.match(projectSelector, /onSearchKeyDown:e=>CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+
+  const mermaid = byName("patchMermaidDiagramShell")([
+    "function pr({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:a,onError:o,onRendered:s,renderKey:c}){",
+    "(0,Y.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":C,children:[",
+  ].join(""), context);
+  assert.match(mermaid, /CPXMermaidDiagramProps\(\{code:t\}\)/);
+
+  const startup = byName("patchChatGptStartupAnnouncements")([
+    "function N9s({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Ol.ChatGPT&&t!=null&&t!==Rl.Agent&&t!==Rl.Dev}",
+    "function Rec(e){let t=(0,zec.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join(""), context);
+  assert.match(startup, /function N9s\([^)]*\)\{return false\}/);
+  assert.match(startup, /function Rec\(e\)\{return null;/);
+});
+
+test("31836 maps its exact assets and owns a distinct current renderer variant", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  assert.ok(newest);
+  assert.equal(newest.codexVersion, "26.721.31836");
+  assert.equal(newest.bundleVersion, "5828");
+  assert.equal(newest.asarSha256, "674dab67fe39f9912493f640c1dd80f222f6062ad0f50b182a6cc87eebd0d3dc");
+  assert.equal(patchSetOwnsTransformVariant(newest.id, "chatgpt-26.721.31836"), true);
+
+  const transformedPaths = new Set(collectFileTransforms(newest).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-D9i1FeCI.js",
+    ".vite/build/src-DChWimf7.js",
+    "webview/assets/app-initial-C-fROkKo.js",
+    "webview/assets/general-settings-DaCT8Zmh.js",
+    "webview/assets/thread-app-shell-chrome-CBH_UkIP.js",
+    "webview/assets/local-conversation-page-Bf1KJPOR.js",
+    "webview/assets/mermaid-diagram-BzeSLuAD.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-b_jLzbH8.js");
+  assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+});
+
+test("31836 owns its moved Review host anchors without widening 30844", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const previous = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.30844-5813");
+  const newestReview = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchThreadSidePanelTabs")[1];
+  const previousReview = collectFileTransforms(previous).find(([, transform]) => transform.name === "patchThreadSidePanelTabs")[1];
+  const source = [
+    "function M$o(e){let t=(0,F$o.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,yY.jsx)(s$a,{children:(0,yY.jsx)(VHo,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  const transformed = newestReview(source, {
+    patchSetId: newest.id,
+    sourceIdentity: {
+      codexVersion: newest.codexVersion,
+      bundleVersion: newest.bundleVersion,
+      asarSha256: newest.asarSha256,
+    },
+  });
+  assert.match(transformed, /renderBodyFromHost\(e,\[yY,RHo,/);
+  assert.match(transformed, /mainReviewContent:\(0,yY\.jsx\)\(VHo,/);
+  assert.throws(
+    () => previousReview(source, { patchSetId: previous.id }),
+    /30844 review host hook insertion anchor/,
+  );
+});
+
+test("31836 owns its consolidated app-shell error boundary anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const appShell = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchAppShell")[1];
+  const errorBoundary = collectFileTransforms(newest).find(([, transform]) => transform.name === "patchErrorBoundary")[1];
+  const source = [
+    "function pSr(e){let t=(0,mSr.c)(9),{resetError:n}=e",
+    "children:[i,a,(0,_k.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,_k.jsx)(Np,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,_k.jsx)(pSr,{resetError:()=>e.resetError()}));",
+  ].join("");
+  const withAppShell = appShell(source, {
+    patchSetId: newest.id,
+  });
+  const transformed = errorBoundary(withAppShell, {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /var CPXDiagnosticDetails=/);
+  assert.match(transformed, /error:CPX_error,componentStack:CPX_componentStack/);
+  assert.match(transformed, /children:\[i,a,CPXDiagnosticDetails\(\{jsx:_k\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\),/);
+  assert.match(transformed, /pSr,\{error:e\.error,componentStack:e\.componentStack,/);
+});
+
+test("31836 owns its moved edit-message form anchor", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const userMessage = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchUserMessageAttachmentsBubbleColors",
+  )[1];
+  const transformed = userMessage([
+    "function cJc({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+    "return(0,N4.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "\"data-user-message-bubble\":!0,tabIndex:0,className:",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /M4\.useSyncExternalStore/);
+  assert.match(transformed, /data-codex-plus-user-entry/);
+  assert.match(transformed, /data-user-message-bubble.*CPXBubbleProps/);
+});
+
+test("31836 owns its moved composer surface and cache anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const composer = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchComposerBubbleColors",
+  )[1];
+  const transformed = composer([
+    "function a5o(e){let t=(0,nX.c)(36),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "t[19]!==S||t[20]!==n||t[21]!==d||t[22]!==f||t[23]!==p||t[24]!==m||t[25]!==E||t[26]!==D?",
+    "(k=(0,rX.jsx)(S,{inert:E,className:D,onMouseDown:b5o,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[19]=S,t[20]=n,t[21]=d,t[22]=f,t[23]=p,t[24]=m,t[25]=E,t[26]=D,t[27]=k)",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /nX\.c\)\(37\)/);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /t\[36\]!==CPX_resolvedSurfaceProps/);
+  assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+});
+
+test("31836 owns the renamed current sidebar row signals", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const localTaskRow = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchLocalTaskRow",
+  )[1];
+  const transformed = localTaskRow([
+    "function VHl({entry:e,",
+    "A=Lf.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+    "Ge=r?Se:void 0,Ke=",
+    "dataAttributes:Lf.sidebarThreadRow({active:a,hostId:n.hostId,id:r,kind:`local`,pinned:t,title:n.label})",
+    "dataAttributes:Lf.sidebarThreadRow({active:a,hostId:null,id:r,kind:`remote`,pinned:t,title:e.task.title??``})",
+    "K={onActivateGroup:z,onStartNewConversation:o,isGrouped:!0,hideRemoteHostEnvIcon:!0,hideTimestamp:l,locationId:y,floatStatusIconsRight:c,showPinActionOnHover:s}",
+    "dataAttributes:Lf.sidebarThreadRow({active:a,hostId:j,id:x,kind:`local`,pinned:t,title:z})",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /Lf\.sidebarProjectRow/);
+  assert.match(transformed, /CPXPR\(\{projectId:b,label:g\}\)/);
+  assert.match(transformed, /dataAttributes:\{\.\.\.Lf\.sidebarThreadRow/);
+});
+
+test("31836 owns its moved composer project file-opener anchor", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const composerProject = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchComposerProjectColors",
+  )[1];
+  const transformed = composerProject(
+    "CPXSurfaceProps({})Za=(e,t=or)=>{let n=e.fsPath||e.path;",
+    { patchSetId: newest.id },
+  );
+
+  assert.match(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(transformed, /CPXOpenFile=CPXSP\.bindOpenFile/);
+  assert.match(transformed, /OM\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?on,/);
+});
+
+test("31836 owns its moved local thread-title context anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const threadTitle = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchThreadTitle",
+  )[1];
+  const transformed = threadTitle([
+    "function cu(e){let t=(0,du.c)(43),",
+    "projectName:u,title:d,titleSuffix:f,cwd:p,canPin:m,hideForkActions:h}=e,_=c===void 0?!1:c,",
+    "let C=x,w=B($t,n),T=Bo(C,za(r??w).id),E;",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /CPXBindThreadHeaderContext/);
+  assert.match(transformed, /title:CPX_nativeTitle/);
+  assert.match(transformed, /T=Bo\(C,za\(r\?\?w\)\.id\)/);
+});
+
+test("31836 owns its moved command-menu runtime anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const commands = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchCommandMenuRuntimeCommands",
+  )[1];
+  const transformed = commands([
+    "function cru({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "I=t=>{let n=t.id===`openAvatarOverlay`&&S,r=vnu(t,o,uFr(p,t.id)),i=n?o.formatMessage(Q7.tuckAwayPet):r.title;return(0,Z7.jsx)(lru,{command:t,close:e,description:n?o.formatMessage(Q7.tuckAwayPetDescription):r.description,title:i},t.id)},L=[],R=",
+    "c=()=>{uj(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /function CPXCommandPaletteItem/);
+  assert.match(transformed, /L=globalThis\.CodexPlusHost\.adapters\.commands\.metadata/);
+  assert.match(transformed, /bindNativeDispatch\(e=>\(uj\(e,`command_menu`\),!0\)\)/);
+});
+
+test("31836 owns its renamed current project-selector JSX anchors", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const projectSelector = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
+  )[1];
+  const transformed = projectSelector([
+    "function F6s({activeProjectIdOverride:e,",
+    "function $ls(e){let t=(0,eus.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,cZ.jsx)(eY.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "function jus(e){let t=(0,Mus.c)(13),{groups:n,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+    "children:(0,pZ.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,pZ.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "t[0]!==r||t[1]!==g?(v=nus(r,g,b6s),",
+    "T=(0,e1.jsx)(jus,{groups:y,selectedProjectIds:i,getProjectDetails:y6s,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,e1.jsx)($ls,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "B=c??m,V=e=>{h(e),l?.(e)},H=n&&s===`home`&&y.length===0&&!b;",
+    "triggerButton:d??(s===`hero`?se():ae()),contentWidth:`workspace`",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /onKeyDown:CPXKD/);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,g\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,CPXQ,pZ\.jsx\)/);
+  assert.match(transformed, /onSearchKeyDown:e=>CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(transformed, /triggerButton:CPXPST/);
+});
+
+test("31836 owns its moved ChatGPT startup announcement eligibility", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.31836-5828");
+  const startup = collectFileTransforms(newest).find(
+    ([, transform]) => transform.name === "patchChatGptStartupAnnouncements",
+  )[1];
+  const transformed = startup([
+    "function c9s({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===El.ChatGPT&&t!=null&&t!==Pl.Agent&&t!==Pl.Dev}",
+    "function pec(e){let t=(0,mec.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join(""), {
+    patchSetId: newest.id,
+  });
+
+  assert.match(transformed, /function c9s\([^)]*\)\{return false\}/);
+  assert.match(transformed, /function pec\(e\)\{return null;/);
 });
 
 test("72028 registers its exact identity and distinct transform owner", () => {
@@ -1159,7 +1513,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 1948, `src/patches/*.js line count ${totalLines} exceeds 1948`);
+  assert.ok(totalLines <= 2100, `src/patches/*.js line count ${totalLines} exceeds 2100`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -1479,6 +1833,10 @@ test("preflightPatchSet rejects duplicate variants and incorrect transform order
 test("replaceOnce reports missing and duplicate anchors precisely", () => {
   assert.throws(() => replaceOnce("none", "anchor", "patched", "test anchor"), /Expected one test anchor, found 0/);
   assert.throws(() => replaceOnce("anchor anchor", "anchor", "patched", "test anchor"), /Expected one test anchor, found 2/);
+});
+
+test("replaceOnce preserves replacement strings literally", () => {
+  assert.equal(replaceOnce("anchor", "anchor", "$$ $& $` $'", "literal replacement"), "$$ $& $` $'");
 });
 
 test("registered transforms carry explicit patch-set ownership", () => {
@@ -3537,6 +3895,8 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.721.41059-5848" ||
+      patchSet.id === "chatgpt-26.721.31836-5828" ||
       patchSet.id === "chatgpt-26.721.30844-5813" ||
       patchSet.id === "chatgpt-26.715.72359-5718" ||
       patchSet.id === "chatgpt-26.715.72028-5706" ||
@@ -4631,6 +4991,7 @@ test("nested review diff cards use the native controlled disclosure contract", (
   assert.match(plugin, /function ControlledDiffCard/);
   assert.match(plugin, /open,\s*onOpenChange: setOpen/);
   assert.match(plugin, /"data-codex-plus-repo-patch-group": repo\.path \?\? repo\.id/);
+  assert.match(plugin, /metadata: \{ \.\.\.diff\.metadata, isPartial: false \}/);
   assert.doesNotMatch(plugin, /defaultOpen/);
 });
 

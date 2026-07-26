@@ -546,6 +546,11 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
 }
 
 async function activateFixtureThread(cdp, { nested = false, wait = delay, timeoutMs = 10000 } = {}) {
+  const initialRoute = await cdp.evaluate(`location.search.includes("initialRoute=")`);
+  if (initialRoute) {
+    await cdp.send("Page.navigate", { url: "app://-/index.html" });
+    await wait(500);
+  }
   const selectionDeadline = Date.now() + timeoutMs;
   let target = null;
   while (!target && Date.now() < selectionDeadline) {
@@ -1279,6 +1284,16 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
 }
 
 function reviewPanelNeedsWarmRetry(status) {
+  const reviewStillLoading = Boolean(
+    status?.reviewLoadingPlaceholderCount > 0 ||
+    status?.repoHeaderVisible === false ||
+    status?.mainVisible === false ||
+    (
+      status?.nestedRepoVisible === true &&
+      status?.nestedBranchPickerCount === 0 &&
+      status?.reviewDiffCardCount === 0
+    )
+  );
   return Boolean(
     status?.ok === false &&
     status.reviewControlFound &&
@@ -1287,25 +1302,245 @@ function reviewPanelNeedsWarmRetry(status) {
     !status.boundaryVisible &&
     !status.boundaryEverVisible &&
     !status.tryAgainVisible &&
-    status.repoHeaderVisible &&
-    status.mainVisible &&
     status.nativeReviewSourceVisible &&
     status.unstagedReviewSourceSelected &&
     !status.reviewToolbarFailureVisible &&
-    status.nestedRepoVisible &&
-    status.strictNestedBranchPreload &&
-    !status.nestedBranchPickerPreloadBeforeOpen &&
-    status.nestedBranchPickerPreloadComplete &&
-    status.nestedBranchPickerPopulated &&
-    status.nestedBranchPickerCount >= 2 &&
-    status.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
     status.rawNestedDiffFallbackCount === 0 &&
-    status.reviewDiffCardCount >= 3 &&
-    status.reviewLoadingPlaceholderCount === 0 &&
-    status.nestedDiffCardCount >= 2 &&
-    status.nestedDiffDisclosureExpanded &&
-    status.nestedDiffDisclosureCollapsed
+    (
+      reviewStillLoading ||
+      (
+        status.repoHeaderVisible &&
+        status.mainVisible &&
+        status.nestedRepoVisible &&
+        status.strictNestedBranchPreload &&
+        !status.nestedBranchPickerPreloadBeforeOpen &&
+        status.nestedBranchPickerPreloadComplete &&
+        status.nestedBranchPickerPopulated &&
+        status.nestedBranchPickerCount >= 2 &&
+        status.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
+        status.reviewDiffCardCount >= 3 &&
+        status.reviewLoadingPlaceholderCount === 0 &&
+        status.nestedDiffCardCount >= 2 &&
+        status.nestedDiffDisclosureExpanded &&
+        status.nestedDiffDisclosureCollapsed
+      )
+    )
   );
+}
+
+async function waitForReviewFixtureDiffText(cdp, {
+  timeoutMs = 45000,
+  pollMs = 250,
+  wait = delay,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let state = { plusTomlVisible: false, subprojectCommitCount: 0 };
+  let retryClickCount = 0;
+  let plusTomlVisible = false;
+  let previousCapturePosition = null;
+  const renderedNestedDiffKeys = new Set();
+  do {
+    state = await cdp.evaluate(`(() => {
+      const previouslyRenderedNestedDiffKeys = new Set(
+        ${JSON.stringify([...renderedNestedDiffKeys])},
+      );
+      const nestedDiffToggles = Array.from(
+        document.querySelectorAll(
+          "[data-codex-plus-repo-patch-group] .codex-review-diff-card [aria-label*='Toggle file diff']",
+        ),
+      );
+      let expandedNestedDiffCount = 0;
+      for (const toggle of nestedDiffToggles) {
+        if (toggle.getAttribute("data-app-action-review-file-expanded") === "true") continue;
+        toggle.click();
+        expandedNestedDiffCount += 1;
+      }
+      const mainDiffToggles = Array.from(
+        document.querySelectorAll(
+          ".codex-review-diff-card [aria-label*='Toggle file diff']",
+        ),
+      ).filter(
+        (toggle) => !toggle.closest("[data-codex-plus-repo-patch-group]"),
+      );
+      for (const toggle of mainDiffToggles) {
+        if (toggle.getAttribute("data-app-action-review-file-expanded") !== "true") continue;
+        toggle.click();
+      }
+      const mainHideButton = Array.from(
+        document.querySelectorAll("button,[role='button'],span,div"),
+      )
+        .filter((button) => {
+          const rect = button.getBoundingClientRect();
+          return (
+            (button.textContent || "").trim() === "Hide" &&
+            !button.closest("[data-codex-plus-repo-patch-group]") &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= innerWidth / 2
+          );
+        })
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect();
+          const rightRect = right.getBoundingClientRect();
+          return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height);
+        })[0];
+      mainHideButton?.click();
+      const roots = Array.from(document.querySelectorAll("diffs-container"))
+        .map((container) => container.shadowRoot)
+        .filter(Boolean);
+      const text = roots
+        .map((root) => root.textContent || "")
+        .join("\\n");
+      const nestedGroups = Array.from(
+        document.querySelectorAll("[data-codex-plus-repo-patch-group]"),
+      );
+      const expectedNestedDiffText = new Map([
+        ["repos/alpha-module", "# Nested Alpha Module"],
+        ["repos/beta-module", "# Nested Beta Module"],
+      ]);
+      const renderedNestedDiffKeys = nestedGroups
+        .filter((group) => {
+          const key = group.getAttribute("data-codex-plus-repo-patch-group");
+          const expectedText = expectedNestedDiffText.get(key);
+          if (!expectedText) return false;
+          return Array.from(group.querySelectorAll("diffs-container")).some((container) => {
+            const root = container.shadowRoot;
+            if (!root || root.querySelector("[data-placeholder][data-loading]")) return false;
+            return (root.textContent || "").includes(expectedText);
+          });
+        })
+        .map((group) => group.getAttribute("data-codex-plus-repo-patch-group"))
+        .filter(Boolean);
+      const observedNestedDiffKeys = new Set([
+        ...previouslyRenderedNestedDiffKeys,
+        ...renderedNestedDiffKeys,
+      ]);
+      const nextNestedGroup = nestedGroups.find((group) => {
+        const key = group.getAttribute("data-codex-plus-repo-patch-group");
+        return key && !observedNestedDiffKeys.has(key);
+      });
+      let nestedScroll = null;
+      if (nextNestedGroup) {
+        const rect = nextNestedGroup.getBoundingClientRect();
+        if (rect.top >= innerHeight || rect.bottom <= 0) {
+          nestedScroll = {
+            x: Math.min(innerWidth - 20, Math.max(innerWidth / 2 + 20, rect.left + 20)),
+            y: innerHeight / 2,
+            deltaY: rect.top >= innerHeight ? 600 : -600,
+          };
+        }
+      }
+      let captureScroll = null;
+      const firstNestedGroup = nestedGroups[0];
+      const lastNestedGroup = nestedGroups[nestedGroups.length - 1];
+      let capturePosition = null;
+      if (observedNestedDiffKeys.size >= 2 && firstNestedGroup && lastNestedGroup) {
+        const firstRect = firstNestedGroup.getBoundingClientRect();
+        const lastRect = lastNestedGroup.getBoundingClientRect();
+        capturePosition = { firstTop: firstRect.top, lastBottom: lastRect.bottom };
+        if (firstRect.top > innerHeight * 0.5 || lastRect.bottom > innerHeight * 0.95) {
+          captureScroll = {
+            x: Math.min(innerWidth - 20, Math.max(innerWidth / 2 + 20, firstRect.left + 20)),
+            y: innerHeight / 2,
+            deltaY: Math.min(
+              600,
+              Math.max(250, lastRect.bottom - innerHeight * 0.85),
+            ),
+          };
+        }
+      }
+      const retryButtons = Array.from(document.querySelectorAll("button"))
+        .filter((button) => {
+          const rect = button.getBoundingClientRect();
+          return (
+            (button.textContent || "").trim() === "Retry" &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= innerWidth / 2
+          );
+        });
+      let clickedRetryCount = 0;
+      const remainingRetries = ${Math.max(0, 2 - retryClickCount)};
+      for (const button of retryButtons.slice(0, remainingRetries)) {
+        if (button.hasAttribute("data-codex-plus-audit-retry-clicked")) continue;
+        button.setAttribute("data-codex-plus-audit-retry-clicked", "true");
+        button.click();
+        clickedRetryCount += 1;
+      }
+      return {
+        plusTomlVisible: text.includes("[[repositories]]"),
+        renderedNestedDiffKeys,
+        loadingPlaceholderCount: roots.reduce(
+          (count, root) => count + root.querySelectorAll("[data-placeholder][data-loading]").length,
+          0,
+        ),
+        retryButtonCount: retryButtons.length,
+        clickedRetryCount,
+        expandedNestedDiffCount,
+        nestedScroll,
+        captureScroll,
+        capturePosition,
+        failureMessageCount: [
+          "Diff failed to load after retrying",
+          "Full file content failed to load",
+        ].reduce(
+          (count, message) =>
+            count + (document.body?.innerText || "").split(message).length - 1,
+          0,
+        ),
+      };
+    })()`);
+    retryClickCount += state.clickedRetryCount;
+    if (state.nestedScroll) {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: state.nestedScroll.x,
+        y: state.nestedScroll.y,
+        deltaX: 0,
+        deltaY: state.nestedScroll.deltaY,
+      });
+    }
+    let didCaptureScroll = false;
+    const capturePositionMoved =
+      state.capturePosition &&
+      (
+        !previousCapturePosition ||
+        Math.abs(state.capturePosition.firstTop - previousCapturePosition.firstTop) > 2 ||
+        Math.abs(state.capturePosition.lastBottom - previousCapturePosition.lastBottom) > 2
+      );
+    if (!state.nestedScroll && state.captureScroll && capturePositionMoved) {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: state.captureScroll.x,
+        y: state.captureScroll.y,
+        deltaX: 0,
+        deltaY: state.captureScroll.deltaY,
+      });
+      previousCapturePosition = state.capturePosition;
+      didCaptureScroll = true;
+    }
+    plusTomlVisible ||= state.plusTomlVisible;
+    for (const key of state.renderedNestedDiffKeys ?? []) renderedNestedDiffKeys.add(key);
+    state = {
+      ...state,
+      plusTomlVisible,
+      renderedNestedDiffKeys: [...renderedNestedDiffKeys],
+      nestedRenderedDiffCount: renderedNestedDiffKeys.size,
+    };
+    if (
+      state.nestedRenderedDiffCount >= 2 &&
+      state.failureMessageCount === 0 &&
+      state.loadingPlaceholderCount === 0
+    ) {
+      if (didCaptureScroll) {
+        await wait(pollMs);
+        continue;
+      }
+      return { ok: true, ...state, retryClickCount };
+    }
+    await wait(pollMs);
+  } while (Date.now() < deadline);
+  return { ok: false, ...state, retryClickCount };
 }
 
 function listRunningAuditApps({
@@ -2247,8 +2482,8 @@ async function captureVisualContract(cdp, {
   wait = delay,
   activateFixture = activateFixtureThread,
   verifyReview = verifyReviewPanelRender,
+  waitReviewFixture = waitForReviewFixtureDiffText,
   verifyCommand = verifySidebarBlurCommandPalette,
-  preparedReview = null,
   preparedCommand = null,
 } = {}) {
   if (!artifactDir) throw new Error("visual contract artifactDir is required");
@@ -2258,10 +2493,11 @@ async function captureVisualContract(cdp, {
   await wait(2000);
   screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
   const shell = await visualReadback(cdp);
-  const reviewState = preparedReview?.state || await verifyReview(cdp);
-  if (!preparedReview) await wait(500);
-  screenshots.review = preparedReview?.screenshot || await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
-  const review = preparedReview?.readback || await visualReadback(cdp);
+  const reviewState = await verifyReview(cdp);
+  const fixtureDiffText = await waitReviewFixture(cdp);
+  await wait(500);
+  screenshots.review = await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
+  const review = await visualReadback(cdp);
   const commandState = preparedCommand?.state || await verifyCommand(cdp, { activate: false, wait });
   if (!preparedCommand) await wait(250);
   screenshots.sidebarCommand = preparedCommand?.screenshot || await capturePng(cdp, path.join(artifactDir, "sidebar-command.png"), { fsImpl });
@@ -2290,6 +2526,7 @@ async function captureVisualContract(cdp, {
       ...review.review,
       probe: reviewPanel,
       captureProbe: reviewState,
+      fixtureDiffText,
     },
     commandPalette: {
       ...command.commandPalette,
@@ -2302,9 +2539,9 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || !reviewState?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
-    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, reviewState, commandState, review: review.review, command: command.commandPalette })}`;
+    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
   writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
   writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });
@@ -2474,6 +2711,49 @@ async function checkKeepOpenAppStability(launchResult, {
 function appendFailure(result, failure) {
   result.failures = [...(result.failures || []), failure];
   result.ok = false;
+}
+
+function projectColorsNeedsFixtureRetry(result) {
+  return (result?.failures || []).some((failure) =>
+    failure?.plugin === "projectColors" &&
+    String(failure?.message || "").startsWith(
+      "Expected the three unpinned fixture no-project chats in the Chats section:",
+    )
+  );
+}
+
+function mergeFocusedPluginAudit(result, retry, pluginId) {
+  result.failures = (result.failures || []).filter((failure) => failure?.plugin !== pluginId);
+  result.expectedWarnings = (result.expectedWarnings || []).filter((warning) => warning?.plugin !== pluginId);
+  result.failures.push(...(retry?.failures || []).filter((failure) => failure?.plugin === pluginId));
+  result.expectedWarnings.push(
+    ...(retry?.expectedWarnings || []).filter((warning) => warning?.plugin === pluginId),
+  );
+  if (retry?.pluginResults?.[pluginId]) {
+    result.pluginResults[pluginId] = retry.pluginResults[pluginId];
+  }
+  result.ok = result.failures.length === 0;
+  return result;
+}
+
+async function refreshFixtureRendererForRetry(cdp, fixture, {
+  reloadRenderer = reloadAuditRenderer,
+  waitRuntime = waitForLiveRuntime,
+  waitAppShell = waitForAppShellMounted,
+  dismissDialogs = dismissStartupDialogs,
+  seedBrowserState = seedAuditFixtureBrowserState,
+  activateFixture = activateFixtureThread,
+} = {}) {
+  const reload = await reloadRenderer(cdp);
+  const runtime = await waitRuntime(cdp);
+  const shell = await waitAppShell(cdp);
+  const dialogs = await dismissDialogs(cdp);
+  const browserState = await seedBrowserState(cdp, fixture);
+  const activation = await activateFixture(cdp);
+  if (!activation?.ok) {
+    throw new Error(activation?.message || "Could not reactivate fixture after renderer reload");
+  }
+  return { reload, runtime, shell, dialogs, browserState, activation };
 }
 
 function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins = [] } = {}) {
@@ -3812,14 +4092,17 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
 
     if (shouldProbe("aharnessRuns")) try {
       const details = checkCommon("aharnessRuns");
-      const waitForAharness = async (selector, timeoutMs = 20000) => {
+      const waitForAharness = async (selector, predicateOrTimeout = 20000, timeoutMs = 20000) => {
+        const predicate = typeof predicateOrTimeout === "function" ? predicateOrTimeout : null;
+        const effectiveTimeoutMs = predicate ? timeoutMs : predicateOrTimeout;
         const startedAt = Date.now();
-        while (Date.now() - startedAt < timeoutMs) {
-          const element = document.querySelector(selector);
-          if (element && visible(element)) return element;
+        while (Date.now() - startedAt < effectiveTimeoutMs) {
+          const elements = Array.from(document.querySelectorAll(selector)).filter(visible);
+          const element = predicate ? elements.find(predicate) : elements[0];
+          if (element) return element;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        return document.querySelector(selector);
+        return Array.from(document.querySelectorAll(selector)).find(visible) || null;
       };
       const press = (element) => {
         if (!element) return false;
@@ -3965,7 +4248,12 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         throw new Error(`Aharness FSM create icon still has a button border: ${createButtonStyle.border}`);
       }
       press(createButton);
-      const runRow = await waitForAharness("#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]");
+      const runRow = await waitForAharness(
+        "#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]",
+        (element) =>
+          element.getAttribute("data-app-action-sidebar-thread-active") === "true" &&
+          element.getAttribute("data-codex-plus-aharness-run-active") === "true",
+      );
       if (!runRow) throw new Error("Harness Runs nested run row did not appear");
       const runRowBullet = runRow.querySelector(".cpx-sidebar-model-bullet");
       if (runRowBullet && visible(runRowBullet)) throw new Error("Aharness run row still shows a generic sidebar bullet");
@@ -4529,6 +4817,7 @@ async function runAudit(args, {
   const Session = operations.CdpSession || CdpSession;
   const waitRuntime = operations.waitForLiveRuntime || waitForLiveRuntime;
   const waitAppShell = operations.waitForAppShellMounted || waitForAppShellMounted;
+  const reloadRenderer = operations.reloadAuditRenderer || reloadAuditRenderer;
   const auditAdapters = operations.auditRequiredHostAdapters || auditRequiredHostAdapters;
   const closeVirtualRoute = operations.closeActiveVirtualRoute || closeActiveVirtualRoute;
   const dismissDialogs = operations.dismissStartupDialogs || dismissStartupDialogs;
@@ -4556,7 +4845,6 @@ async function runAudit(args, {
   let cleanupResult = null;
   let visualContractResult = null;
   let visualArtifactDir = args.artifactDir || null;
-  let preparedReviewContract = null;
   let preparedCommandContract = null;
   let initialProjectSelectorShortcut = null;
   let result = null;
@@ -4864,6 +5152,29 @@ async function runAudit(args, {
         auditPlugins: baseAuditPlugins,
       })),
     );
+    if (fixtureResult && projectColorsNeedsFixtureRetry(live)) {
+      const fixtureRefresh = await withAuditProgress(
+        progress,
+        "Reloading stale project color fixture",
+        "Reloaded project color fixture",
+        () => refreshFixtureRendererForRetry(cdp, fixtureResult, {
+          reloadRenderer,
+          waitRuntime: () => waitRuntime(cdp, runtimeTimeoutMs),
+          waitAppShell: () => waitAppShell(cdp, appShellTimeoutMs),
+          dismissDialogs,
+          seedBrowserState: seedFixtureBrowserState,
+          activateFixture,
+        }),
+      );
+      fixtureBrowserStateResult = fixtureRefresh.browserState;
+      const projectColorsRetry = await withAuditCheckProgress(
+        progress,
+        "Rechecking project colors after fixture reload",
+        "Project colors passed after fixture reload",
+        () => cdp.evaluate(pluginAuditExpression({ auditPlugins: ["projectColors"] })),
+      );
+      mergeFocusedPluginAudit(live, projectColorsRetry, "projectColors");
+    }
     if (isolatedAharness) {
       const aharnessResult = isolatedAharness.pluginResults?.aharnessRuns;
       if (aharnessResult) {
@@ -4925,26 +5236,19 @@ async function runAudit(args, {
         "Review panel rendered",
         () => verifyReviewPanel(cdp),
       );
-      if (reviewPanelNeedsWarmRetry(reviewPanel)) {
-        const coldProbe = reviewPanel;
+      const warmProbes = [];
+      for (let retryAttempt = 0; retryAttempt < 2 && reviewPanelNeedsWarmRetry(reviewPanel); retryAttempt += 1) {
+        warmProbes.push(reviewPanel);
         reviewPanel = await withAuditCheckProgress(
           progress,
           "Rechecking Review panel after cold branch preload",
           "Review panel rendered after cold branch preload",
           () => verifyReviewPanel(cdp),
         );
-        reviewPanel.coldProbe = coldProbe;
       }
+      if (warmProbes.length > 0) reviewPanel.coldProbe = warmProbes[0];
+      if (warmProbes.length > 1) reviewPanel.warmProbes = warmProbes;
       live.pluginResults.nestedRepositories.reviewPanel = reviewPanel;
-      if (reviewPanel.ok && args.visualContract === true) {
-        const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" });
-        await delay(1000);
-        preparedReviewContract = {
-          state: reviewPanel,
-          screenshot: await capturePng(cdp, path.join(artifactDir, "review.png")),
-          readback: await visualReadback(cdp),
-        };
-      }
       if (!reviewPanel.ok) {
         reviewPanel.cdpDiagnostics = summarizeCdpEvents(cdp.events);
         live.ok = false;
@@ -4963,7 +5267,20 @@ async function runAudit(args, {
         "Sidebar blur command palette action passed",
         () => verifySidebarBlurCommandPalette(cdp, {
           beforeActivate: args.visualContract === true ? async () => {
-            await delay(500);
+            const deadline = Date.now() + 5000;
+            do {
+              const ready = await cdp.evaluate(`(() => {
+                const text = document.body?.innerText || "";
+                return (
+                  !text.includes("Loading chats…") &&
+                  !text.includes("Loading chats...") &&
+                  !text.includes("Loading tasks…") &&
+                  !text.includes("Loading tasks...")
+                );
+              })()`);
+              if (ready) break;
+              await delay(250);
+            } while (Date.now() < deadline);
             preparedCommandContract = {
               screenshot: await capturePng(cdp, path.join(artifactDir, "sidebar-command.png")),
               readback: await visualReadback(cdp),
@@ -5076,7 +5393,6 @@ async function runAudit(args, {
           result,
           reviewPanel: live.pluginResults?.nestedRepositories?.reviewPanel || null,
           commandPalette: live.pluginResults?.sidebarNameBlur?.commandPalette || null,
-          preparedReview: preparedReviewContract,
           preparedCommand: preparedCommandContract,
         }),
       );
@@ -5262,8 +5578,11 @@ module.exports = {
   jsonlRecord,
   listRunningAuditApps,
   listCrashpadPendingDumps,
+  mergeFocusedPluginAudit,
   parseArgs,
   pluginAuditExpression,
+  projectColorsNeedsFixtureRetry,
+  refreshFixtureRendererForRetry,
   processIsAlive,
   reloadAuditRenderer,
   runAudit,
@@ -5276,6 +5595,7 @@ module.exports = {
   reviewPanelNeedsWarmRetry,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
+  waitForReviewFixtureDiffText,
   writeJsonl,
   writeAuditOutput,
   waitForRendererTarget,

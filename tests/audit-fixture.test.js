@@ -8,6 +8,8 @@ const test = require("node:test");
 const {
   buildAuditFixture,
   classifyDiscoveredHomeFiles,
+  fixtureLayout,
+  fixtureThreads,
 } = require("../src/core/audit-fixture");
 
 function withTempDir(fn) {
@@ -69,7 +71,26 @@ test("audit fixture builds synthetic Codex home without reading user home paths"
     assert.equal(domSurvey.targetSidePanelTab, "Review");
     assert.equal(domSurvey.expectedProjects.aharnessProject, fixture.workspaces.aharnessProject);
     assert.equal(domSurvey.expectedAharnessStateMachines.length, 9);
+    const nestedStatus = childProcess.execFileSync(
+      "git",
+      ["status", "--short", "--untracked-files=all"],
+      { cwd: fixture.workspaces.nestedWorktree, encoding: "utf8" },
+    );
+    assert.match(nestedStatus, /\.codex\/plus\.toml/);
+    assert.doesNotMatch(nestedStatus, /repos\//);
   });
+});
+
+test("audit fixture thread ids are stable per root and disjoint across roots", () => {
+  const firstLayout = fixtureLayout("/tmp/codex-plus-fixture-a");
+  const secondLayout = fixtureLayout("/tmp/codex-plus-fixture-b");
+  const firstIds = fixtureThreads(firstLayout).map((thread) => thread.id);
+  const repeatedIds = fixtureThreads(firstLayout).map((thread) => thread.id);
+  const secondIds = fixtureThreads(secondLayout).map((thread) => thread.id);
+
+  assert.deepEqual(repeatedIds, firstIds);
+  assert.equal(new Set(firstIds).size, firstIds.length);
+  assert.equal(firstIds.some((id) => new Set(secondIds).has(id)), false);
 });
 
 test("audit fixture retries transient dev-home removal failures", () => {

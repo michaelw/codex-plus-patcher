@@ -45,13 +45,17 @@ const {
   createJsonlProgress,
   listCrashpadPendingDumps,
   listRunningAuditApps,
+  mergeFocusedPluginAudit,
   pluginAuditExpression,
+  projectColorsNeedsFixtureRetry,
+  refreshFixtureRendererForRetry,
   runAudit,
   summarizeCdpEvents,
   verifyProjectSelectorShortcutKey,
   reviewPanelNeedsWarmRetry,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
+  waitForReviewFixtureDiffText,
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
@@ -584,6 +588,101 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.doesNotMatch(defaultExpression, /projectlessThreadRow\?\.click/);
 });
 
+test("project color fixture retry is limited to the missing Chats rows readiness failure", () => {
+  assert.equal(projectColorsNeedsFixtureRetry({
+    failures: [{
+      plugin: "projectColors",
+      message: "Expected the three unpinned fixture no-project chats in the Chats section: []",
+    }],
+  }), true);
+  assert.equal(projectColorsNeedsFixtureRetry({
+    failures: [{
+      plugin: "projectColors",
+      message: "Mounted composer lost its rounded shape",
+    }],
+  }), false);
+  assert.equal(projectColorsNeedsFixtureRetry({
+    failures: [{
+      plugin: "nestedRepositories",
+      message: "Expected the three unpinned fixture no-project chats in the Chats section: []",
+    }],
+  }), false);
+});
+
+test("focused plugin retry replaces only that plugin result, failure, and warnings", () => {
+  const live = {
+    ok: false,
+    failures: [
+      { plugin: "projectColors", message: "fixture rows missing" },
+      { plugin: "audit", message: "other failure" },
+    ],
+    expectedWarnings: [
+      { plugin: "projectColors", code: "old-warning" },
+      { plugin: "audit", code: "other-warning" },
+    ],
+    pluginResults: {
+      projectColors: { ok: false },
+      audit: { ok: false },
+    },
+  };
+  const retry = {
+    ok: true,
+    failures: [],
+    expectedWarnings: [{ plugin: "projectColors", code: "retry-warning" }],
+    pluginResults: {
+      projectColors: { ok: true, retried: true },
+    },
+  };
+
+  mergeFocusedPluginAudit(live, retry, "projectColors");
+
+  assert.equal(live.ok, false);
+  assert.deepEqual(live.failures, [{ plugin: "audit", message: "other failure" }]);
+  assert.deepEqual(live.expectedWarnings, [
+    { plugin: "audit", code: "other-warning" },
+    { plugin: "projectColors", code: "retry-warning" },
+  ]);
+  assert.deepEqual(live.pluginResults.projectColors, { ok: true, retried: true });
+  assert.deepEqual(live.pluginResults.audit, { ok: false });
+});
+
+test("project color fixture retry reloads stale sidebar data before focused recheck", async () => {
+  const calls = [];
+  const result = await refreshFixtureRendererForRetry(
+    {},
+    { browserState: { userBubbleColors: { dark: "#123456" } } },
+    {
+      reloadRenderer: async () => {
+        calls.push("reload");
+        return { ok: true };
+      },
+      waitRuntime: async () => {
+        calls.push("runtime");
+        return { ok: true };
+      },
+      waitAppShell: async () => {
+        calls.push("shell");
+        return { ok: true };
+      },
+      dismissDialogs: async () => {
+        calls.push("dialogs");
+        return { ok: true };
+      },
+      seedBrowserState: async () => {
+        calls.push("seed");
+        return { ok: true };
+      },
+      activateFixture: async () => {
+        calls.push("activate");
+        return { ok: true };
+      },
+    },
+  );
+
+  assert.deepEqual(calls, ["reload", "runtime", "shell", "dialogs", "seed", "activate"]);
+  assert.equal(result.activation.ok, true);
+});
+
 test("project selector shortcut verifier uses trusted CDP key events", async () => {
   const sent = [];
   const expressions = [];
@@ -779,6 +878,9 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   assert.match(activation, /JSON\.stringify\(\{ target, active \}\)/);
   assert.doesNotMatch(activation, /active\.chipPath === target\.path/);
   assert.doesNotMatch(activation, /getAttribute\("data-codex-plus-project-path"\) ===/);
+  assert.match(activation, /initialRoute/);
+  assert.match(activation, /Page\.navigate/);
+  assert.match(activation, /app:\/\/-\/index\.html/);
 });
 
 test("default audit closes the isolated Aharness route without reloading fixture state", () => {
@@ -792,6 +894,18 @@ test("default audit closes the isolated Aharness route without reloading fixture
   assert.match(isolatedProbe, /activateFixture\(cdp, \{ nested: true \}\)/);
   assert.doesNotMatch(isolatedProbe, /reloadRenderer/);
   assert.doesNotMatch(isolatedProbe, /seedFixtureBrowserState/);
+});
+
+test("Aharness audit waits for the new run row to become active before asserting its styling", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("const waitForAharness = async");
+  const end = source.indexOf('const route = await waitForAharness("[data-codex-plus-aharness-route]")', start);
+  const runAudit = source.slice(start, end);
+
+  assert.match(runAudit, /waitForAharness\([^,]+,\s*\(element\)/);
+  assert.match(runAudit, /querySelectorAll\(selector\)/);
+  assert.match(runAudit, /data-app-action-sidebar-thread-active/);
+  assert.match(runAudit, /data-codex-plus-aharness-run-active/);
 });
 
 test("aharness artifact audit recognizes both native app-shell tab layouts", () => {
@@ -883,6 +997,16 @@ test("sidebar blur command palette verifier uses trusted Enter key activation", 
   assert.equal(sent[0].params.text, "Toggle sidebar blur");
   assert.deepEqual(sent.slice(1).map((call) => call.params.type), ["keyDown", "keyUp"]);
   assert.deepEqual(sent.slice(1).map((call) => call.params.key), ["Enter", "Enter"]);
+});
+
+test("sidebar command visual proof waits for transient chat loading to clear", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const waitIndex = source.indexOf('text.includes("Loading chats…")');
+  const captureIndex = source.indexOf('path.join(artifactDir, "sidebar-command.png")', waitIndex);
+  assert.notEqual(waitIndex, -1);
+  assert.match(source.slice(waitIndex, captureIndex), /text\.includes\("Loading tasks…"\)/);
+  assert.match(source.slice(waitIndex, captureIndex), /text\.includes\("Loading tasks\.\.\."\)/);
+  assert.ok(captureIndex > waitIndex);
 });
 
 test("review panel verifier returns sanitized success details", async () => {
@@ -1039,6 +1163,35 @@ test("Review panel audit retries only a cold nested branch preload", () => {
   assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, rawNestedDiffFallbackCount: 1 }), false);
   assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, boundaryVisible: true }), false);
   assert.equal(reviewPanelNeedsWarmRetry({ ...otherwiseReady, strictNestedBranchPreload: false }), false);
+  assert.equal(reviewPanelNeedsWarmRetry({
+    ...otherwiseReady,
+    repoHeaderVisible: false,
+    mainVisible: false,
+    nestedRepoVisible: false,
+    nestedBranchPickerCount: 0,
+    nestedBranchPickerPreloadComplete: false,
+    nestedBranchPickerPopulated: false,
+    nestedBranchPickerOptionCounts: [],
+    reviewDiffCardCount: 0,
+    reviewLoadingPlaceholderCount: 1,
+    nestedDiffCardCount: 0,
+    nestedDiffDisclosureExpanded: false,
+    nestedDiffDisclosureCollapsed: false,
+  }), true);
+  assert.equal(reviewPanelNeedsWarmRetry({
+    ...otherwiseReady,
+    repoHeaderVisible: false,
+    mainVisible: false,
+    nestedRepoVisible: true,
+    nestedBranchPickerCount: 0,
+    nestedBranchPickerPreloadComplete: false,
+    nestedBranchPickerPopulated: false,
+    nestedBranchPickerOptionCounts: [],
+    reviewDiffCardCount: 5,
+    nestedDiffCardCount: 0,
+    nestedDiffDisclosureExpanded: false,
+    nestedDiffDisclosureCollapsed: false,
+  }), true);
 });
 
 test("review panel verifier scopes Unstaged selection to the native Branch menu", () => {
@@ -1062,6 +1215,173 @@ test("live review audit opens the native Review control with trusted input", () 
   assert.match(activation, /Input\.dispatchMouseEvent/);
   assert.match(activation, /text === "Review" \|\| label === "Review"/);
   assert.match(activation, /clickCount: 1/);
+});
+
+test("live review audit permits two bounded warm retries while Review is still loading", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  assert.match(source, /retryAttempt < 2/);
+  assert.match(source, /reviewPanelNeedsWarmRetry\(reviewPanel\)/);
+});
+
+test("visual Review proof waits for actual nested fixture renders instead of card counts", async () => {
+  const source = waitForReviewFixtureDiffText.toString();
+  assert.match(source, /const mainDiffToggles/);
+  assert.match(source, /!toggle\.closest\("\[data-codex-plus-repo-patch-group\]"\)/);
+  assert.match(source, /data-app-action-review-file-expanded/);
+  assert.match(source, /const mainHideButton/);
+  assert.match(source, /button,\[role='button'\],span,div/);
+  assert.match(source, /\(button\.textContent \|\| ""\)\.trim\(\) === "Hide"/);
+  assert.match(source, /Full file content failed to load/);
+
+  const states = [
+    {
+      plusTomlVisible: false,
+      renderedNestedDiffKeys: ["repos/alpha-module"],
+      loadingPlaceholderCount: 0,
+      retryButtonCount: 2,
+      clickedRetryCount: 2,
+      expandedNestedDiffCount: 2,
+      failureMessageCount: 2,
+      nestedScroll: { x: 1180, y: 410, deltaY: 600 },
+    },
+    {
+      plusTomlVisible: true,
+      renderedNestedDiffKeys: ["repos/beta-module"],
+      loadingPlaceholderCount: 0,
+      retryButtonCount: 0,
+      clickedRetryCount: 0,
+      expandedNestedDiffCount: 0,
+      failureMessageCount: 0,
+      nestedScroll: null,
+      captureScroll: { x: 1180, y: 410, deltaY: 400 },
+      capturePosition: { firstTop: 700, lastBottom: 1100 },
+    },
+    {
+      plusTomlVisible: false,
+      renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+      loadingPlaceholderCount: 0,
+      retryButtonCount: 0,
+      clickedRetryCount: 0,
+      expandedNestedDiffCount: 0,
+      failureMessageCount: 0,
+      nestedScroll: null,
+      captureScroll: null,
+      capturePosition: { firstTop: 350, lastBottom: 780 },
+    },
+  ];
+  const sent = [];
+  const result = await waitForReviewFixtureDiffText(
+    {
+      send: async (method, params) => sent.push({ method, params }),
+      evaluate: async (expression) => {
+        assert.match(expression, /diffs-container/);
+        assert.match(expression, /\[data-placeholder\]\[data-loading\]/);
+        assert.match(expression, /data-codex-plus-repo-patch-group/);
+        assert.match(expression, /data-codex-plus-audit-retry-clicked/);
+        assert.match(expression, /renderedNestedDiffKeys/);
+        assert.match(expression, /# Nested Alpha Module/);
+        assert.match(expression, /# Nested Beta Module/);
+        assert.doesNotMatch(expression, /scrollIntoView/);
+        return states.shift() ?? {
+          plusTomlVisible: true,
+          renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+          loadingPlaceholderCount: 0,
+          retryButtonCount: 0,
+          clickedRetryCount: 0,
+          expandedNestedDiffCount: 0,
+          failureMessageCount: 0,
+          nestedScroll: null,
+          captureScroll: null,
+        };
+      },
+    },
+    { timeoutMs: 10, pollMs: 0, wait: async () => {} },
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    plusTomlVisible: true,
+    renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+    nestedRenderedDiffCount: 2,
+    loadingPlaceholderCount: 0,
+    retryButtonCount: 0,
+    clickedRetryCount: 0,
+    expandedNestedDiffCount: 0,
+    failureMessageCount: 0,
+    nestedScroll: null,
+    captureScroll: null,
+    capturePosition: { firstTop: 350, lastBottom: 780 },
+    retryClickCount: 2,
+  });
+  assert.deepEqual(sent, [
+    {
+      method: "Input.dispatchMouseEvent",
+      params: { type: "mouseWheel", x: 1180, y: 410, deltaX: 0, deltaY: 600 },
+    },
+    {
+      method: "Input.dispatchMouseEvent",
+      params: { type: "mouseWheel", x: 1180, y: 410, deltaX: 0, deltaY: 400 },
+    },
+  ]);
+});
+
+test("visual Review proof does not fail when capture positioning reaches the scroll limit", async () => {
+  const captureScroll = { x: 1180, y: 410, deltaY: 250 };
+  const sent = [];
+  const result = await waitForReviewFixtureDiffText(
+    {
+      send: async (method, params) => sent.push({ method, params }),
+      evaluate: async () => ({
+        plusTomlVisible: true,
+        renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+        loadingPlaceholderCount: 0,
+        retryButtonCount: 0,
+        clickedRetryCount: 0,
+        expandedNestedDiffCount: 0,
+        failureMessageCount: 0,
+        nestedScroll: null,
+      captureScroll,
+      capturePosition: { firstTop: 380, lastBottom: 800 },
+      }),
+    },
+    { timeoutMs: 10, pollMs: 0, wait: async () => {} },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(sent, [
+    {
+      method: "Input.dispatchMouseEvent",
+      params: { type: "mouseWheel", x: 1180, y: 410, deltaX: 0, deltaY: 250 },
+    },
+  ]);
+});
+
+test("visual Review proof does not require the repository manifest to appear as a diff", async () => {
+  const result = await waitForReviewFixtureDiffText(
+    {
+      send: async () => {},
+      evaluate: async () => ({
+        plusTomlVisible: false,
+        renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+        loadingPlaceholderCount: 0,
+        retryButtonCount: 0,
+        clickedRetryCount: 0,
+        expandedNestedDiffCount: 0,
+        failureMessageCount: 0,
+        nestedScroll: null,
+        captureScroll: null,
+        capturePosition: { firstTop: 369, lastBottom: 820 },
+      }),
+    },
+    { timeoutMs: 10, pollMs: 0, wait: async () => {} },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.plusTomlVisible, false);
+  assert.deepEqual(result.renderedNestedDiffKeys, [
+    "repos/alpha-module",
+    "repos/beta-module",
+  ]);
 });
 
 test("review panel verifier fails when no review-capable thread exists", async () => {
@@ -3147,6 +3467,7 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
+      waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
     });
 
@@ -3190,11 +3511,56 @@ test("visual contract rejects Review screenshots while diff cards are still load
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
+      waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
     });
 
     assert.equal(contract.ok, false);
     assert.match(contract.message, /capture-ready/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("visual contract accepts exact late Review readiness after an early transient miss", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-review-late-"));
+  try {
+    const png = Buffer.from("png").toString("base64");
+    const cdp = {
+      async send(method) {
+        if (method === "Page.captureScreenshot") return { data: png };
+        return {};
+      },
+      async evaluate() {
+        return {
+          url: "app://-/index.html",
+          title: "Codex Plus",
+          shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects" },
+          sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
+          review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 2, loadingPlaceholderCount: 0, rawDiffFallbackCount: 0 },
+          commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
+          settings: { generalVisible: true, backToAppVisible: true, blank: false },
+        };
+      },
+    };
+
+    const contract = await captureVisualContract(cdp, {
+      artifactDir: tmpDir,
+      result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
+      wait() {},
+      activateFixture: async () => ({ ok: true }),
+      verifyReview: async () => ({ ok: false, repoHeaderVisible: false }),
+      waitReviewFixture: async () => ({
+        ok: true,
+        renderedNestedDiffKeys: ["repos/alpha-module", "repos/beta-module"],
+        nestedRenderedDiffCount: 2,
+        loadingPlaceholderCount: 0,
+        failureMessageCount: 0,
+      }),
+      verifyCommand: async () => ({ ok: true }),
+    });
+
+    assert.equal(contract.ok, true);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -3235,12 +3601,70 @@ test("visual contract waits for General settings before capturing the settings s
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
+      waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
     });
 
     assert.equal(contract.ok, true);
     assert.equal(contract.settings.generalVisible, true);
     assert.equal(settingsCaptureEvaluation, 6);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("visual contract waits for fixture diff text immediately before capturing Review", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-review-content-"));
+  try {
+    const events = [];
+    const png = Buffer.from("png").toString("base64");
+    const readback = {
+      url: "app://-/index.html",
+      title: "Codex Plus",
+      shell: { startupLoaderVisible: false, bodyTextSample: "Pinned Harness Runs Projects" },
+      sidebar: { pinnedVisible: true, harnessRunsVisible: true, projectsVisible: true, threadRows: 3, projectRows: 2, blurred: false },
+      review: { tabVisible: true, repoHeaderVisible: true, diffCardCount: 7, loadingPlaceholderCount: 0, rawDiffFallbackCount: 0 },
+      commandPalette: { sidebarBlurred: true, visible: true, toggleItemVisible: true },
+      settings: { generalVisible: true, backToAppVisible: true, blank: false },
+    };
+    const cdp = {
+      async send(method) {
+        if (method === "Page.captureScreenshot") {
+          events.push("capture");
+          return { data: png };
+        }
+        return {};
+      },
+      async evaluate() {
+        return readback;
+      },
+    };
+
+    const contract = await captureVisualContract(cdp, {
+      artifactDir: tmpDir,
+      result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
+      wait() {},
+      activateFixture: async () => ({ ok: true }),
+      verifyReview: async () => {
+        events.push("verify");
+        return { ok: true };
+      },
+      waitReviewFixture: async () => {
+        events.push("fixture-text");
+        return { ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 };
+      },
+      verifyCommand: async () => ({ ok: true }),
+      includeSettings: false,
+    });
+
+    assert.equal(contract.ok, true);
+    assert.deepEqual(events.slice(0, 4), ["capture", "verify", "fixture-text", "capture"]);
+    assert.deepEqual(contract.review.fixtureDiffText, {
+      ok: true,
+      plusTomlVisible: true,
+      subprojectCommitCount: 2,
+      loadingPlaceholderCount: 0,
+    });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

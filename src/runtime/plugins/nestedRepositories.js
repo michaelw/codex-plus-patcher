@@ -185,6 +185,10 @@
       return PlainDiff({ text: `Unable to parse diff: ${message}\n\n${diffText}` }, deps);
     }
     if (parsed == null || parsed.length === 0) return ReviewDiagnostic({ message: statusText }, deps);
+    parsed = parsed.map((diff) => ({
+      ...diff,
+      metadata: { ...diff.metadata, isPartial: false },
+    }));
     return jsx("div", {
       className: "mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2",
       children: parsed.map((diff, index) =>

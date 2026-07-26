@@ -137,6 +137,8 @@ function fixtureLayout(rootDir) {
 function createNestedRepositoryInputs(rootPath, { alphaModule, betaModule, fsImpl = fs, execFileSync = childProcess.execFileSync }) {
   createGitRepo(alphaModule, { label: "Nested Alpha Module", branches: ["audit-alpha-base", "audit-shared-base"], fsImpl, execFileSync });
   createGitRepo(betaModule, { label: "Nested Beta Module", dirtyFile: "module.txt", branches: ["audit-beta-base", "audit-shared-base"], fsImpl, execFileSync });
+  fsImpl.mkdirSync(path.join(rootPath, ".git", "info"), { recursive: true });
+  fsImpl.appendFileSync(path.join(rootPath, ".git", "info", "exclude"), "\n# Nested repositories are audited separately.\nrepos/\n");
   writeText(
     path.join(rootPath, ".gitmodules"),
     [
@@ -213,10 +215,19 @@ function createFixtureWorkspaces(rootDir, { fsImpl = fs, execFileSync = childPro
   return layout;
 }
 
+function fixtureThreadId(layout, ordinal, timestampMs = FIXTURE_NOW_MS - (ordinal * 120000)) {
+  const timestamp = timestampMs.toString(16).padStart(12, "0");
+  const fixtureKey = crypto
+    .createHash("sha256")
+    .update(`${path.resolve(layout.workRoot)}:${ordinal}`)
+    .digest("hex")
+    .slice(0, 12);
+  return `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-7000-8000-${fixtureKey}`;
+}
+
 function fixtureThreads(layout) {
   const projectlessThreads = Array.from({ length: 5 }, (_, index) => {
-    const timestamp = (FIXTURE_NOW_MS - (index * 120000)).toString(16).padStart(12, "0");
-    const id = `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-7000-8000-00000000001${index}`;
+    const id = fixtureThreadId(layout, index);
     const outputDirectory = path.join(layout.projectlessRoot, id, "outputs");
     return {
       id,
@@ -233,7 +244,7 @@ function fixtureThreads(layout) {
   return [
     ...projectlessThreads,
     {
-      id: "019f0000-0000-7000-8000-000000000006",
+      id: fixtureThreadId(layout, 5),
       title: "Fixture: main repo path header",
       cwd: layout.alpha,
       projectId: layout.alpha,
@@ -241,7 +252,7 @@ function fixtureThreads(layout) {
       pinned: true,
     },
     {
-      id: "019f0000-0000-7000-8000-000000000005",
+      id: fixtureThreadId(layout, 6),
       title: "Fixture: pinned thread with color",
       cwd: layout.alpha,
       projectId: layout.alpha,
@@ -249,14 +260,14 @@ function fixtureThreads(layout) {
       pinned: true,
     },
     {
-      id: "019f0000-0000-7000-8000-000000000004",
+      id: fixtureThreadId(layout, 7),
       title: "Fixture: unpinned project child",
       cwd: layout.beta,
       projectId: layout.beta,
       preview: "Unpinned project fixture",
     },
     {
-      id: "019f0000-0000-7000-8000-000000000003",
+      id: fixtureThreadId(layout, 8),
       title: "Fixture: nested repos before branch selection",
       cwd: layout.nestedWorktree,
       projectId: layout.nestedProject,
@@ -264,7 +275,7 @@ function fixtureThreads(layout) {
       pinned: true,
     },
     {
-      id: "019f0000-0000-7000-8000-000000000001",
+      id: fixtureThreadId(layout, 9),
       title: "Fixture: missing cwd header skip",
       cwd: layout.missingProject,
       projectId: layout.missingProject,
