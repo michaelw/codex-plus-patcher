@@ -16,6 +16,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-CH17cjbj.js",
     electronCommandSource: ".vite/build/src-BAGkFo-J.js",
     appMain: "webview/assets/app-initial~app-main~projects-index-page~remote-conversation-page-CFT2LLOB.js",
+    terminal: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~k0ede4gb-C17KDkOa.js",
     appShell: "webview/assets/app-initial~app-main~page-CtX5-cLy.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-y0KJWbm3.js",
@@ -47,11 +48,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BAGkFo-J.js",
   },
   anchors: {
+    terminalConstruction: "new ww.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:O.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:D.current,letterSpacing:0,lineHeight:1.2,linkHandler:QC,theme:mw(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-C6gAAJlL.js",
   },
 });

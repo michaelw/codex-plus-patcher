@@ -16,6 +16,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-BHxSB3aK.js",
     electronCommandSource: ".vite/build/src-BlTl_Ip2.js",
     appMain: "webview/assets/app-initial~app-main~projects-index-page~remote-conversation-page-y7pwA1Hj.js",
+    terminal: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
     appShell: "webview/assets/app-initial~app-main~page-opV5Hy6a.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
@@ -50,11 +51,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BlTl_Ip2.js",
   },
   anchors: {
+    terminalConstruction: "new WQn.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:O.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:D.current,letterSpacing:0,lineHeight:1.2,linkHandler:sQn,theme:kQn(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-C6gAAJlL.js",
   },
 });

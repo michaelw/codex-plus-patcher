@@ -26,6 +26,8 @@ const browserRuntimeFiles = [
   "api/chatRows.js",
   "api/threadSidePanel.js",
   "api/sidePanel.js",
+  "vendor/addon-unicode11.js",
+  "host/terminal.js",
   "host/threadSidePanel.js",
   "host/coreAdapters.js",
   "host/review.js",
@@ -52,8 +54,14 @@ function fzfRuntimeAssetPath() {
   return require.resolve("fzf");
 }
 
+function unicode11RuntimeAssetPath() {
+  return require.resolve("@xterm/addon-unicode11");
+}
+
 function runtimeAssetPath(filePath) {
-  return filePath.startsWith("vendor/") ? fzfRuntimeAssetPath() : path.join(runtimeRoot, filePath);
+  if (filePath === "vendor/fzf.umd.js") return fzfRuntimeAssetPath();
+  if (filePath === "vendor/addon-unicode11.js") return unicode11RuntimeAssetPath();
+  return path.join(runtimeRoot, filePath);
 }
 
 const nodeRuntimeFiles = [
@@ -155,7 +163,14 @@ function disabledRuntimePluginPaths(config = {}) {
 
 function browserRuntimeFilesForConfig(config = {}) {
   const disabled = disabledRuntimePluginPaths(config);
-  return browserRuntimeFiles.filter((filePath) => !disabled.has(filePath));
+  const terminalUnicode11Enabled = config.terminalUnicodeVersion === "11";
+  return browserRuntimeFiles.filter((filePath) => {
+    if (!terminalUnicode11Enabled && (
+      filePath === "vendor/addon-unicode11.js"
+      || filePath === "host/terminal.js"
+    )) return false;
+    return !disabled.has(filePath);
+  });
 }
 
 function browserRuntimeManifest(config = {}) {
@@ -163,7 +178,16 @@ function browserRuntimeManifest(config = {}) {
 }
 
 function codexPlusRuntimeAssets(config = {}) {
-  const staticAssets = runtimeFiles.map(([asarPath, localPath]) => {
+  const configuredBrowserAssets = browserRuntimeFilesForConfig(config).map((filePath) => [
+    `webview/assets/codex-plus/${filePath}`,
+    filePath,
+  ]);
+  const configuredRuntimeFiles = [
+    ...nodeRuntimeFiles,
+    ["webview/assets/codex-plus/runtime-manifest.js", null],
+    ...configuredBrowserAssets,
+  ];
+  const staticAssets = configuredRuntimeFiles.map(([asarPath, localPath]) => {
     const content = localPath == null ? browserRuntimeManifest(config) : fs.readFileSync(runtimeAssetPath(localPath), "utf8");
     return [asarPath, content];
   });
@@ -178,4 +202,5 @@ module.exports = {
   codexPlusRuntimeAssets,
   fzfRuntimeAssetPath,
   runtimeFiles,
+  unicode11RuntimeAssetPath,
 };

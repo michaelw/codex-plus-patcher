@@ -12,6 +12,7 @@ const { nativeMainHook } = require("./hooks/native-main");
 const { reviewHook } = require("./hooks/review");
 const { projectColorHook } = require("./hooks/sidebar");
 const { appearanceSettingsHook, commandMenuItemsExpression } = require("./hooks/settings-commands");
+const { terminalUnicode11Hook } = require("./hooks/terminal");
 const { threadHeaderActiveHook, threadHeaderBoundTitleHook, threadHeaderContextHook, threadHeaderHook, threadHeaderTitleHook } = require("./hooks/thread-header");
 const { workerHook } = require("./hooks/worker");
 const {
@@ -35,6 +36,7 @@ function buildCodexPlusPatchSet(config) {
   const mainFile = files.main;
   const electronCommandSourceFile = files.electronCommandSource;
   const appMainFile = files.appMain;
+  const terminalFile = files.terminal;
   const appShellFile = files.appShell;
   const appProtocolFile = files.appProtocol;
   const errorBoundaryFile = files.errorBoundary;
@@ -7119,6 +7121,16 @@ function patchChatGptStartupAnnouncements(text, context) {
   );
 }
 
+function patchTerminalUnicode11(text) {
+  const terminalConstruction = anchors.terminalConstruction;
+  return replaceOnce(
+    text,
+    terminalConstruction,
+    terminalUnicode11Hook(terminalConstruction),
+    "terminal constructor Unicode 11 anchor",
+  );
+}
+
   const patches = [
     {
       id: "bundle-identity",
@@ -7152,6 +7164,10 @@ function patchChatGptStartupAnnouncements(text, context) {
         [errorBoundaryFile, patchErrorBoundary],
       ],
     },
+    ...(config.runtimeConfig?.terminalUnicodeVersion === "11" ? [{
+      id: "terminal-unicode-width",
+      fileTransforms: [[terminalFile, patchTerminalUnicode11]],
+    }] : []),
     ...(appProtocolFile ? [{
       id: "app-protocol-deep-route-fallback",
       fileTransforms: [[appProtocolFile, patchAppProtocolRoutes]],

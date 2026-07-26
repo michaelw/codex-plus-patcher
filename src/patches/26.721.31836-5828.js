@@ -28,6 +28,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-D9i1FeCI.js",
     electronCommandSource: ".vite/build/src-DChWimf7.js",
     appMain: "webview/assets/app-initial-C-fROkKo.js",
+    terminal: "webview/assets/app-initial-C-fROkKo.js",
     appShell: "webview/assets/app-initial-C-fROkKo.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial-C-fROkKo.js",
@@ -64,11 +65,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-DChWimf7.js",
   },
   anchors: {
+    terminalConstruction: "new bzi.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:DRi,theme:QRi(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-b_jLzbH8.js",
   },
 });

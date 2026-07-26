@@ -15,6 +15,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-DcVqMbYE.js",
     electronCommandSource: ".vite/build/src-HagpvBpE.js",
     appMain: "webview/assets/app-initial~app-main~page-kMhXWEru.js",
+    terminal: "webview/assets/app-initial~app-main~new-thread-panel-page~onboarding-page~projects-index-page~appgen-libra~ieba6j9b-BLtRAPvl.js",
     appShell: "webview/assets/app-initial~app-main~page-kMhXWEru.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-CnQKtQ6U.js",
@@ -50,11 +51,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-HagpvBpE.js",
   },
   anchors: {
+    terminalConstruction: "new ph.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:O.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:D.current,letterSpacing:0,lineHeight:1.2,linkHandler:Om,theme:Qm(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-C6gAAJlL.js",
   },
 });
