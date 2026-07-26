@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.26.0...v0.27.0) (2026-07-26)
+
+
+### Features
+
+* support ChatGPT 26.721.41059 ([a724130](https://github.com/michaelw/codex-plus-patcher/commit/a72413080edfc20f0225024056bbf36faecec059))
+
+
+### Bug Fixes
+
+* align ChatGPT terminal Unicode cursor geometry ([a17e58e](https://github.com/michaelw/codex-plus-patcher/commit/a17e58e2b278870358ec87d2f04e2a43ac09da69))
+
 ## [0.26.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.25.0...v0.26.0) (2026-07-24)
 
 
