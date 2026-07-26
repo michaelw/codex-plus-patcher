@@ -28,6 +28,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-DOHyf8yn.js",
     electronCommandSource: ".vite/build/src-DfDAEPNR.js",
     appMain: "webview/assets/app-initial-BTphDPeq.js",
+    terminal: "webview/assets/app-initial-BTphDPeq.js",
     appShell: "webview/assets/app-initial-BTphDPeq.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial-BTphDPeq.js",
@@ -64,11 +65,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-DfDAEPNR.js",
   },
   anchors: {
+    terminalConstruction: "new KRi.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:$Li,theme:wRi(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
     mermaidCoreAsset: "mermaid.core-b_jLzbH8.js",
+    terminalUnicodeVersion: "11",
   },
 });

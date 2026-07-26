@@ -56,6 +56,7 @@ const {
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForReviewFixtureDiffText,
+  verifyTerminalUnicodeCursor,
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
@@ -89,6 +90,55 @@ test("required adapter bootstrap audit defers native side-panel binding until a 
     auditRequiredHostAdapters(cdp, { requireBindings: true }),
     /threadSidePanel\.openFile\(binding\), threadSidePanel\.mount\(binding\)/,
   );
+});
+
+test("live terminal Unicode audit asserts CSI 6n coordinates and captures the terminal", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-terminal-unicode-"));
+  const evaluations = [
+    { terminalVisible: false, toggle: { x: 100, y: 20 } },
+    { x: 400, y: 500 },
+    true,
+    { x: 400, y: 500 },
+    true,
+    {
+      rows: ["🍎📦", "CPX_UNICODE11_DSR row=7 col=5"],
+      cursor: { row: 7, column: 5 },
+    },
+    { x: 100, y: 20 },
+  ];
+  const calls = [];
+  const cdp = {
+    async evaluate() {
+      return evaluations.shift();
+    },
+    async send(method, params) {
+      calls.push({ method, params });
+      if (method === "Page.captureScreenshot") return { data: Buffer.from("png").toString("base64") };
+      return {};
+    },
+  };
+
+  try {
+    const result = await verifyTerminalUnicodeCursor(cdp, {
+      artifactDir: tmpDir,
+      wait() {},
+    });
+
+    assert.deepEqual(result, {
+      ok: true,
+      expectedColumn: 5,
+      row: 7,
+      column: 5,
+      fixture: "🍎📦",
+      screenshot: path.join(tmpDir, "terminal-unicode11.png"),
+      message: undefined,
+    });
+    assert.equal(fs.existsSync(result.screenshot), true);
+    assert.match(calls.find((call) => call.method === "Input.insertText").params.text, /🍎📦.*\\e\[6n/);
+    assert.equal(calls.filter((call) => call.method === "Input.dispatchMouseEvent").length, 9);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test("empty invocation shows help", () => {

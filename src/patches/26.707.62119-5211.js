@@ -15,6 +15,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-NFVREb5D.js",
     electronCommandSource: ".vite/build/src-BlTl_Ip2.js",
     appMain: "webview/assets/app-initial~app-main~projects-index-page~remote-conversation-page-CEvoxqOS.js",
+    terminal: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~c1urrgy0-6NYGzta_.js",
     appShell: "webview/assets/app-initial~app-main~page-Bca1Wu86.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~artifact-tab-content.electron~app-main~new-thread-panel-page~onboarding-page~pr~el73lghr-qHKfocxV.js",
@@ -50,11 +51,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BlTl_Ip2.js",
   },
   anchors: {
+    terminalConstruction: "new Ime.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:fD,theme:_D(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-C6gAAJlL.js",
   },
 });

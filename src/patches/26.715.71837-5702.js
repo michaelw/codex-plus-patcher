@@ -28,6 +28,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-DMSDCThi.js",
     electronCommandSource: ".vite/build/src-DU0S2Fqi.js",
     appMain: "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-hQSurq1e.js",
+    terminal: "webview/assets/app-initial~app-main~new-thread-panel-page~onboarding-page~projects-index-page~appgen-libra~im95otkx-BOe1mn9V.js",
     appShell: "webview/assets/app-initial~app-main~appgen-settings-page~page~appgen-library-page~appgen-page~appgen-setti~ogh9jurw-hQSurq1e.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~artifact-tab-content.electron~notebook-preview-panel~app-main~appgen-settings-p~jj50pjos-C0KycLnh.js",
@@ -64,11 +65,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-DU0S2Fqi.js",
   },
   anchors: {
+    terminalConstruction: "new sn.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:N.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:M.current,letterSpacing:0,lineHeight:1.2,linkHandler:pt,theme:Rt(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-B6BLbxeh.js",
   },
 });

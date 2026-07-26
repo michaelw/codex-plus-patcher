@@ -28,6 +28,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-DXmJ7M03.js",
     electronCommandSource: ".vite/build/src-BPbHdvxe.js",
     appMain: "webview/assets/app-initial-BHB6SClA.js",
+    terminal: "webview/assets/app-initial-BHB6SClA.js",
     appShell: "webview/assets/app-initial-BHB6SClA.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial-BHB6SClA.js",
@@ -64,11 +65,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BPbHdvxe.js",
   },
   anchors: {
+    terminalConstruction: "new KRi.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:$Li,theme:wRi(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-b_jLzbH8.js",
   },
 });

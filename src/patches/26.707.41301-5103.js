@@ -14,6 +14,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-BOrkpaTV.js",
     electronCommandSource: ".vite/build/src-BAGkFo-J.js",
     appMain: "webview/assets/app-initial~app-main~projects-index-page~remote-conversation-page-THP8fcuf.js",
+    terminal: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~c1urrgy0-DDu6e9kb.js",
     appShell: "webview/assets/app-initial~app-main~page-hSvsQcNf.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-Bj9ubaFn.js",
@@ -48,11 +49,13 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BAGkFo-J.js",
   },
   anchors: {
+    terminalConstruction: "new TO.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:O.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:D.current,letterSpacing:0,lineHeight:1.2,linkHandler:uO,theme:hO(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,
   },
   runtimeConfig: {
+    terminalUnicodeVersion: "11",
     mermaidCoreAsset: "mermaid.core-C6gAAJlL.js",
   },
 });

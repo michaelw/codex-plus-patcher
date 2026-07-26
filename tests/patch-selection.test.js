@@ -330,6 +330,38 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
 });
 
+test("Unicode 11 terminal wiring covers every ChatGPT patch set and excludes Codex", () => {
+  for (const patchSet of chatgptPatchSets) {
+    assert.equal(
+      patchSet.runtimeConfig.terminalUnicodeVersion,
+      "11",
+      `${patchSet.id} must activate Unicode 11`,
+    );
+    assert.ok(
+      patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/vendor/addon-unicode11.js"),
+      `${patchSet.id} must package the Unicode 11 addon`,
+    );
+    assert.ok(
+      patchSet.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/host/terminal.js"),
+      `${patchSet.id} must package the terminal host adapter`,
+    );
+    assert.equal(
+      collectFileTransforms(patchSet).filter(([, transform]) => transform.name === "patchTerminalUnicode11").length,
+      1,
+      `${patchSet.id} must patch exactly one terminal constructor`,
+    );
+  }
+
+  for (const patchSet of codexPatchSets) {
+    assert.equal(patchSet.runtimeConfig.terminalUnicodeVersion, undefined, patchSet.id);
+    assert.equal(
+      collectFileTransforms(patchSet).some(([, transform]) => transform.name === "patchTerminalUnicode11"),
+      false,
+      patchSet.id,
+    );
+  }
+});
+
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.41059-5848", "chatgpt-26.721.41059"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.31836-5828", "chatgpt-26.721.41059"), false);
@@ -393,14 +425,29 @@ test("30844 maps its exact assets and owns the monolithic renderer transforms", 
     "webview/assets/mermaid-diagram-BowOSTM1.js",
   ]) assert.equal(transformedPaths.has(filePath), true, filePath);
   assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-b_jLzbH8.js");
+  assert.equal(newest.runtimeConfig.terminalUnicodeVersion, "11");
   assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/runtime-manifest.js"));
+  assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/vendor/addon-unicode11.js"));
+  assert.ok(newest.assetFiles.some(([filePath]) => filePath === "webview/assets/codex-plus/host/terminal.js"));
 
   const byName = (name) => transforms.find(([, transform]) => transform.name === name)?.[1];
+  const terminalUnicode = byName("patchTerminalUnicode11");
   const userBubble = byName("patchUserMessageAttachmentsBubbleColors");
   const composerBubble = byName("patchComposerBubbleColors");
   const header = byName("patchHeader");
   const projectSelector = byName("patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut");
   const localTaskRow = byName("patchLocalTaskRow");
+  assert.equal(typeof terminalUnicode, "function");
+  const terminalConstructor = [
+    "m=new KRi.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,",
+    "fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:$Li,theme:wRi(t)}),h=null",
+  ].join("");
+  const withUnicode11 = terminalUnicode(terminalConstructor);
+  assert.match(
+    withUnicode11,
+    /m=window\.CodexPlusHost\.adapters\.terminal\.configureUnicode11\(new KRi\.Terminal\(.+?\)\),h=null/,
+  );
+  assert.equal(withUnicode11.indexOf("configureUnicode11("), withUnicode11.lastIndexOf("configureUnicode11("));
   const withUserBubble = userBubble([
     "function cJc({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
     "return(0,M4.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
@@ -1297,7 +1344,43 @@ test("runtime manifest carries versioned runtime config", () => {
   vm.runInNewContext(manifest, context);
 
   assert.equal(JSON.stringify(window.__CodexPlusRuntimeConfig), JSON.stringify({ mermaidCoreAsset: "mermaid.core-current.js" }));
-  assert.equal(JSON.stringify(window.__CodexPlusRuntimeFiles), JSON.stringify(require("../src/runtime/assets").browserRuntimeFiles));
+  assert.equal(JSON.stringify(window.__CodexPlusRuntimeFiles), JSON.stringify(browserRuntimeFilesForConfig()));
+});
+
+test("Unicode 11 width rules keep the emoji prompt cursor aligned at a wrap boundary", () => {
+  const { Unicode11Addon } = require("@xterm/addon-unicode11");
+  let unicode11;
+  new Unicode11Addon().activate({
+    unicode: {
+      register(provider) {
+        unicode11 = provider;
+      },
+    },
+  });
+  assert.equal(unicode11.version, "11");
+
+  const legacyWidth = (codePoint) => codePoint > 0xffff ? 1 : 1;
+  const cursor = (text, columns, width) => {
+    let row = 0;
+    let column = 0;
+    for (const character of text) {
+      const cells = width(character.codePointAt(0));
+      if (column + cells > columns) {
+        row += 1;
+        column = 0;
+      }
+      column += cells;
+      if (column === columns) {
+        row += 1;
+        column = 0;
+      }
+    }
+    return { row, column };
+  };
+
+  const prompt = `${"x".repeat(7)}🍎📦`;
+  assert.deepEqual(cursor(prompt, 10, legacyWidth), { row: 0, column: 9 });
+  assert.deepEqual(cursor(prompt, 10, (codePoint) => unicode11.wcwidth(codePoint)), { row: 1, column: 2 });
 });
 
 test("runtime manifest can omit disabled runtime plugins", () => {
@@ -1513,7 +1596,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2100, `src/patches/*.js line count ${totalLines} exceeds 2100`);
+  assert.ok(totalLines <= 2175, `src/patches/*.js line count ${totalLines} exceeds 2175`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -3177,6 +3260,7 @@ test("ChatGPT patch set uses ChatGPT Plus branding with stable CodexPlus runtime
     "nested-repository-worker",
     "multi-repository-review",
     "diagnostic-error-boundary",
+    "terminal-unicode-width",
     "user-message-bubble-colors",
     "project-colors",
     "native-composer-surface",

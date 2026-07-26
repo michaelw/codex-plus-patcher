@@ -2408,6 +2408,128 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
   return filePath;
 }
 
+async function verifyTerminalUnicodeCursor(cdp, {
+  artifactDir = null,
+  fsImpl = fs,
+  wait = delay,
+  timeoutMs = 30000,
+} = {}) {
+  let openedPanel = false;
+  const click = async (point) => {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, button: "none" });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+  };
+  const panelState = await cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    if (visible(document.querySelector(".xterm"))) return { terminalVisible: true };
+    const toggles = Array.from(document.querySelectorAll("button[aria-label='Toggle bottom panel']")).filter(visible);
+    const toggle = toggles.sort((left, right) => right.getBoundingClientRect().x - left.getBoundingClientRect().x)[0];
+    const rect = toggle?.getBoundingClientRect?.();
+    return {
+      terminalVisible: false,
+      toggle: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null,
+    };
+  })()`);
+  if (!panelState?.terminalVisible) {
+    if (!panelState?.toggle) return { ok: false, message: "Bottom-panel terminal toggle was not visible" };
+    await click(panelState.toggle);
+    openedPanel = true;
+  }
+
+  try {
+    const deadline = Date.now() + timeoutMs;
+    let terminalPoint = null;
+    while (!terminalPoint && Date.now() < deadline) {
+      terminalPoint = await cdp.evaluate(`(() => {
+        const terminal = document.querySelector(".xterm");
+        const input = terminal?.querySelector("textarea[aria-label='Terminal input']");
+        const rect = terminal?.getBoundingClientRect?.();
+        return input && rect?.width > 0 && rect?.height > 0
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : null;
+      })()`);
+      if (!terminalPoint) await wait(100);
+    }
+    if (!terminalPoint) return { ok: false, message: "Terminal input did not mount" };
+
+    const promptDeadline = Date.now() + timeoutMs;
+    let promptReady = false;
+    while (!promptReady && Date.now() < promptDeadline) {
+      promptReady = await cdp.evaluate(`(() =>
+        Array.from(document.querySelectorAll(".xterm-rows > div"))
+          .some((row) => String(row.textContent || "").trim().length > 0)
+      )()`);
+      if (!promptReady) await wait(100);
+    }
+    if (!promptReady) return { ok: false, message: "Terminal prompt did not become ready" };
+
+    await cdp.send("Page.bringToFront");
+    await wait(100);
+    terminalPoint = await cdp.evaluate(`(() => {
+      const terminal = document.querySelector(".xterm");
+      const rect = terminal?.getBoundingClientRect?.();
+      return rect?.width > 0 && rect?.height > 0
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : null;
+    })()`);
+    if (!terminalPoint) return { ok: false, message: "Terminal disappeared before cursor-position input" };
+    await click(terminalPoint);
+    await wait(100);
+    const focused = await cdp.evaluate(`document.activeElement?.matches?.("textarea[aria-label='Terminal input']") === true`);
+    if (!focused) return { ok: false, message: "Trusted terminal click did not focus its input" };
+    const command = "printf \"\\r\\e[2K🍎📦\\e[6n\"; IFS=\"[;\" read -r -d R esc row col; printf \"\\r\\e[2KCPX_UNICODE11_DSR row=%s col=%s\\n\" \"$row\" \"$col\"";
+    await cdp.send("Input.insertText", { text: command });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 });
+
+    const responseDeadline = Date.now() + timeoutMs;
+    let cursor = null;
+    let rows = [];
+    while (!cursor && Date.now() < responseDeadline) {
+      const readback = await cdp.evaluate(`(() => {
+        const rows = Array.from(document.querySelectorAll(".xterm-rows > div")).map((row) => row.textContent || "");
+        const marker = rows.map((row) => row.match(/CPX_UNICODE11_DSR row=(\\d+) col=(\\d+)/)).find(Boolean);
+        return {
+          rows,
+          cursor: marker ? { row: Number(marker[1]), column: Number(marker[2]) } : null,
+        };
+      })()`);
+      cursor = readback?.cursor || null;
+      rows = readback?.rows || [];
+      if (!cursor) await wait(100);
+    }
+    const screenshot = artifactDir
+      ? await capturePng(cdp, path.join(artifactDir, "terminal-unicode11.png"), { fsImpl })
+      : null;
+    if (!cursor) return { ok: false, message: "Terminal cursor-position response was not rendered", rows, screenshot };
+    return {
+      ok: cursor.column === 5,
+      expectedColumn: 5,
+      row: cursor.row,
+      column: cursor.column,
+      fixture: "🍎📦",
+      screenshot,
+      message: cursor.column === 5 ? undefined : `Unicode terminal cursor column was ${cursor.column}; expected 5`,
+    };
+  } finally {
+    if (openedPanel) {
+      const toggle = await cdp.evaluate(`(() => {
+        const candidates = Array.from(document.querySelectorAll("button[aria-label='Toggle bottom panel']"))
+          .filter((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+          .sort((left, right) => right.getBoundingClientRect().x - left.getBoundingClientRect().x);
+        const rect = candidates[0]?.getBoundingClientRect?.();
+        return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+      })()`);
+      if (toggle) await click(toggle);
+    }
+  }
+}
+
 async function visualReadback(cdp) {
   return cdp.evaluate(`(() => {
     const visible = (element) => {
@@ -2489,6 +2611,9 @@ async function captureVisualContract(cdp, {
   if (!artifactDir) throw new Error("visual contract artifactDir is required");
   fsImpl.mkdirSync(artifactDir, { recursive: true });
   const screenshots = {};
+  if (result?.terminalUnicodeCursor?.screenshot) {
+    screenshots.terminalUnicode11 = result.terminalUnicodeCursor.screenshot;
+  }
   const shellState = await activateFixture(cdp, { wait });
   await wait(2000);
   screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
@@ -4823,6 +4948,7 @@ async function runAudit(args, {
   const dismissDialogs = operations.dismissStartupDialogs || dismissStartupDialogs;
   const verifyMermaidViewer = operations.verifyMermaidViewerRender || verifyMermaidViewerRender;
   const verifyProjectSelectorShortcut = operations.verifyProjectSelectorShortcutKey || verifyProjectSelectorShortcutKey;
+  const verifyTerminalCursor = operations.verifyTerminalUnicodeCursor || verifyTerminalUnicodeCursor;
   const activateFixture = operations.activateFixtureThread || activateFixtureThread;
   const verifyReviewPanel = operations.verifyReviewPanelRender || verifyReviewPanelRender;
   const cleanupApp = operations.cleanupLaunchedAuditApp || cleanupLaunchedAuditApp;
@@ -4847,6 +4973,7 @@ async function runAudit(args, {
   let visualArtifactDir = args.artifactDir || null;
   let preparedCommandContract = null;
   let initialProjectSelectorShortcut = null;
+  let terminalUnicodeCursor = null;
   let result = null;
   try {
     preflight = await withAuditProgress(
@@ -5105,6 +5232,19 @@ async function runAudit(args, {
       "Native side-panel bindings installed",
       () => auditAdapters(cdp, { requireBindings: true }),
     );
+    const selectedPatchSet = patchSets.find((patchSet) => patchSet.id === applyResult?.patchSet);
+    if (selectedPatchSet?.runtimeConfig?.terminalUnicodeVersion === "11") {
+      const artifactDir = args.visualContract === true
+        ? (visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" }))
+        : null;
+      terminalUnicodeCursor = await withAuditCheckProgress(
+        progress,
+        "Verifying terminal Unicode cursor geometry",
+        "Terminal Unicode cursor geometry passed",
+        () => verifyTerminalCursor(cdp, { artifactDir }),
+      );
+      if (!terminalUnicodeCursor.ok) throw new Error(terminalUnicodeCursor.message);
+    }
     const splitAharnessProbe = !Array.isArray(args.auditPlugins) || args.auditPlugins.length === 0;
     const baseAuditPlugins = splitAharnessProbe ? [
       "aboutMetadata", "nestedRepositories", "diagnosticErrors", "userBubbleColors",
@@ -5378,6 +5518,7 @@ async function runAudit(args, {
         included: Boolean(args.includeNativeOpenProbes),
       },
       mermaidViewerRender,
+      terminalUnicodeCursor,
       preflight,
     };
     if (args.visualContract === true) {
@@ -5596,6 +5737,7 @@ module.exports = {
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForReviewFixtureDiffText,
+  verifyTerminalUnicodeCursor,
   writeJsonl,
   writeAuditOutput,
   waitForRendererTarget,

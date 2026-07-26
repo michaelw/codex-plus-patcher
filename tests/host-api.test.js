@@ -644,3 +644,63 @@ test("thread header reacts to canonical native and virtual context for title and
   unsubscribe();
   unsubscribeContext();
 });
+
+test("terminal host adapter activates Unicode 11 once before the terminal opens", () => {
+  const events = [];
+  let provider;
+  class Unicode11Addon {
+    activate(terminal) {
+      terminal.unicode.register({ version: "11" });
+    }
+  }
+  const window = {
+    CodexPlusHost: { adapters: {} },
+    Unicode11Addon: { Unicode11Addon },
+  };
+  vm.runInNewContext(runtimeFile("host/terminal.js"), { window, globalThis: window, WeakSet }, { filename: "host/terminal.js" });
+
+  const terminal = {
+    unicode: {
+      activeVersion: "6",
+      register(value) {
+        provider = value;
+        events.push("register");
+      },
+    },
+    loadAddon(addon) {
+      events.push("load");
+      addon.activate(this);
+    },
+    open() {
+      events.push("open");
+    },
+  };
+
+  assert.equal(window.CodexPlusHost.adapters.terminal.configureUnicode11(terminal), terminal);
+  terminal.open();
+  assert.deepEqual(events, ["load", "register", "open"]);
+  assert.equal(provider.version, "11");
+  assert.equal(terminal.unicode.activeVersion, "11");
+
+  assert.equal(window.CodexPlusHost.adapters.terminal.configureUnicode11(terminal), terminal);
+  assert.deepEqual(events, ["load", "register", "open"]);
+});
+
+test("terminal host adapter fails closed when the addon or xterm Unicode API is missing", () => {
+  const withoutAddon = { CodexPlusHost: { adapters: {} } };
+  vm.runInNewContext(runtimeFile("host/terminal.js"), { window: withoutAddon, globalThis: withoutAddon, WeakSet }, { filename: "host/terminal.js" });
+  assert.throws(
+    () => withoutAddon.CodexPlusHost.adapters.terminal.configureUnicode11({ loadAddon() {}, unicode: {} }),
+    /Unicode 11 addon is unavailable/,
+  );
+
+  const window = {
+    CodexPlusHost: { adapters: {} },
+    Unicode11Addon: { Unicode11Addon: class {} },
+  };
+  vm.runInNewContext(runtimeFile("host/terminal.js"), { window, globalThis: window, WeakSet }, { filename: "host/terminal.js" });
+  assert.throws(
+    () => window.CodexPlusHost.adapters.terminal.configureUnicode11({}),
+    /xterm Unicode API is unavailable/,
+  );
+});
