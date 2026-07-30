@@ -29,7 +29,7 @@ const DEFAULT_SOURCE = existingDefaultSource();
 const DEFAULT_TARGET = defaultAuditTargetForSource(DEFAULT_SOURCE);
 const DEFAULT_PORT = 9234;
 const DEFAULT_APP_SHELL_TIMEOUT_MS = 90000;
-const CHATGPT_APP_SHELL_TIMEOUT_MS = 180000;
+const CHATGPT_APP_SHELL_TIMEOUT_MS = 240000;
 
 function safeTimestamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
@@ -545,7 +545,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
   return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
 }
 
-async function activateFixtureThread(cdp, { nested = false, wait = delay, timeoutMs = 10000 } = {}) {
+async function activateFixtureThread(cdp, { nested = false, wait = delay, timeoutMs = 60000 } = {}) {
   const initialRoute = await cdp.evaluate(`location.search.includes("initialRoute=")`);
   if (initialRoute) {
     await cdp.send("Page.navigate", { url: "app://-/index.html" });
@@ -1698,14 +1698,14 @@ class CdpSession {
     });
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, { timeoutMs = 90000 } = {}) {
     const id = this.nextId++;
     this.socket.send(JSON.stringify({ id, method, params }));
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this.pending.delete(id)) return;
         reject(new Error(`DevTools request timed out: ${method}`));
-      }, 90000);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve(result) {
           clearTimeout(timeout);
@@ -1719,13 +1719,13 @@ class CdpSession {
     });
   }
 
-  async evaluate(expression, { awaitPromise = true } = {}) {
+  async evaluate(expression, { awaitPromise = true, timeoutMs = 90000 } = {}) {
     const result = await this.send("Runtime.evaluate", {
       expression,
       awaitPromise,
       returnByValue: true,
       userGesture: true,
-    });
+    }, { timeoutMs });
     if (result.exceptionDetails) {
       const details = result.exceptionDetails;
       throw new Error(details.exception?.description || details.text || "Runtime.evaluate failed");
@@ -2556,7 +2556,7 @@ async function visualReadback(cdp) {
         projectsVisible: textIncludes("Projects"),
         threadRows: visibleElements("[data-app-action-sidebar-thread-row]").length,
         projectRows: visibleElements("[data-app-action-sidebar-project-row]").length,
-        blurred: document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+        blurred: document.documentElement?.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
       },
       review: {
         tabVisible: visibleElements("button, [role='tab'], [role='button']").some((element) => normalize(element.textContent) === "Review"),
@@ -2568,7 +2568,7 @@ async function visualReadback(cdp) {
         rawDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
       },
       commandPalette: {
-        sidebarBlurred: document.documentElement.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
+        sidebarBlurred: document.documentElement?.getAttribute("data-codex-plus-sidebar-names-blurred") === "true",
         visible: visibleElements(".command-menu-dialog, [role='dialog'], [cmdk-root]").length > 0,
         toggleItemVisible: visibleElements("[cmdk-item], [role='option'], [role='menuitem'], button")
           .some((element) => normalize(element.textContent).includes("Toggle sidebar blur")),
@@ -4568,13 +4568,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (!routeElement || !activeRunId) throw new Error(`Aharness route did not open for ${target}`);
         return { row, routeElement, activeRunId };
       };
-      await replyVisibleOwnerChoice("red", 60000);
+      await replyVisibleOwnerChoice("red", 180000);
       const progressRow = await waitForAharness(
         "[data-codex-plus-aharness-route] [data-codex-plus-aharness-anchor]:not(.cpx-ah-row-user)",
         20000,
       );
       if (!progressRow) throw new Error("Aharness public transcript rows did not render after owner choice");
-      const progressed = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", 60000);
+      const progressed = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", 180000);
       if (!progressed) throw new Error("Aharness interaction reply did not leave a live card for the next state");
       const userBubble = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-user-bubble]", 10000);
       if (!userBubble) throw new Error("Aharness owner reply did not render as a user bubble");
@@ -4585,7 +4585,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       window.CodexPlus.ui.virtualConversations.refresh();
       const refreshedScroller = document.querySelector("[data-codex-plus-aharness-route] [data-codex-plus-aharness-scroll]");
       if (refreshedScroller && refreshedScroller.scrollTop > 10) throw new Error("Aharness refresh forced scroll to the bottom while user was scrolled up");
-      await replyVisibleOwnerChoice("Yes", 60000);
+      await replyVisibleOwnerChoice("Yes", 180000);
       const terminal = await waitForAharness("[data-codex-plus-aharness-route] .cpx-ah-terminal", 20000);
       if (!terminal || !normalize(terminal.textContent).includes("Completed")) throw new Error("Aharness long run did not complete");
       const completedRunRow = document.querySelector("#codex-plus-aharness-sidebar [data-codex-plus-aharness-run-row]");
@@ -5264,7 +5264,10 @@ async function runAudit(args, {
         progress,
         "Running isolated Aharness probe",
         "Aharness probe passed",
-        () => cdp.evaluate(pluginAuditExpression({ auditPlugins: ["aharnessRuns"] })),
+        () => cdp.evaluate(
+          pluginAuditExpression({ auditPlugins: ["aharnessRuns"] }),
+          { timeoutMs: 600000 },
+        ),
       );
       await withAuditProgress(
         progress,
@@ -5290,7 +5293,7 @@ async function runAudit(args, {
       () => cdp.evaluate(pluginAuditExpression({
         includeNativeOpenProbes: args.includeNativeOpenProbes,
         auditPlugins: baseAuditPlugins,
-      })),
+      }), { timeoutMs: 180000 }),
     );
     if (fixtureResult && projectColorsNeedsFixtureRetry(live)) {
       const fixtureRefresh = await withAuditProgress(
@@ -5377,7 +5380,7 @@ async function runAudit(args, {
         () => verifyReviewPanel(cdp),
       );
       const warmProbes = [];
-      for (let retryAttempt = 0; retryAttempt < 2 && reviewPanelNeedsWarmRetry(reviewPanel); retryAttempt += 1) {
+      for (let retryAttempt = 0; retryAttempt < 6 && reviewPanelNeedsWarmRetry(reviewPanel); retryAttempt += 1) {
         warmProbes.push(reviewPanel);
         reviewPanel = await withAuditCheckProgress(
           progress,

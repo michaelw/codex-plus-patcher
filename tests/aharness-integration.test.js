@@ -176,6 +176,59 @@ test("aharness service starts runs through startAharnessRun and routes replies t
   ]);
 });
 
+test("aharness service hydrates events emitted before the run subscription is installed", async (t) => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-aharness-start-race-"));
+  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  const eventsPath = path.join(runDir, "events.jsonl");
+  fs.writeFileSync(eventsPath, `${JSON.stringify({
+    schema: "aharness.event.v1",
+    runId: "run-start-race",
+    seq: 1,
+    id: "run-start-race:1",
+    time: "2026-07-29T00:00:00.000Z",
+    type: "request.opened",
+    data: {
+      pendingCard: {
+        requestId: "owner-choice:color",
+        kind: "owner-choice",
+        state: "chooseColor",
+        visitCount: 1,
+        options: [{ label: "red" }, { label: "blue" }],
+      },
+    },
+  })}\n`);
+  const service = aharnessService.create({
+    runtimeLoader: () => ({
+      startAharnessRun() {
+        return Promise.resolve({
+          runId: "run-start-race",
+          runDir,
+          eventsPath,
+          subscribe() {},
+          result() { return new Promise(() => {}); },
+        });
+      },
+    }),
+  });
+
+  const started = await service.request("aharness/run/start", {
+    target: "examples/color-funnel.fsm.ts",
+    cwd: runDir,
+  });
+
+  assert.equal(started.ok, true);
+  assert.equal(started.run.status, "running");
+  assert.deepEqual(started.run.pending.map((card) => ({
+    requestId: card.requestId,
+    kind: card.kind,
+    state: card.state,
+  })), [{
+    requestId: "owner-choice:color",
+    kind: "owner-choice",
+    state: "chooseColor",
+  }]);
+});
+
 test("aharness service reads project state machines from plus.toml", async () => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-aharness-project-"));
   fs.mkdirSync(path.join(project, ".codex"), { recursive: true });

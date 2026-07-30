@@ -13,6 +13,7 @@ const {
   defaultRegressionDirForSources,
   discoverSources,
   formatHumanResult,
+  isRetryableAuditFailure,
   listSourceApps,
   parseArgs,
   pathsForSource,
@@ -715,6 +716,115 @@ test("regression sources runs newest-first and stops after the first failure", a
     assert.equal(calls[0].visualContract, true);
     assert.match(calls[0].artifactDir, /work\/regression\/contracts\/.*\/26\.623\.70822$/);
   });
+});
+
+test("regression sources retries one transient startup-logo audit failure", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "26.623.70822");
+    let calls = 0;
+
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: true,
+        json: true,
+        jsonl: false,
+        keepOpen: false,
+        newest: null,
+        noProgress: true,
+        visualContract: true,
+        artifactDir: null,
+        remoteDebuggingPort: 9400,
+        sourcesDir,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
+        patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        runAudit: async () => {
+          calls += 1;
+          return calls === 1
+            ? {
+                ok: false,
+                failures: [{
+                  plugin: "audit",
+                  message: 'Timed out waiting for Codex app shell to mount: {"hasStartupLoader":true}',
+                }],
+              }
+            : { ok: true, failures: [] };
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.equal(result.results[0].retryCount, 1);
+  });
+});
+
+test("regression source retry works without a visual contract artifact directory", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "26.623.70822");
+    let calls = 0;
+
+    const result = await runRegressionSources(
+      {
+        autoClean: false,
+        clean: false,
+        filter: null,
+        includeNativeOpenProbes: true,
+        json: true,
+        jsonl: false,
+        keepOpen: false,
+        newest: null,
+        noProgress: true,
+        visualContract: false,
+        artifactDir: null,
+        remoteDebuggingPort: 9400,
+        sourcesDir,
+      },
+      {
+        cwd: tmpDir,
+        getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
+        patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        runAudit: async () => {
+          calls += 1;
+          return calls === 1
+            ? {
+                ok: false,
+                failures: [{
+                  plugin: "audit",
+                  message: "DevTools request timed out: Page.bringToFront",
+                }],
+              }
+            : { ok: true, failures: [] };
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.equal(result.results[0].retryCount, 1);
+  });
+});
+
+test("transient audit retry classifier stays narrow", () => {
+  const failure = (message, plugin = "audit") => ({
+    ok: false,
+    failures: [{ plugin, message }],
+  });
+
+  assert.equal(isRetryableAuditFailure(failure(
+    'Timed out waiting for Codex app shell to mount: {"hasStartupLoader":true}',
+  )), true);
+  assert.equal(isRetryableAuditFailure(failure("DevTools request timed out: Page.bringToFront")), true);
+  assert.equal(isRetryableAuditFailure(failure("DevTools request timed out: Runtime.evaluate")), true);
+  assert.equal(isRetryableAuditFailure(failure("Review panel did not render nested repository content", "nestedRepositories")), false);
+  assert.equal(isRetryableAuditFailure(failure("DevTools request timed out: Runtime.evaluate", "aharnessRuns")), false);
 });
 
 test("regression sources passes prefixed progress into audits", async () => {
