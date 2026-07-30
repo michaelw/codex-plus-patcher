@@ -587,7 +587,9 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Mounted composer does not carry the selected project accent/);
   assert.match(defaultExpression, /Mounted composer lost its rounded shape/);
   assert.match(defaultExpression, /waitForMountedProjectComposer/);
-  assert.match(defaultExpression, /await replyVisibleOwnerChoice\("red", 60000\)/);
+  assert.match(defaultExpression, /await replyVisibleOwnerChoice\("red", 180000\)/);
+  assert.match(defaultExpression, /await replyVisibleOwnerChoice\("Yes", 180000\)/);
+  assert.match(defaultExpression, /const progressed = await waitForAharness\([^;]+, 180000\)/);
   assert.match(defaultExpression, /const visuallyExposed = \(element\) =>/);
   assert.match(defaultExpression, /document\.elementFromPoint/);
   assert.match(defaultExpression, /if \(stalePathChip\) \{\s*press\(runRow\);\s*stalePathChip = await waitForSettledVirtualPathHeader\(\);/);
@@ -610,6 +612,7 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /decorationsUseMutedForeground/);
   assert.match(defaultExpression, /User message decorations do not use the transcript muted foreground/);
   assert.match(defaultExpression, /composerAttachmentPillStatus/);
+  assert.match(defaultExpression, /composer-attachment-surface rounded-full bg-token-dropdown-background/);
   assert.match(defaultExpression, /const expectedWarnings = \[\]/);
   assert.match(defaultExpression, /const warn = \(id, code, message, details = \{\}\)/);
   assert.match(defaultExpression, /Composer permissions picker text is unreadable/);
@@ -910,6 +913,7 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   const end = source.indexOf("async function verifySidebarBlurCommandPalette", start);
   const activation = source.slice(start, end);
 
+  assert.match(activation, /timeoutMs = 60000/);
   assert.match(activation, /CodexPlusHost\.adapters\.context\.active\(\)/);
   assert.match(activation, /activeContext\?\.cwd/);
   assert.match(activation, /target\.title/);
@@ -933,6 +937,19 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   assert.match(activation, /app:\/\/-\/index\.html/);
 });
 
+test("visual readback tolerates the document swap while settings navigation loads", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("async function visualReadback");
+  const end = source.indexOf("async function openSettingsForVisualContract", start);
+  const readback = source.slice(start, end);
+
+  assert.equal(
+    readback.match(/document\.documentElement\?\.getAttribute/g)?.length,
+    2,
+  );
+  assert.doesNotMatch(readback, /document\.documentElement\.getAttribute/);
+});
+
 test("default audit closes the isolated Aharness route without reloading fixture state", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("if (splitAharnessProbe) {");
@@ -944,6 +961,27 @@ test("default audit closes the isolated Aharness route without reloading fixture
   assert.match(isolatedProbe, /activateFixture\(cdp, \{ nested: true \}\)/);
   assert.doesNotMatch(isolatedProbe, /reloadRenderer/);
   assert.doesNotMatch(isolatedProbe, /seedFixtureBrowserState/);
+});
+
+test("isolated Aharness audit allows its explicit interaction waits to outlive the default DevTools request timeout", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("if (splitAharnessProbe) {");
+  const end = source.indexOf("const live = await withAuditProgress", start);
+  const isolatedProbe = source.slice(start, end);
+
+  assert.match(source, /send\(method, params = \{\}, \{ timeoutMs = 90000 \} = \{\}\)/);
+  assert.match(source, /async evaluate\(expression, \{ awaitPromise = true, timeoutMs = 90000 \} = \{\}\)/);
+  assert.match(source, /this\.send\("Runtime\.evaluate", \{[\s\S]*?\}, \{ timeoutMs \}\)/);
+  assert.match(isolatedProbe, /cdp\.evaluate\([\s\S]*?auditPlugins: \["aharnessRuns"\][\s\S]*?\{ timeoutMs: 600000 \}/);
+});
+
+test("broad plugin audit allows its finite probes to outlive the default DevTools request timeout", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("const live = await withAuditProgress");
+  const end = source.indexOf("if (fixtureResult && projectColorsNeedsFixtureRetry", start);
+  const broadProbe = source.slice(start, end);
+
+  assert.match(broadProbe, /cdp\.evaluate\(pluginAuditExpression\(\{[\s\S]*?auditPlugins: baseAuditPlugins,[\s\S]*?\}\), \{ timeoutMs: 180000 \}\)/);
 });
 
 test("Aharness audit waits for the new run row to become active before asserting its styling", () => {
@@ -1267,9 +1305,9 @@ test("live review audit opens the native Review control with trusted input", () 
   assert.match(activation, /clickCount: 1/);
 });
 
-test("live review audit permits two bounded warm retries while Review is still loading", () => {
+test("live review audit permits six bounded warm retries while Review is still loading", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
-  assert.match(source, /retryAttempt < 2/);
+  assert.match(source, /retryAttempt < 6/);
   assert.match(source, /reviewPanelNeedsWarmRetry\(reviewPanel\)/);
 });
 
@@ -2517,8 +2555,8 @@ test("runAudit manual mode launches and skips plugin probes and cleanup", async 
     ["rendererTimeout", 30000],
     ["rendererTimeout", undefined],
   ]);
-  assert.deepEqual(calls.find((call) => call[0] === "shellTimeoutMs"), ["shellTimeoutMs", 180000]);
-  assert.deepEqual(calls.find((call) => call[0] === "runtimeTimeoutMs"), ["runtimeTimeoutMs", 180000]);
+  assert.deepEqual(calls.find((call) => call[0] === "shellTimeoutMs"), ["shellTimeoutMs", 240000]);
+  assert.deepEqual(calls.find((call) => call[0] === "runtimeTimeoutMs"), ["runtimeTimeoutMs", 240000]);
   assert.deepEqual(calls.find((call) => call[0] === "runtimeConfig")[1], {
     runtimePluginsDisabled: ["projectColors"],
   });

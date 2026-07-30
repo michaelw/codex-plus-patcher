@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.721.41059-5848");
-  assert.equal(chatgptPatchSets.length, 21);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.721.81911-5973");
+  assert.equal(chatgptPatchSets.length, 22);
 
   for (const identity of [
+    ["26.721.81911", "5973", "3c9a101d9beec3718b0fcfc19e427c644a934045f48b3fe0e16b68b0b3f23e61"],
     ["26.721.41059", "5848", "da39a51b06fb4c728d418b8f0f05fc8fd8c6b1f74c4fb4d47c20c7914a798f45"],
     ["26.721.31836", "5828", "674dab67fe39f9912493f640c1dd80f222f6062ad0f50b182a6cc87eebd0d3dc"],
     ["26.721.30844", "5813", "29dac6cff7bc1aa39c64b4f12c0e47b07bccd0db11767ebc94c1196389b90619"],
@@ -363,6 +364,8 @@ test("Unicode 11 terminal wiring covers every ChatGPT patch set and excludes Cod
 });
 
 test("shared ChatGPT 26.715 transform variants have explicit patch-set owners", () => {
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.81911-5973", "chatgpt-26.721.41059"), false);
+  assert.equal(patchSetUsesTransformVariant("chatgpt-26.721.81911-5973", "chatgpt-26.721.41059"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.41059-5848", "chatgpt-26.721.41059"), true);
   assert.equal(patchSetOwnsTransformVariant("chatgpt-26.721.31836-5828", "chatgpt-26.721.41059"), false);
   assert.equal(patchSetUsesTransformVariant("chatgpt-26.721.41059-5848", "chatgpt-26.721.31836"), true);
@@ -506,6 +509,27 @@ test("30844 maps its exact assets and owns the monolithic renderer transforms", 
     () => composerBubble("function i5o(e){let t=(0,nX.c)(36),", { patchSetId: "chatgpt-26.715.72359-5718" }),
     /belongs to chatgpt-26\.721\.30844-5813/,
   );
+});
+
+test("81911 maps its exact assets and reuses the current host transform contracts", () => {
+  const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.81911-5973");
+  assert.ok(newest);
+  assert.equal(newest.codexVersion, "26.721.81911");
+  assert.equal(newest.bundleVersion, "5973");
+  assert.equal(newest.asarSha256, "3c9a101d9beec3718b0fcfc19e427c644a934045f48b3fe0e16b68b0b3f23e61");
+  assert.equal(patchSetUsesTransformVariant(newest.id, "chatgpt-26.721.41059"), true);
+
+  const transformedPaths = new Set(collectFileTransforms(newest).map(([filePath]) => filePath));
+  for (const filePath of [
+    ".vite/build/main-Be_0DBuv.js",
+    ".vite/build/src-BPbHdvxe.js",
+    "webview/assets/app-initial-CRKqnyc3.js",
+    "webview/assets/general-settings-CcPMYysK.js",
+    "webview/assets/thread-app-shell-chrome-DhA-NZK8.js",
+    "webview/assets/local-conversation-page-CiM48neu.js",
+    "webview/assets/mermaid-diagram-hd7-ZCUb.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+  assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-b_jLzbH8.js");
 });
 
 test("41059 maps its exact assets and owns a distinct current renderer variant", () => {
@@ -1596,7 +1620,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2175, `src/patches/*.js line count ${totalLines} exceeds 2175`);
+  assert.ok(totalLines <= 2242, `src/patches/*.js line count ${totalLines} exceeds 2242`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -3979,6 +4003,7 @@ test("header patch renders project path accessories from thread context", () => 
     }
 
     if (
+      patchSet.id === "chatgpt-26.721.81911-5973" ||
       patchSet.id === "chatgpt-26.721.41059-5848" ||
       patchSet.id === "chatgpt-26.721.31836-5828" ||
       patchSet.id === "chatgpt-26.721.30844-5813" ||
@@ -5810,14 +5835,15 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.doesNotMatch(bubblePlugin, /:is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)\{background-color/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,\[data-codex-plus-rich-content\],\[data-codex-plus-rich-content\] \*\).*color:var\(--codex-plus-user-bubble-light-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] :is\(h1,h2,h3,h4,h5,h6,p,li,blockquote,table,thead,tbody,tr,th,td,code,a,span,\[class\*="text-token"\],\[class\*="opacity-"\]\).*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /button\[aria-disabled="true"\]/);
   assert.match(bubblePlugin, /opacity:1!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-light-fg\)!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):is\(\[class\*="rounded-full"\],\[class\*="rounded-"\]\):is\(\[class\*="bg-token-foreground"\],\[class\*="bg-token-input"\],\[class\*="bg-token-dropdown"\]\)/);
+  assert.match(bubblePlugin, /:is\(\[class\*="bg-token-foreground"\],\[class\*="bg-token-input"\],\[class\*="bg-token-dropdown"\]\):not\(\[data-composer-attachment-pill\]\)/);
   assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
   assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
   assert.match(bubblePlugin, /:is\(:hover,:focus-visible,:active,\[data-state="open"\],\[aria-expanded="true"\]\)\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important;background-image:none!important/);

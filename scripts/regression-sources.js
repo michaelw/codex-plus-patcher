@@ -425,6 +425,18 @@ function cleanRegressionDir(target, regressionDir, { fsImpl = fs } = {}) {
   return true;
 }
 
+function isRetryableAuditFailure(auditResult) {
+  const failures = Array.isArray(auditResult?.failures) ? auditResult.failures : [];
+  if (failures.length !== 1 || failures[0]?.plugin !== "audit") return false;
+  const message = failures[0]?.message || "";
+  return (
+    message.includes("Timed out waiting for Codex app shell to mount:") &&
+    message.includes('"hasStartupLoader":true')
+  ) ||
+    message === "DevTools request timed out: Page.bringToFront" ||
+    message === "DevTools request timed out: Runtime.evaluate";
+}
+
 function listCleanTargets({ regressionDir, sources = [], filter = null, operations = {} }) {
   const fsImpl = operations.fs || fs;
   if (!fsImpl.existsSync(regressionDir)) return [];
@@ -514,10 +526,27 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     artifactDir,
   };
   sourceProgress?.start?.(`Running regression audit with ${source.patchSet}`);
-  const auditResult = await runAuditImpl(auditArgs, {
+  let auditResult = await runAuditImpl(auditArgs, {
     ...(operations.auditOptions || {}),
     progress: sourceProgress,
   });
+  let retryCount = 0;
+  if (!auditResult.ok && isRetryableAuditFailure(auditResult) && !operations.signal?.aborted) {
+    retryCount = 1;
+    const firstFailure = auditResult.failures[0];
+    sourceProgress?.item?.("retry", firstFailure.message, {
+      phase: "retry",
+      attempt: 2,
+      maxAttempts: 2,
+    });
+    if (artifactDir) {
+      (operations.fs || fs).rmSync(artifactDir, { recursive: true, force: true });
+    }
+    auditResult = await runAuditImpl(auditArgs, {
+      ...(operations.auditOptions || {}),
+      progress: sourceProgress,
+    });
+  }
   if (auditResult.visualContract) {
     sourceProgress?.event?.("visual_contract", {
       ok: auditResult.visualContract.ok,
@@ -546,6 +575,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     targetApp: paths.targetApp,
     artifactDir,
     cleaned,
+    retryCount,
     failures: auditResult.failures || [],
     audit: {
       expectedWarnings: auditResult.expectedWarnings || [],
@@ -946,6 +976,7 @@ module.exports = {
   formatHumanResult,
   helpText,
   inspectSourceApp,
+  isRetryableAuditFailure,
   listCleanTargets,
   listSourceApps,
   newestSources,

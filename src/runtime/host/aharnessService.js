@@ -620,6 +620,7 @@ function create(options = {}) {
         notify(handle.runId);
       });
     }
+    applyEventsFromFile(projection, handle.eventsPath);
     Promise.resolve(handle.result?.()).then((result) => {
       applyEventsFromFile(projection, handle.eventsPath);
       projection.status = result?.status || projection.status;
