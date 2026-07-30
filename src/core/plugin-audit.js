@@ -3391,9 +3391,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const surfaceStyle = surface ? getComputedStyle(surface) : null;
       const synthetic = [];
       if (surface && !visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]").length) {
-        const pill = document.createElement("div");
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "composer-attachment-surface rounded-full bg-token-dropdown-background";
         pill.setAttribute("data-composer-attachment-pill", "");
-        pill.innerHTML = '<span class="text-token-description-foreground opacity-50">README.md</span><button type="button"><svg viewBox="0 0 10 10"><path d="M2 2L8 8"/></svg></button>';
+        pill.innerHTML = '<span class="text-token-description-foreground opacity-50">1 comment</span><span role="button"><svg viewBox="0 0 10 10"><path d="M2 2L8 8"/></svg></span>';
         surface.prepend(pill);
         synthetic.push(pill);
       }

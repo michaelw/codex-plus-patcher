@@ -28,6 +28,7 @@ module.exports = buildCodexPlusPatchSet({
     main: ".vite/build/main-Be_0DBuv.js",
     electronCommandSource: ".vite/build/src-BPbHdvxe.js",
     appMain: "webview/assets/app-initial-CRKqnyc3.js",
+    terminal: "webview/assets/app-initial-CRKqnyc3.js",
     appShell: "webview/assets/app-initial-CRKqnyc3.js",
     appProtocol: null,
     errorBoundary: "webview/assets/app-initial-CRKqnyc3.js",
@@ -64,6 +65,7 @@ module.exports = buildCodexPlusPatchSet({
     electronMenuShortcuts: ".vite/build/src-BPbHdvxe.js",
   },
   anchors: {
+    terminalConstruction: "new KRi.Terminal({allowTransparency:!0,cursorStyle:`bar`,fontSize:k.current,allowProposedApi:!0,cursorBlink:!0,fontFamily:O.current,letterSpacing:0,lineHeight:1.2,linkHandler:$Li,theme:wRi(t)})",
     composerProjectImports: null,
     composerProjectStyleCaller: null,
     composerProjectAccentCaller: null,

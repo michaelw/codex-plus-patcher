@@ -612,6 +612,7 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /decorationsUseMutedForeground/);
   assert.match(defaultExpression, /User message decorations do not use the transcript muted foreground/);
   assert.match(defaultExpression, /composerAttachmentPillStatus/);
+  assert.match(defaultExpression, /composer-attachment-surface rounded-full bg-token-dropdown-background/);
   assert.match(defaultExpression, /const expectedWarnings = \[\]/);
   assert.match(defaultExpression, /const warn = \(id, code, message, details = \{\}\)/);
   assert.match(defaultExpression, /Composer permissions picker text is unreadable/);

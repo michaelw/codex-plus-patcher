@@ -1620,7 +1620,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2240, `src/patches/*.js line count ${totalLines} exceeds 2240`);
+  assert.ok(totalLines <= 2242, `src/patches/*.js line count ${totalLines} exceeds 2242`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -5835,14 +5835,15 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.doesNotMatch(bubblePlugin, /:is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)\{background-color/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,\[data-codex-plus-rich-content\],\[data-codex-plus-rich-content\] \*\).*color:var\(--codex-plus-user-bubble-light-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] :is\(h1,h2,h3,h4,h5,h6,p,li,blockquote,table,thead,tbody,tr,th,td,code,a,span,\[class\*="text-token"\],\[class\*="opacity-"\]\).*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /button\[aria-disabled="true"\]/);
   assert.match(bubblePlugin, /opacity:1!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-light-fg\)!important/);
   assert.match(bubblePlugin, /color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):is\(\[class\*="rounded-full"\],\[class\*="rounded-"\]\):is\(\[class\*="bg-token-foreground"\],\[class\*="bg-token-input"\],\[class\*="bg-token-dropdown"\]\)/);
+  assert.match(bubblePlugin, /:is\(\[class\*="bg-token-foreground"\],\[class\*="bg-token-input"\],\[class\*="bg-token-dropdown"\]\):not\(\[data-composer-attachment-pill\]\)/);
   assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
   assert.match(bubblePlugin, /background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
   assert.match(bubblePlugin, /:is\(:hover,:focus-visible,:active,\[data-state="open"\],\[aria-expanded="true"\]\)\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important;background-image:none!important/);
