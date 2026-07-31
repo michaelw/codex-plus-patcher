@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.28.0...v0.29.0) (2026-07-31)
+
+
+### Features
+
+* support ChatGPT 26.727.40816 ([11a8d29](https://github.com/michaelw/codex-plus-patcher/commit/11a8d29b0fbae1595fca59c70003e8f7bf08ecbc))
+
 ## [0.28.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.27.0...v0.28.0) (2026-07-30)
 
 
