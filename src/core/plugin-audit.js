@@ -231,7 +231,7 @@ async function waitForMermaidViewerTarget(port, beforeIds = new Set(), timeoutMs
 async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, timeoutMs = 15000 } = {}) {
   const beforeTargets = await getJson(`http://127.0.0.1:${port}/json/list`).catch(() => []);
   const beforeIds = new Set(beforeTargets.map((target) => target.id));
-  await appCdp.evaluate(`(() => {
+  const openResult = await appCdp.evaluate(`(async () => {
     const host = document.createElement("div");
     host.setAttribute("data-markdown-copy", "code-block");
     const pre = document.createElement("pre");
@@ -241,10 +241,15 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
     diagram.setAttribute("data-codex-plus-mermaid-diagram", "");
     host.append(pre, diagram);
     document.body.appendChild(host);
-    window.CodexPlus.plugins.get("mermaidFullscreen").exports.openViewer(diagram);
-    setTimeout(() => host.remove(), 1000);
-    return true;
+    try {
+      return await window.CodexPlus.plugins.get("mermaidFullscreen").exports.openViewer(diagram);
+    } finally {
+      host.remove();
+    }
   })()`);
+  if (!openResult?.ok) {
+    throw new Error(`Mermaid viewer did not open: ${openResult?.message || JSON.stringify(openResult)}`);
+  }
   const viewerTarget = await waitForMermaidViewerTarget(port, beforeIds, timeoutMs);
   const viewer = new Session(viewerTarget.webSocketDebuggerUrl);
   try {
@@ -815,11 +820,18 @@ async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeAct
 async function activateReviewControlWithTrustedInput(cdp) {
   const point = await cdp.evaluate(`(() => {
     const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"; };
-    const control = Array.from(document.querySelectorAll("button, [role='tab'], [role='button']")).filter(visible).find((element) => {
+    const controls = Array.from(document.querySelectorAll("button, [role='tab'], [role='button']")).filter(visible);
+    const review = controls.find((element) => {
       const text = String(element.textContent || "").trim();
       const label = String(element.getAttribute("aria-label") || "").trim();
       const rect = element.getBoundingClientRect();
       return (text === "Review" || label === "Review") && rect.left >= innerWidth / 2 && rect.top < 80;
+    });
+    const control = review || controls.find((element) => {
+      const text = String(element.textContent || "").trim();
+      const label = String(element.getAttribute("aria-label") || "").trim();
+      const rect = element.getBoundingClientRect();
+      return (text === "Changes" || label === "Changes") && rect.left >= innerWidth * 0.6 && rect.top < 240;
     });
     if (!control) return null;
     const rect = control.getBoundingClientRect();
@@ -913,6 +925,13 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       .filter((element) => /diff --git/.test(element.textContent || ""))
       .length;
     const reviewDiffCardCount = () => visibleElements(".codex-review-diff-card").length;
+    const mainDiffDisclosureExpanded = () => visibleElements("button,[role='button'],span,div")
+      .some((element) => {
+        const rect = element.getBoundingClientRect();
+        return normalize(element.textContent) === "Hide" &&
+          rect.left >= innerWidth / 2 &&
+          !element.closest("[data-codex-plus-repo-patch-group]");
+      });
     const reviewLoadingPlaceholderCount = () => visibleElements("[aria-busy='true'], [class*='animate-pulse']")
       .filter((element) => element.getBoundingClientRect().left >= innerWidth / 2)
       .length;
@@ -952,6 +971,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       nestedBranchPickerDetails: nestedBranchPickerDetails(),
       rawNestedDiffFallbackCount: rawNestedDiffFallbackCount(),
       reviewDiffCardCount: reviewDiffCardCount(),
+      mainDiffDisclosureExpanded: mainDiffDisclosureExpanded(),
       reviewLoadingPlaceholderCount: reviewLoadingPlaceholderCount(),
       reviewTabCount: visibleElements("button, [role='tab'], [role='button']").filter((element) => normalize(element.textContent) === "Review").length,
     });
@@ -1009,6 +1029,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
             current.nestedBranchPickerOptionCounts.every((count) => count >= 3) &&
             current.rawNestedDiffFallbackCount === 0 &&
             current.reviewDiffCardCount >= 2 &&
+            (current.reviewDiffCardCount >= 3 || current.mainDiffDisclosureExpanded) &&
             current.reviewLoadingPlaceholderCount === 0
           ) || Date.now() >= reviewDeadline) {
             resolve(current);
@@ -1162,6 +1183,59 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       };
     })()`);
   }
+  let expandedMainReview = false;
+  if (typeof cdp.send === "function") {
+    const mainReviewDeadline = Date.now() + 10000;
+    while (Date.now() < mainReviewDeadline) {
+      const mainReviewState = await cdp.evaluate(`(() => {
+        const visible = (element) => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
+        const show = visibleElements("button,[role='button'],span,div")
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            return normalize(element.textContent) === "Show" &&
+              rect.left >= innerWidth / 2 &&
+              !element.closest("[data-codex-plus-repo-patch-group]");
+          })
+          .sort((left, right) => {
+            const leftRect = left.getBoundingClientRect();
+            const rightRect = right.getBoundingClientRect();
+            return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height);
+          })[0];
+        const mainDiffDisclosureExpanded = visibleElements("button,[role='button'],span,div")
+          .some((element) => {
+            const rect = element.getBoundingClientRect();
+            return normalize(element.textContent) === "Hide" &&
+              rect.left >= innerWidth / 2 &&
+              !element.closest("[data-codex-plus-repo-patch-group]");
+          });
+        const rect = show?.getBoundingClientRect?.();
+        return {
+          reviewDiffCardCount: visibleElements(".codex-review-diff-card").length,
+          mainDiffDisclosureExpanded,
+          showRect: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null,
+        };
+      })()`);
+      if (
+        mainReviewState?.reviewDiffCardCount >= 3 ||
+        (mainReviewState?.reviewDiffCardCount >= 2 && mainReviewState?.mainDiffDisclosureExpanded)
+      ) break;
+      const mainShowRect = mainReviewState?.showRect;
+      if (Number.isFinite(mainShowRect?.x) && Number.isFinite(mainShowRect?.y)) {
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: mainShowRect.x, y: mainShowRect.y });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: mainShowRect.x, y: mainShowRect.y, button: "left", clickCount: 1 });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: mainShowRect.x, y: mainShowRect.y, button: "left", clickCount: 1 });
+        expandedMainReview = true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
   await new Promise((resolve) => setTimeout(resolve, 2000));
   finalStatus = await cdp.evaluate(`(() => {
     const visible = (element) => {
@@ -1192,9 +1266,17 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
         const rect = element.getBoundingClientRect();
         return !element.hasAttribute("data-codex-plus-repo-branch-picker") && rect.left >= innerWidth / 2 && rect.top < 120 && normalize(element.textContent).startsWith("Unstaged");
       });
+    const mainDiffDisclosureExpanded = () => visibleElements("button,[role='button'],span,div")
+      .some((element) => {
+        const rect = element.getBoundingClientRect();
+        return normalize(element.textContent) === "Hide" &&
+          rect.left >= innerWidth / 2 &&
+          !element.closest("[data-codex-plus-repo-patch-group]");
+      });
     return {
       ...${JSON.stringify(finalStatus)},
       delayedReviewStabilityCheck: true,
+      expandedMainReview: ${expandedMainReview ? "true" : "false"},
       boundaryVisible: containsVisibleText("Tab content couldn't render"),
       boundaryEverVisible: ${JSON.stringify(finalStatus?.boundaryEverVisible || false)} || containsVisibleText("Tab content couldn't render"),
       tryAgainVisible: exactVisibleText("Try again"),
@@ -1202,6 +1284,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       reviewToolbarFailureVisible: containsVisibleText("Review toolbar failed to render"),
       rawNestedDiffFallbackCount: visibleElements("pre").filter((element) => /diff --git/.test(element.textContent || "")).length,
       reviewDiffCardCount: visibleElements(".codex-review-diff-card").length,
+      mainDiffDisclosureExpanded: mainDiffDisclosureExpanded(),
       repoPatchGroupCount: visibleElements("[data-codex-plus-repo-patch-group]").length,
       repoPatchGroupTexts: visibleElements("[data-codex-plus-repo-patch-group]").map((element) => normalize(element.textContent)).slice(0, 4),
       nestedBranchPickerCount: nestedBranchPickers().length,
@@ -1267,7 +1350,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     finalStatus.nestedBranchPickerCount >= 2 &&
     finalStatus.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
     finalStatus.rawNestedDiffFallbackCount === 0 &&
-    finalStatus.reviewDiffCardCount >= 3 &&
+    finalStatus.reviewDiffCardCount >= 2 &&
+    (finalStatus.reviewDiffCardCount >= 3 || finalStatus.mainDiffDisclosureExpanded) &&
     finalStatus.nestedDiffCardCount >= 2 &&
     finalStatus.nestedDiffDisclosureExpanded &&
     finalStatus.nestedDiffDisclosureCollapsed,
@@ -1318,7 +1402,8 @@ function reviewPanelNeedsWarmRetry(status) {
         status.nestedBranchPickerPopulated &&
         status.nestedBranchPickerCount >= 2 &&
         status.nestedBranchPickerOptionCounts?.every((count) => count >= 3) &&
-        status.reviewDiffCardCount >= 3 &&
+        status.reviewDiffCardCount >= 2 &&
+        (status.reviewDiffCardCount >= 3 || status.mainDiffDisclosureExpanded) &&
         status.reviewLoadingPlaceholderCount === 0 &&
         status.nestedDiffCardCount >= 2 &&
         status.nestedDiffDisclosureExpanded &&
@@ -2594,6 +2679,85 @@ async function openSettingsForVisualContract(cdp, { wait = delay, timeoutMs = 15
   return readback;
 }
 
+async function verifyComposerPillContrast(cdp) {
+  return cdp.evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const rgb = (value) => {
+      const text = String(value || "");
+      const rgbMatch = text.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+      const srgbMatch = text.match(/color\\(srgb\\s+([0-9.]+)\\s+([0-9.]+)\\s+([0-9.]+)/);
+      if (!srgbMatch) return null;
+      return [srgbMatch[1], srgbMatch[2], srgbMatch[3]].map((channel) => Math.round(Number(channel) * 255));
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const contrast = (foreground, background) => {
+      const fg = luminance(rgb(foreground));
+      const bg = luminance(rgb(background));
+      if (fg == null || bg == null) return null;
+      return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    };
+    const transparent = (value) => {
+      const text = String(value || "").trim();
+      return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\\([^)]*,\\s*0\\)$/.test(text);
+    };
+    const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))"))
+      .find(visible);
+    if (!surface) return { ok: false, message: "Visible composer surface was not found" };
+    let pill = Array.from(surface.querySelectorAll("[data-composer-attachment-pill], .composer-attachment-surface"))
+      .find(visible);
+    const synthetic = !pill;
+    if (!pill) {
+      pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "composer-attachment-surface rounded-full bg-token-dropdown-background";
+      pill.setAttribute("data-composer-attachment-pill", "");
+      pill.setAttribute("data-codex-plus-visual-contract-pill", "");
+      pill.style.cssText = "display:inline-flex;align-self:flex-start;flex:none;align-items:center;gap:6px;width:max-content;height:28px;padding:0 8px;border:0";
+      pill.innerHTML = '<span class="text-token-description-foreground opacity-50">1 comment</span><svg aria-hidden="true" viewBox="0 0 10 10" style="width:12px;height:12px"><path d="M2 2L8 8M8 2L2 8" stroke="currentColor" stroke-width="1.5"/></svg>';
+      surface.prepend(pill);
+    }
+    const pillStyle = getComputedStyle(pill);
+    const textNode = Array.from(pill.querySelectorAll("*")).find((node) => String(node.textContent || "").trim()) || pill;
+    const textStyle = getComputedStyle(textNode);
+    const textFillColor = textStyle.webkitTextFillColor || null;
+    const effectiveTextColor = textFillColor && !transparent(textFillColor) ? textFillColor : textStyle.color;
+    const textContrast = contrast(effectiveTextColor, pillStyle.backgroundColor);
+    const details = {
+      synthetic,
+      visible: visible(pill),
+      pillOpacity: pillStyle.opacity,
+      textOpacity: textStyle.opacity,
+      textColor: textStyle.color,
+      textFillColor,
+      pillBackground: pillStyle.backgroundColor,
+      textContrast,
+      textFillTransparent: transparent(textFillColor),
+    };
+    return {
+      ok: details.visible &&
+        Number(details.pillOpacity) >= 0.99 &&
+        Number(details.textOpacity) >= 0.99 &&
+        !details.textFillTransparent &&
+        details.textContrast != null &&
+        details.textContrast >= 4.5,
+      ...details,
+    };
+  })()`);
+}
+
 async function captureVisualContract(cdp, {
   artifactDir,
   result,
@@ -2603,6 +2767,7 @@ async function captureVisualContract(cdp, {
   fsImpl = fs,
   wait = delay,
   activateFixture = activateFixtureThread,
+  verifyComposer = verifyComposerPillContrast,
   verifyReview = verifyReviewPanelRender,
   waitReviewFixture = waitForReviewFixtureDiffText,
   verifyCommand = verifySidebarBlurCommandPalette,
@@ -2616,8 +2781,12 @@ async function captureVisualContract(cdp, {
   }
   const shellState = await activateFixture(cdp, { wait });
   await wait(2000);
+  const composerPill = await verifyComposer(cdp);
+  screenshots.composerPill = await capturePng(cdp, path.join(artifactDir, "composer-pill.png"), { fsImpl });
+  await cdp.evaluate(`(() => document.querySelector("[data-codex-plus-visual-contract-pill]")?.remove())()`);
   screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
   const shell = await visualReadback(cdp);
+  if (verifyReview === verifyReviewPanelRender) await activateReviewControlWithTrustedInput(cdp);
   const reviewState = await verifyReview(cdp);
   const fixtureDiffText = await waitReviewFixture(cdp);
   await wait(500);
@@ -2646,6 +2815,7 @@ async function captureVisualContract(cdp, {
     patchSet: result?.applyResult?.patchSet || null,
     codexVersion: result?.applyResult?.codexVersion || null,
     bundleVersion: result?.applyResult?.bundleVersion || null,
+    composerPill,
     shell,
     review: {
       ...review.review,
@@ -2664,9 +2834,9 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
-    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
+    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
   writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
   writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });
@@ -3127,12 +3297,18 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       }
       return rows;
     };
+    const mountedComposerElements = () => {
+      const markedSurface = visibleElements("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")[0] || null;
+      const editor = visibleElements("[data-codex-composer], [contenteditable='true'], textarea, [role='textbox']")
+        .find((candidate) => candidate.closest("[data-codex-plus-user-entry], .composer-surface-chrome")) || null;
+      const surface = markedSurface || editor?.closest("[data-codex-plus-user-entry], .composer-surface-chrome") || null;
+      return { editor: editor || surface, surface };
+    };
     const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 30000) => {
       const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
-        const editor = document.querySelector("[data-codex-composer]");
-        const surface = editor?.closest("[data-codex-plus-user-entry]") || editor?.closest(".composer-surface-chrome");
+        const { surface } = mountedComposerElements();
         if (surface) {
           const computed = getComputedStyle(surface);
           const surfaceAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
@@ -3159,8 +3335,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      const editor = document.querySelector("[data-codex-composer]");
-      const surface = editor?.closest("[data-codex-plus-user-entry]") || editor?.closest(".composer-surface-chrome");
+      const { surface } = mountedComposerElements();
       const computed = surface ? getComputedStyle(surface) : null;
       return {
         marked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
@@ -3204,14 +3379,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\([^)]*,\s*0\)$/.test(text);
     };
     const composerPermissionPickerStatus = () => {
-      const editor = document.querySelector("[data-codex-composer]");
+      const { editor, surface } = mountedComposerElements();
       const labels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
-      const trigger = Array.from(document.querySelectorAll("button")).find((button) => {
+      const trigger = Array.from(surface?.querySelectorAll("button") || []).find((button) => {
         const text = normalize(button.textContent);
         return labels.some((label) => text === label || text.startsWith(`${label} `));
       });
       const triggerStyle = trigger ? getComputedStyle(trigger) : null;
-      const surface = editor?.closest("[data-codex-plus-user-entry]");
       const surfaceStyle = surface ? getComputedStyle(surface) : null;
       let labelStyle = null;
       if (trigger) {
@@ -3248,8 +3422,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       };
     };
     const composerContrastStatus = () => {
-      const editor = document.querySelector("[data-codex-composer]");
-      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      const { editor, surface } = mountedComposerElements();
       if (!surface) return { editorMounted: Boolean(editor), surfaceMounted: false, checks: [] };
       const surfaceStyle = getComputedStyle(surface);
       const surfaceBackground = surfaceStyle.backgroundColor;
@@ -3386,8 +3559,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       return status;
     };
     const composerAttachmentPillStatus = () => {
-      const editor = document.querySelector("[data-codex-composer]");
-      const surface = editor?.closest("[data-codex-plus-user-entry]");
+      const { editor, surface } = mountedComposerElements();
       const surfaceStyle = surface ? getComputedStyle(surface) : null;
       const synthetic = [];
       if (surface && !visibleElements("[data-codex-plus-user-entry] [data-composer-attachment-pill]").length) {
