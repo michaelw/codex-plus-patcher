@@ -4,6 +4,68 @@ const { patchSetUsesTransformVariant: patchSetOwnsTransformVariant } = require("
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.727.40816")) {
+    let patched = replaceOnce(
+      text,
+      "function Upc(e){let t=(0,Kpc.c)(32),",
+      `${projectSelectorSearchHook()}${projectSelectorTriggerHook("cmc")}function Upc(e){let t=(0,Kpc.c)(32),`,
+      "26.727.40816 project selector adapter insertion anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function NEs(e){let t=(0,PEs.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+      "function NEs(e){let t=(0,PEs.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l,onSearchKeyDown:CPXKD}=e,",
+      "26.727.40816 project selector search key handler prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "p=(0,nX.jsx)(dJ.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+      "p=(0,nX.jsx)(dJ.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l,onKeyDown:CPXKD})",
+      "26.727.40816 project selector search key handler mount anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "function dDs(e){let t=(0,fDs.c)(13),{groups:n,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+      "function dDs(e){let t=(0,fDs.c)(13),{groups:n,query:CPXQ,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+      "26.727.40816 project selector highlight query prop anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "children:(0,sX.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,sX.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+      "children:(0,sX.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,sX.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,CPXQ,sX.jsx)}),i?.(e)]})",
+      "26.727.40816 project selector fuzzy highlight anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "t[0]!==r||t[1]!==g?(v=IEs(r,g,Gpc),",
+      "t[0]!==r||t[1]!==g?(v=CPXP.fuzzyFilter(r,g),",
+      "26.727.40816 project selector fuzzy filter anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "T=(0,u$.jsx)(dDs,{groups:y,selectedProjectIds:i,getProjectDetails:Wpc,getProjectTooltipText:C,onSelectProject:w})",
+      "T=(0,u$.jsx)(dDs,{groups:y,query:g,selectedProjectIds:i,getProjectDetails:Wpc,getProjectTooltipText:C,onSelectProject:w})",
+      "26.727.40816 project selector highlight query mount anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "D=(0,u$.jsx)(NEs,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+      "D=(0,u$.jsx)(NEs,{searchQuery:g,onSearchQueryChange:_,onSearchKeyDown:e=>CPXP.acceptFirst(e,y,t=>w(t),g),hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+      "26.727.40816 project selector accept first anchor",
+    );
+    patched = replaceOnce(
+      patched,
+      "B=c??m,V=e=>{h(e),l?.(e)},H=n&&s===`home`",
+      "B=c??m,V=e=>{h(e),l?.(e)},CPXOH=CPXP.setOpenHandler(s,()=>{V(!0);return!0}),H=n&&s===`home`",
+      "26.727.40816 project selector controlled open handler anchor",
+    );
+    return replaceOnce(
+      patched,
+      "triggerButton:d??(s===`hero`?ce():oe()),contentWidth:`workspace`",
+      "triggerButton:CPXPST(d??(s===`hero`?ce():oe()),s),contentWidth:`workspace`",
+      "26.727.40816 project selector visible trigger anchor",
+    );
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.721.41059")) {
     let patched = replaceOnce(
       text,
@@ -596,6 +658,11 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, cont
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.727.40816")) {
+    // This release uses one selector implementation for local and home
+    // surfaces. The local-selector transform installs the shared wiring.
+    return text;
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.721.30844")) {
     // The current app uses one selector implementation for local and home
     // surfaces. The preceding local-selector transform already installs the

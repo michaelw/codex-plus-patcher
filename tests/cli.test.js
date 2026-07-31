@@ -53,6 +53,7 @@ const {
   summarizeCdpEvents,
   verifyProjectSelectorShortcutKey,
   reviewPanelNeedsWarmRetry,
+  verifyMermaidViewerRender,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
   waitForReviewFixtureDiffText,
@@ -587,6 +588,11 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Mounted composer does not carry the selected project accent/);
   assert.match(defaultExpression, /Mounted composer lost its rounded shape/);
   assert.match(defaultExpression, /waitForMountedProjectComposer/);
+  assert.match(defaultExpression, /const mountedComposerElements = \(\) =>/);
+  assert.match(defaultExpression, /\[data-codex-composer\], \[contenteditable='true'\], textarea/);
+  assert.match(defaultExpression, /\[data-codex-plus-user-entry\]:not\(:has\(\[data-user-message-bubble\]\)\)/);
+  assert.match(defaultExpression, /editor: editor \|\| surface/);
+  assert.match(defaultExpression, /const \{ editor, surface \} = mountedComposerElements\(\)/);
   assert.match(defaultExpression, /await replyVisibleOwnerChoice\("red", 180000\)/);
   assert.match(defaultExpression, /await replyVisibleOwnerChoice\("Yes", 180000\)/);
   assert.match(defaultExpression, /const progressed = await waitForAharness\([^;]+, 180000\)/);
@@ -1290,8 +1296,26 @@ test("review panel verifier scopes Unstaged selection to the native Branch menu"
   assert.match(source, /toggledExpanded !== initialExpanded && restoredExpanded === initialExpanded/);
   assert.match(source, /Math\.max\(initialHeight, toggledHeight\)/);
   assert.match(source, /Math\.min\(initialHeight, toggledHeight\)/);
+  assert.match(source, /normalize\(element\.textContent\) === "Show"/);
+  assert.match(source, /visibleElements\("button,\[role='button'\],span,div"\)/);
+  assert.match(source, /!element\.closest\("\[data-codex-plus-repo-patch-group\]"\)/);
+  assert.match(source, /\(leftRect\.width \* leftRect\.height\) - \(rightRect\.width \* rightRect\.height\)/);
+  assert.match(source, /Input\.dispatchMouseEvent/);
+  assert.match(source, /expandedMainReview/);
+  assert.match(source, /mainDiffDisclosureExpanded/);
+  assert.match(source, /mainReviewDeadline/);
+  assert.match(source, /reviewDiffCardCount >= 3/);
+  assert.match(source, /reviewDiffCardCount >= 2 &&\s*\(finalStatus\.reviewDiffCardCount >= 3 \|\| finalStatus\.mainDiffDisclosureExpanded\)/);
   assert.doesNotMatch(source, /selectUnstagedReviewSource/);
   assert.doesNotMatch(source, /loadNestedBranchPickers/);
+});
+
+test("Mermaid viewer audit reports source-render failures before waiting for a native target", () => {
+  const source = verifyMermaidViewerRender.toString();
+
+  assert.match(source, /const openResult = await appCdp\.evaluate/);
+  assert.match(source, /if \(!openResult\?\.ok\)/);
+  assert.match(source, /Mermaid viewer did not open: \$\{openResult\?\.message/);
 });
 
 test("live review audit opens the native Review control with trusted input", () => {
@@ -1299,10 +1323,14 @@ test("live review audit opens the native Review control with trusted input", () 
   const start = source.indexOf("async function activateReviewControlWithTrustedInput");
   const end = source.indexOf("async function verifyReviewPanelRender", start);
   const activation = source.slice(start, end);
+  const visualContract = captureVisualContract.toString();
 
   assert.match(activation, /Input\.dispatchMouseEvent/);
   assert.match(activation, /text === "Review" \|\| label === "Review"/);
+  assert.match(activation, /text === "Changes" \|\| label === "Changes"/);
+  assert.match(activation, /rect\.left >= innerWidth \* 0\.6 && rect\.top < 240/);
   assert.match(activation, /clickCount: 1/);
+  assert.match(visualContract, /if \(verifyReview === verifyReviewPanelRender\) await activateReviewControlWithTrustedInput\(cdp\)/);
 });
 
 test("live review audit permits six bounded warm retries while Review is still loading", () => {
@@ -3554,18 +3582,20 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifyComposer: async () => ({ ok: true, pillCount: 1, synthetic: true }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
     });
 
     assert.equal(contract.ok, true);
-    for (const file of ["contract.json", "audit-summary.json", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
+    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
     }
     const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
     assert.equal(readback.settings.generalVisible, true);
     assert.equal(readback.review.diffCardCount, 2);
+    assert.equal(readback.composerPill.ok, true);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -3598,6 +3628,7 @@ test("visual contract rejects Review screenshots while diff cards are still load
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
@@ -3637,6 +3668,7 @@ test("visual contract accepts exact late Review readiness after an early transie
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: false, repoHeaderVisible: false }),
       waitReviewFixture: async () => ({
         ok: true,
@@ -3688,6 +3720,7 @@ test("visual contract waits for General settings before capturing the settings s
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
@@ -3733,6 +3766,7 @@ test("visual contract waits for fixture diff text immediately before capturing R
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => {
         events.push("verify");
         return { ok: true };
@@ -3746,7 +3780,7 @@ test("visual contract waits for fixture diff text immediately before capturing R
     });
 
     assert.equal(contract.ok, true);
-    assert.deepEqual(events.slice(0, 4), ["capture", "verify", "fixture-text", "capture"]);
+    assert.deepEqual(events.slice(0, 5), ["capture", "capture", "verify", "fixture-text", "capture"]);
     assert.deepEqual(contract.review.fixtureDiffText, {
       ok: true,
       plusTomlVisible: true,

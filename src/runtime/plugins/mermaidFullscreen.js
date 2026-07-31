@@ -2,6 +2,7 @@
   const CodexPlus = window.CodexPlus;
   const SELECTOR = "[data-codex-plus-mermaid-diagram]";
   const BUTTON_CLASS = "codex-plus-mermaid-expand-button";
+  let renderCount = 0;
 
   function sourceFor(container) {
     return container.querySelector("pre.sr-only")?.textContent ||
@@ -42,7 +43,54 @@
     return `https://mermaid.live/edit#base64:${btoa(unescape(encodeURIComponent(state))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
   }
 
-  function viewerHtml({ source, isDark, mermaidModuleUrl, debug }) {
+  function themeDirective(isDark) {
+    return "%%{init: " + JSON.stringify({ theme: isDark ? "dark" : "default" }) + "}%%" + String.fromCharCode(10);
+  }
+
+  function sourceForTheme(source, isDark) {
+    const trimmed = source.trimStart();
+    if (!trimmed.startsWith("%%{")) return themeDirective(isDark) + source;
+    const markerEnd = trimmed.indexOf("}%%");
+    if (markerEnd < 0) return themeDirective(isDark) + source;
+    const directive = trimmed.slice(0, markerEnd + 3).toLowerCase();
+    if (!directive.startsWith("%%{init:") && !directive.startsWith("%%{initialize:")) return themeDirective(isDark) + source;
+    let rest = trimmed.slice(markerEnd + 3);
+    while ([9, 10, 13, 32].includes(rest.charCodeAt(0))) rest = rest.slice(1);
+    return themeDirective(isDark) + rest;
+  }
+
+  function mermaidApiFor(module) {
+    if (typeof module?.t === "function" && !module?.default) module.t();
+    const candidates = [module?.default, module?.n, ...Object.values(module || {})];
+    const mermaid = candidates.find(
+      (candidate) => typeof candidate?.initialize === "function" && typeof candidate?.render === "function",
+    );
+    if (!mermaid) throw new Error("The Mermaid module did not expose a supported rendering API.");
+    return mermaid;
+  }
+
+  async function renderSource(source, isDark) {
+    const mermaid = mermaidApiFor(await import(assetUrl(mermaidCoreAsset())));
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      suppressErrorRendering: true,
+      deterministicIds: true,
+      deterministicIDSeed: `codex-plus-mermaid-viewer-${isDark ? "dark" : "light"}`,
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+      darkMode: isDark,
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      theme: isDark ? "dark" : "default",
+    });
+    const rendered = await mermaid.render(
+      "codex-plus-mermaid-source-" + String(renderCount += 1),
+      sourceForTheme(source, isDark),
+    );
+    return rendered.svg;
+  }
+
+  function viewerHtml({ source, isDark, renderedSvgs, debug }) {
     return `<!doctype html>
 <html>
 <head>
@@ -92,7 +140,7 @@ button:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
 let scale = 1;
 let darkTheme = ${isDark ? "true" : "false"};
 const source = ${JSON.stringify(source)};
-const mermaidModuleUrl = ${JSON.stringify(mermaidModuleUrl)};
+const renderedSvgs = ${JSON.stringify(renderedSvgs)};
 const liveUrl = ${JSON.stringify(mermaidLiveUrl(source))};
 const debug = ${debug ? "true" : "false"} || localStorage.getItem("codexPlusMermaidDebug") === "1";
 const stage = document.getElementById("stage");
@@ -102,9 +150,6 @@ const themeToggle = document.getElementById("theme-toggle");
 const copySource = document.getElementById("copy-source");
 const renderStatus = document.getElementById("render-status");
 let fitMode = "fit";
-let renderCount = 0;
-let renderInFlight = false;
-let renderQueued = false;
 let copyFeedbackTimer = 0;
 function diagram() {
   return stage.querySelector("svg");
@@ -153,20 +198,6 @@ function previewThemeToggle() {
 function restoreThemeToggle() {
   themeToggle.textContent = darkTheme ? "Dark" : "Light";
 }
-function themeDirective() {
-  return "%%{init: " + JSON.stringify({ theme: darkTheme ? "dark" : "default" }) + "}%%" + String.fromCharCode(10);
-}
-function sourceForTheme() {
-  const trimmed = source.trimStart();
-  if (!trimmed.startsWith("%%{")) return themeDirective() + source;
-  const markerEnd = trimmed.indexOf("}%%");
-  if (markerEnd < 0) return themeDirective() + source;
-  const directive = trimmed.slice(0, markerEnd + 3).toLowerCase();
-  if (!directive.startsWith("%%{init:") && !directive.startsWith("%%{initialize:")) return themeDirective() + source;
-  let rest = trimmed.slice(markerEnd + 3);
-  while ([9, 10, 13, 32].includes(rest.charCodeAt(0))) rest = rest.slice(1);
-  return themeDirective() + rest;
-}
 function setCopyFeedback(label) {
   copySource.setAttribute("aria-label", label);
   copySource.title = label;
@@ -184,43 +215,14 @@ async function copySourceToClipboard() {
     setCopyFeedback("Copy failed");
   }
 }
-async function renderFromSource() {
-  if (renderInFlight) {
-    renderQueued = true;
-    return;
-  }
-  renderInFlight = true;
+function renderFromSource() {
   renderStatus.hidden = !debug;
   renderStatus.textContent = "Rendering Mermaid source...";
-  themeToggle.disabled = true;
-  try {
-    const mermaid = (await import(mermaidModuleUrl)).default;
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      suppressErrorRendering: true,
-      deterministicIds: true,
-      deterministicIDSeed: "codex-plus-mermaid-viewer",
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
-      darkMode: darkTheme,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      theme: darkTheme ? "dark" : "default",
-    });
-    applyThemeChrome();
-    const rendered = await mermaid.render("codex-plus-mermaid-viewer-" + String(renderCount += 1), sourceForTheme());
-    stage.innerHTML = rendered.svg;
-    renderStatus.textContent = "Rendered from Mermaid source";
-    base = baseSize();
-    applyFit(fitMode || "fit");
-  } finally {
-    renderInFlight = false;
-    themeToggle.disabled = false;
-    if (renderQueued) {
-      renderQueued = false;
-      renderFromSource();
-    }
-  }
+  applyThemeChrome();
+  stage.innerHTML = renderedSvgs[darkTheme ? "dark" : "light"];
+  renderStatus.textContent = "Rendered from Mermaid source";
+  base = baseSize();
+  applyFit(fitMode || "fit");
 }
 document.getElementById("zoom-fit").addEventListener("click", () => applyFit("fit"));
 document.getElementById("zoom-width").addEventListener("click", () => applyFit("width"));
@@ -228,7 +230,7 @@ document.getElementById("zoom-height").addEventListener("click", () => applyFit(
 document.getElementById("zoom-out").addEventListener("click", () => setScale(scale - 0.2));
 reset.addEventListener("click", () => setScale(1));
 document.getElementById("zoom-in").addEventListener("click", () => setScale(scale + 0.2));
-themeToggle.addEventListener("click", () => { darkTheme = !darkTheme; applyThemeChrome(); renderQueued = true; renderFromSource(); });
+themeToggle.addEventListener("click", () => { darkTheme = !darkTheme; renderFromSource(); });
 themeToggle.addEventListener("mouseenter", previewThemeToggle);
 themeToggle.addEventListener("mouseleave", restoreThemeToggle);
 themeToggle.addEventListener("focus", previewThemeToggle);
@@ -244,11 +246,7 @@ document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "0") { event.preventDefault(); setScale(1); }
 });
 applyThemeChrome();
-renderFromSource().catch((error) => {
-  renderStatus.hidden = false;
-  renderStatus.textContent = "Mermaid render failed: " + String(error?.message || error);
-  console.error("[Codex Plus] Mermaid source render failed", error);
-});
+renderFromSource();
 </script>
 </body>
 </html>`;
@@ -263,16 +261,23 @@ renderFromSource().catch((error) => {
     return element;
   }
 
-  function openViewer(container) {
+  async function openViewer(container) {
     const source = sourceFor(container);
     const isDark = document.documentElement.classList.contains("dark") || document.documentElement.classList.contains("electron-dark");
     const debug = localStorage.getItem("codexPlusMermaidDebug") === "1";
-    const html = source
-      ? viewerHtml({ source, isDark, mermaidModuleUrl: assetUrl(mermaidCoreAsset()), debug })
-      : `<!doctype html><meta charset="utf-8"><body>${escapeHtml("No Mermaid source was found.")}</body>`;
-    window.CodexPlusHost.adapters.native.request("mermaid/openViewer", { html }).catch((error) => {
-      window.alert?.(`Unable to open Mermaid viewer: ${error?.message || String(error)}`);
-    });
+    if (!source) {
+      const html = `<!doctype html><meta charset="utf-8"><body>${escapeHtml("No Mermaid source was found.")}</body>`;
+      return window.CodexPlusHost.adapters.native.request("mermaid/openViewer", { html });
+    }
+    try {
+      const lightSvg = await renderSource(source, false);
+      const darkSvg = await renderSource(source, true);
+      const html = viewerHtml({ source, isDark, renderedSvgs: { light: lightSvg, dark: darkSvg }, debug });
+      return await window.CodexPlusHost.adapters.native.request("mermaid/openViewer", { html });
+    } catch (error) {
+      console.error("Unable to open Mermaid viewer", error);
+      return { ok: false, message: error?.message || String(error) };
+    }
   }
 
   function decorate(container) {
