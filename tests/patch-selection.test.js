@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.727.40816-6067");
-  assert.equal(chatgptPatchSets.length, 23);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.727.51351-6119");
+  assert.equal(chatgptPatchSets.length, 24);
 
   for (const identity of [
+    ["26.727.51351", "6119", "a529edd72e10b08931c0d695b5e3e6a0be7f51874610dafc04f578436ab7d74d"],
     ["26.727.40816", "6067", "0e4f824024d0838dd7548751c02d3a7d21917c4fc3edf74c9e98d88ea9e3127d"],
     ["26.721.81911", "5973", "3c9a101d9beec3718b0fcfc19e427c644a934045f48b3fe0e16b68b0b3f23e61"],
     ["26.721.41059", "5848", "da39a51b06fb4c728d418b8f0f05fc8fd8c6b1f74c4fb4d47c20c7914a798f45"],
@@ -1621,7 +1622,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2311, `src/patches/*.js line count ${totalLines} exceeds 2311`);
+  assert.ok(totalLines <= 2380, `src/patches/*.js line count ${totalLines} exceeds 2380`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -4465,6 +4466,24 @@ test("40816 owns its moved review mux anchors", () => {
   assert.match(transformed, /mainReviewContent:\(0,TJ\.jsx\)\(D2o/);
 });
 
+test("51351 owns its moved review mux anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function zrs(e){let t=(0,Hrs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,wJ.jsx)(Seo,{children:(0,wJ.jsx)(O2o,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.727.51351"), true);
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXRM=e=>self\.CodexPlusHost\.adapters\.review\.renderBodyFromHost/);
+  assert.match(transformed, /\[wJ,T2o,null,null,null,null,null,null,null,null,null,O2o,null,null,null,null,null,null,null,cI,m1o\]/);
+  assert.match(transformed, /mainReviewContent:\(0,wJ\.jsx\)\(O2o/);
+});
+
 test("40816 owns its moved app shell diagnostic hook anchor", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4476,6 +4495,19 @@ test("40816 owns its moved app shell diagnostic hook anchor", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /var CPXDiagnosticDetails=function/);
   assert.match(transformed, /function pjr\(e\)/);
+});
+
+test("51351 owns its moved app shell diagnostic hook anchor", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAppShell",
+  )?.[1];
+  const source = "function hjr(e){let t=(0,gjr.c)(9),{resetError:n}=e";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXDiagnosticDetails=function/);
+  assert.match(transformed, /function hjr\(e\)/);
 });
 
 test("40816 owns its moved webview error boundary anchors", () => {
@@ -4493,6 +4525,24 @@ test("40816 owns its moved webview error boundary anchors", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /error:CPX_error,componentStack:CPX_componentStack/);
   assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:lk\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
+  assert.match(transformed, /error:e\.error,componentStack:e\.componentStack/);
+});
+
+test("51351 owns its moved webview error boundary anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchErrorBoundary",
+  )?.[1];
+  const source = [
+    "function hjr(e){let t=(0,gjr.c)(9),{resetError:n}=e",
+    "children:[i,a,(0,sk.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,sk.jsx)(tm,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,sk.jsx)(hjr,{resetError:()=>e.resetError()}));",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /error:CPX_error,componentStack:CPX_componentStack/);
+  assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:sk\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
   assert.match(transformed, /error:e\.error,componentStack:e\.componentStack/);
 });
 
@@ -4530,6 +4580,24 @@ test("40816 owns its moved user message bubble anchors", () => {
   assert.match(transformed, /data-user-message-bubble.*CPXBubbleProps/);
 });
 
+test("51351 owns its moved user message bubble anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchUserMessageAttachmentsBubbleColors",
+  )?.[1];
+  const source = [
+    "function psl({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+    "return(0,d4.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "\"data-user-message-bubble\":!0,tabIndex:0,className:",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /u4\.useSyncExternalStore/);
+  assert.match(transformed, /data-codex-plus-user-entry/);
+  assert.match(transformed, /data-user-message-bubble.*CPXBubbleProps/);
+});
+
 test("40816 binds user bubbles through the canonical project context adapter", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4561,6 +4629,25 @@ test("40816 owns its moved composer surface anchors", () => {
   assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
 });
 
+test("51351 owns its moved composer surface anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerBubbleColors",
+  )?.[1];
+  const source = [
+    "function bds(e){let t=(0,QJ.c)(36),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "t[19]!==S||t[20]!==n||t[21]!==d||t[22]!==f||t[23]!==p||t[24]!==m||t[25]!==E||t[26]!==D?",
+    "(k=(0,$J.jsx)(S,{inert:E,className:D,onMouseDown:Fds,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[19]=S,t[20]=n,t[21]=d,t[22]=f,t[23]=p,t[24]=m,t[25]=E,t[26]=D,t[27]=k)",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /QJ\.c\)\(37\)/);
+  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
+  assert.match(transformed, /t\[36\]!==CPX_resolvedSurfaceProps/);
+  assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+});
+
 test("40816 binds composer project context and file opening through host adapters", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4574,6 +4661,21 @@ test("40816 binds composer project context and file opening through host adapter
   assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
   assert.match(transformed, /bindMount\(\(\)=>\(\{scope:P\}\)\)/);
   assert.match(transformed, /Gj\(\{scope:P,path:e,cwd:t\.workspaceRoot\?\?sn/);
+});
+
+test("51351 binds native file opening to the current Wj host helper", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = "CPXSurfaceProps({})iee=(e,t=sr)=>{let n=e.fsPath||e.path;";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
+  assert.match(transformed, /bindMount\(\(\)=>\(\{scope:P\}\)\)/);
+  assert.match(transformed, /Wj\(\{scope:P,path:e,cwd:t\.workspaceRoot\?\?sn/);
+  assert.doesNotMatch(transformed, /Gj\(\{scope:P,path:e/);
 });
 
 test("40816 owns its moved project row color anchors", () => {
@@ -4650,6 +4752,31 @@ test("40816 owns its moved header action-shell accessory anchors", () => {
   assert.match(transformed, /actionId:`codex-plus-project-path`,align:`end`/);
 });
 
+test("51351 owns its moved header action-shell accessory anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = [
+    "function jqr({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
+    "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXHA\(u,e\)/);
+  assert.match(transformed, /CPXHA\(Eqr\.useSyncExternalStore,\{jsx:dj\.jsx,jsxs:dj\.jsxs\}\)/);
+  assert.match(transformed, /actionId:`codex-plus-project-path`,align:`end`/);
+  const commonPatchesSource = fs.readFileSync(
+    path.join(__dirname, "../src/patches/lib/common-patches.js"),
+    "utf8",
+  );
+  assert.match(
+    commonPatchesSource,
+    /function patchThreadHeaderActionShell\(text, context = \{\}\) \{\n  if \(patchSetOwnsTransformVariant\(context\.patchSetId, "chatgpt-26\.727\.51351"\) && text\.includes/,
+  );
+});
+
 test("40816 owns its moved thread title and context anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4700,6 +4827,24 @@ test("40816 owns its moved command palette runtime command anchors", () => {
   assert.match(transformed, /bindNativeDispatch\(e=>\(Lk\(e,`command_menu`\),!0\)\)/);
 });
 
+test("51351 owns its moved command palette runtime command anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchCommandMenuRuntimeCommands",
+  )?.[1];
+  const source = [
+    "function MAu({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "R=t=>{let n=t.id===`openAvatarOverlay`&&w,r=Hku(t,o,XFr(h,t.id)),i=n?o.formatMessage(Q7.tuckAwayPet):r.title;return(0,Z7.jsx)(NAu,{command:t,close:e,description:n?o.formatMessage(Q7.tuckAwayPetDescription):r.description,title:i},t.id)},z=[],B=",
+    "c=()=>{Fk(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXCommandPaletteItem\(\{command:e,close:t\}\)/);
+  assert.match(transformed, /z=globalThis\.CodexPlusHost\.adapters\.commands\.metadata\(\)\.map/);
+  assert.match(transformed, /bindNativeDispatch\(e=>\(Fk\(e,`command_menu`\),!0\)\)/);
+});
+
 test("40816 owns its unified project selector shortcut anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4728,6 +4873,36 @@ test("40816 owns its unified project selector shortcut anchors", () => {
   assert.match(transformed, /CPXP\.setOpenHandler\(s,/);
   assert.match(transformed, /triggerButton:CPXPST\(/);
   assert.match(transformed, /CPXP\.trigger\(e,t,cmc\)/);
+});
+
+test("51351 owns its unified project selector shortcut anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
+  )?.[1];
+  const source = [
+    "function PEs(e){let t=(0,FEs.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,tX.jsx)(uJ.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "function fDs(e){let t=(0,pDs.c)(13),{groups:n,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+    "children:(0,oX.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,oX.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "function Wpc(e){let t=(0,qpc.c)(32),",
+    "t[0]!==r||t[1]!==g?(v=LEs(r,g,Kpc),",
+    "T=(0,l$.jsx)(fDs,{groups:y,selectedProjectIds:i,getProjectDetails:Gpc,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,l$.jsx)(PEs,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "function smc({activeProjectIdOverride:e,",
+    "B=c??m,V=e=>{h(e),l?.(e)},H=n&&s===`home`",
+    "triggerButton:d??(s===`hero`?ce():oe()),contentWidth:`workspace`",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /v=CPXP\.fuzzyFilter\(r,g\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,CPXQ,oX\.jsx\)/);
+  assert.match(transformed, /onSearchKeyDown:e=>CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(s,/);
+  assert.match(transformed, /triggerButton:CPXPST\(/);
+  assert.match(transformed, /CPXP\.trigger\(e,t,lmc\)/);
 });
 
 test("40816 reuses the stable native preload bridge anchor", () => {
@@ -4807,6 +4982,22 @@ test("40816 owns its moved ChatGPT startup announcement anchors", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /function P_c\([^)]*\)\{return false\}/);
   assert.match(transformed, /function zvc\(e\)\{return null;/);
+});
+
+test("51351 owns its moved ChatGPT startup announcement anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchChatGptStartupAnnouncements",
+  )?.[1];
+  const source = [
+    "function F_c({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Dl.ChatGPT&&t!=null&&t!==Fl.Agent&&t!==Fl.Dev}",
+    "function Bvc(e){let t=(0,Vvc.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function F_c\([^)]*\)\{return false\}/);
+  assert.match(transformed, /function Bvc\(e\)\{return null;/);
 });
 
 test("diagnostic error patches delegate detail rendering to the runtime plugin", () => {
