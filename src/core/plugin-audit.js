@@ -2758,6 +2758,65 @@ async function verifyComposerPillContrast(cdp) {
   })()`);
 }
 
+async function verifySidebarStatusPillContrast(cdp) {
+  return cdp.evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const rowSelector = "[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color], [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]";
+    const pillSelector = '[class~="bg-token-charts-blue/15"][class~="text-token-charts-blue"]';
+    const row = Array.from(document.querySelectorAll(rowSelector)).find(visible);
+    if (!row) return { ok: false, message: "Visible project-colored sidebar thread row was not found" };
+    const root = document.documentElement;
+    const previousSidebarBlur = root.getAttribute("data-codex-plus-sidebar-names-blurred");
+    root.setAttribute("data-codex-plus-visual-contract-sidebar-blur", previousSidebarBlur ?? "");
+    root.removeAttribute("data-codex-plus-sidebar-names-blurred");
+    let pill = Array.from(row.querySelectorAll(pillSelector)).find(visible);
+    const synthetic = !pill;
+    if (!pill) {
+      pill = document.createElement("span");
+      pill.className = "relative inline-grid rounded-full bg-token-charts-blue/15 text-token-charts-blue";
+      pill.setAttribute("data-codex-plus-visual-contract-status-pill", "");
+      pill.style.cssText = "display:inline-grid;place-items:center;flex:none;width:max-content;height:20px;padding:0 8px;margin-left:auto;font-size:12px;line-height:20px;white-space:nowrap";
+      pill.innerHTML = "<span>Needs Input</span>";
+      row.appendChild(pill);
+    }
+    const pillStyle = getComputedStyle(pill);
+    const textNode = Array.from(pill.querySelectorAll("*")).find((node) => String(node.textContent || "").trim()) || pill;
+    const textStyle = getComputedStyle(textNode);
+    const rgb = (value) => {
+      const match = String(value || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const foreground = textStyle.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle.color;
+    const fg = luminance(rgb(foreground));
+    const bg = luminance(rgb(pillStyle.backgroundColor));
+    const textContrast = fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    return {
+      ok: visible(pill) && Number(pillStyle.opacity) >= 0.99 && Number(textStyle.opacity) >= 0.99 && textContrast != null && textContrast >= 4.5,
+      synthetic,
+      text: String(pill.textContent || "").trim(),
+      pillOpacity: pillStyle.opacity,
+      textOpacity: textStyle.opacity,
+      textColor: textStyle.color,
+      textFillColor: textStyle.webkitTextFillColor || null,
+      pillBackground: pillStyle.backgroundColor,
+      textContrast,
+    };
+  })()`);
+}
+
 async function captureVisualContract(cdp, {
   artifactDir,
   result,
@@ -2768,6 +2827,7 @@ async function captureVisualContract(cdp, {
   wait = delay,
   activateFixture = activateFixtureThread,
   verifyComposer = verifyComposerPillContrast,
+  verifySidebarStatus = verifySidebarStatusPillContrast,
   verifyReview = verifyReviewPanelRender,
   waitReviewFixture = waitForReviewFixtureDiffText,
   verifyCommand = verifySidebarBlurCommandPalette,
@@ -2781,6 +2841,16 @@ async function captureVisualContract(cdp, {
   }
   const shellState = await activateFixture(cdp, { wait });
   await wait(2000);
+  const sidebarNeedsInput = await verifySidebarStatus(cdp);
+  screenshots.sidebarNeedsInput = await capturePng(cdp, path.join(artifactDir, "sidebar-needs-input.png"), { fsImpl });
+  await cdp.evaluate(`(() => {
+    document.querySelector("[data-codex-plus-visual-contract-status-pill]")?.remove();
+    const root = document.documentElement;
+    const previousSidebarBlur = root.getAttribute("data-codex-plus-visual-contract-sidebar-blur");
+    root.removeAttribute("data-codex-plus-visual-contract-sidebar-blur");
+    if (previousSidebarBlur) root.setAttribute("data-codex-plus-sidebar-names-blurred", previousSidebarBlur);
+    else root.removeAttribute("data-codex-plus-sidebar-names-blurred");
+  })()`);
   const composerPill = await verifyComposer(cdp);
   screenshots.composerPill = await capturePng(cdp, path.join(artifactDir, "composer-pill.png"), { fsImpl });
   await cdp.evaluate(`(() => document.querySelector("[data-codex-plus-visual-contract-pill]")?.remove())()`);
@@ -2815,6 +2885,7 @@ async function captureVisualContract(cdp, {
     patchSet: result?.applyResult?.patchSet || null,
     codexVersion: result?.applyResult?.codexVersion || null,
     bundleVersion: result?.applyResult?.bundleVersion || null,
+    sidebarNeedsInput,
     composerPill,
     shell,
     review: {
@@ -2834,9 +2905,9 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
-    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
+    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, sidebarNeedsInput, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
   writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
   writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });
@@ -3378,6 +3449,39 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const text = String(value || "").trim();
       return text === "transparent" || text === "rgba(0, 0, 0, 0)" || /rgba\([^)]*,\s*0\)$/.test(text);
     };
+    const sidebarStatusPillStatus = () => {
+      const selector = ':is([data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color],[data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]) [class~="bg-token-charts-blue/15"][class~="text-token-charts-blue"]';
+      let pill = visibleElements(selector)[0] || null;
+      let synthetic = null;
+      if (!pill) {
+        const row = visibleElements("[data-app-action-sidebar-thread-row][data-codex-plus-project-sidebar-color], [data-app-action-sidebar-project-list-id][data-codex-plus-project-sidebar-color] [data-app-action-sidebar-thread-row]")[0] || null;
+        if (row) {
+          synthetic = document.createElement("span");
+          synthetic.className = "relative inline-grid rounded-full bg-token-charts-blue/15 text-token-charts-blue";
+          synthetic.textContent = "Needs input";
+          row.appendChild(synthetic);
+          pill = synthetic;
+        }
+      }
+      const pillStyle = pill ? getComputedStyle(pill) : null;
+      const textNode = pill ? Array.from(pill.querySelectorAll("*")).find((node) => normalize(node.textContent)) || pill : null;
+      const textStyle = textNode ? getComputedStyle(textNode) : null;
+      const textFillColor = textStyle?.webkitTextFillColor || null;
+      const effectiveTextColor = textFillColor && !isTransparent(textFillColor) ? textFillColor : textStyle?.color;
+      const status = {
+        mounted: Boolean(pill),
+        synthetic: Boolean(synthetic),
+        text: normalize(pill?.textContent),
+        background: pillStyle?.backgroundColor || null,
+        color: textStyle?.color || null,
+        textFillColor,
+        opacity: pillStyle?.opacity || null,
+        textOpacity: textStyle?.opacity || null,
+        contrast: contrast(effectiveTextColor, pillStyle?.backgroundColor),
+      };
+      synthetic?.remove();
+      return status;
+    };
     const composerPermissionPickerStatus = () => {
       const { editor, surface } = mountedComposerElements();
       const labels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
@@ -3901,6 +4005,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         !row.marked || !row.accent || isTransparentColor(row.background)
       );
       const projectThreadRowCount = await waitForProjectThreadRows();
+      const sidebarStatusPill = sidebarStatusPillStatus();
       let selectedProjectAccent = "";
       let mountedComposer = null;
       const unstyledProjectThreadLists = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-list-id]"))
@@ -3999,6 +4104,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (unstyledProjectThreadLists.length > 0) {
         throw new Error(`Project sidebar child rows or list containers are not styled like their project rows: ${JSON.stringify(unstyledProjectThreadLists.slice(0, 4))}`);
       }
+      if (!sidebarStatusPill.mounted || Number(sidebarStatusPill.opacity) < 0.99 || Number(sidebarStatusPill.textOpacity) < 0.99 || sidebarStatusPill.contrast == null || sidebarStatusPill.contrast < 4.5) {
+        throw new Error(`Sidebar Needs input pill is unreadable: ${JSON.stringify(sidebarStatusPill)}`);
+      }
       const composerObserved = Boolean(mountedComposer?.marked || mountedComposer?.projectMarked || mountedComposer?.accent || mountedComposer?.boxShadow);
       if (composerObserved && (!mountedComposer?.marked || !mountedComposer?.projectMarked || !expectedComposerAccents.includes(mountedComposer?.accent))) {
         throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
@@ -4028,6 +4136,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         standaloneFixtureRows: standaloneFixtureRows.slice(0, 8),
         styledProjectThreadLists: projectThreadRowCount,
         projectChildRowsAvailable: projectThreadRowCount > 0,
+        sidebarStatusPill,
         mountedComposer,
       });
     } catch (error) {

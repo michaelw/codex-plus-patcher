@@ -633,6 +633,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /surfaceBackground/);
   assert.match(defaultExpression, /labelTextFillTransparent/);
   assert.match(defaultExpression, /composerAttachmentPill/);
+  assert.match(defaultExpression, /sidebarStatusPill/);
+  assert.match(defaultExpression, /Sidebar Needs input pill is unreadable/);
   assert.match(defaultExpression, /webkitTextFillColor/);
   assert.doesNotMatch(defaultExpression, /Project selector trigger is missing from the main composer/);
   assert.doesNotMatch(defaultExpression, /newChatButton\.click\(\)/);
@@ -3583,19 +3585,21 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true, pillCount: 1, synthetic: true }),
+      verifySidebarStatus: async () => ({ ok: true, synthetic: true, textContrast: 12 }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
     });
 
     assert.equal(contract.ok, true);
-    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
+    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
     }
     const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
     assert.equal(readback.settings.generalVisible, true);
     assert.equal(readback.review.diffCardCount, 2);
     assert.equal(readback.composerPill.ok, true);
+    assert.equal(readback.sidebarNeedsInput.ok, true);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -3628,6 +3632,7 @@ test("visual contract rejects Review screenshots while diff cards are still load
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifySidebarStatus: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
@@ -3668,6 +3673,7 @@ test("visual contract accepts exact late Review readiness after an early transie
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifySidebarStatus: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: false, repoHeaderVisible: false }),
       waitReviewFixture: async () => ({
@@ -3720,6 +3726,7 @@ test("visual contract waits for General settings before capturing the settings s
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifySidebarStatus: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
@@ -3766,6 +3773,7 @@ test("visual contract waits for fixture diff text immediately before capturing R
       result: { ok: true, failures: [], expectedWarnings: [], applyResult: {}, target: {}, pluginResults: {} },
       wait() {},
       activateFixture: async () => ({ ok: true }),
+      verifySidebarStatus: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true }),
       verifyReview: async () => {
         events.push("verify");
@@ -3780,7 +3788,7 @@ test("visual contract waits for fixture diff text immediately before capturing R
     });
 
     assert.equal(contract.ok, true);
-    assert.deepEqual(events.slice(0, 5), ["capture", "capture", "verify", "fixture-text", "capture"]);
+    assert.deepEqual(events.slice(0, 6), ["capture", "capture", "capture", "verify", "fixture-text", "capture"]);
     assert.deepEqual(contract.review.fixtureDiffText, {
       ok: true,
       plusTomlVisible: true,
