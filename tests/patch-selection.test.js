@@ -5378,6 +5378,9 @@ test("appearance settings patch adds user bubble colors and project colors only"
   assert.match(projectPlugin, /0x01000193/);
   assert.ok((projectPlugin.match(/#[0-9a-fA-F]{6}/g) ?? []).length >= 32);
   assert.match(projectPlugin, /render: \(deps\) => renderToggleRow/);
+  assert.match(projectPlugin, /:root:not\(\.dark\):not\(\.electron-dark\).*\[class~=[^\]]*bg-token-charts-blue\/15[^\]]*\]\[class~=[^\]]*text-token-charts-blue[^\]]*\].*background-color:#111827!important;color:#fff!important/);
+  assert.match(projectPlugin, /:is\(:root\.dark,:root\.electron-dark\).*\[class~=[^\]]*bg-token-charts-blue\/15[^\]]*\]\[class~=[^\]]*text-token-charts-blue[^\]]*\].*background-color:#f8fafc!important;color:#111827!important/);
+  assert.match(projectPlugin, /\[class~=[^\]]*bg-token-charts-blue\/15[^\]]*\]\[class~=[^\]]*text-token-charts-blue[^\]]*\] \*\{color:inherit!important;opacity:1!important;-webkit-text-fill-color:currentColor!important\}/);
   assert.match(bubblePlugin, /const STORAGE_KEY = "codex-plus:user-message-bubble-colors"/);
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /render: \(deps\) => renderColorRow/);
