@@ -9,8 +9,13 @@
     return globalObject.CodexPlus?.ui?.composer?.surfaceProps?.(props);
   }
 
+  function syncComposerSurface(element, props) {
+    return globalObject.CodexPlus?.ui?.composer?.syncSurface?.(element, props);
+  }
+
   globalObject.CodexPlusHost.adapters.messageComposer = {
     composerSurfaceProps,
+    syncComposerSurface,
     userBubbleProps,
   };
 })();

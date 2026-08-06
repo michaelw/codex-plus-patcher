@@ -127,26 +127,6 @@
     return null;
   }
 
-  function activeSidebarStyle() {
-    const active = document.querySelector('[data-app-action-sidebar-thread-active="true"][data-codex-plus-project-color]');
-    if (!active) return undefined;
-    const computed = getComputedStyle(active);
-    const accent = computed.getPropertyValue("--codex-plus-project-accent").trim();
-    if (accent === "") return undefined;
-    return {
-      "--codex-plus-project-accent": accent,
-      "--codex-plus-project-bg-light": computed.getPropertyValue("--codex-plus-project-bg-light").trim(),
-      "--codex-plus-project-fg-light": computed.getPropertyValue("--codex-plus-project-fg-light").trim(),
-      "--codex-plus-project-soft-light": computed.getPropertyValue("--codex-plus-project-soft-light").trim(),
-      "--codex-plus-project-bg-dark": computed.getPropertyValue("--codex-plus-project-bg-dark").trim(),
-      "--codex-plus-project-fg-dark": computed.getPropertyValue("--codex-plus-project-fg-dark").trim(),
-      "--codex-plus-project-border-dark": computed.getPropertyValue("--codex-plus-project-border-dark").trim(),
-      "--codex-plus-project-separator-light": computed.getPropertyValue("--codex-plus-project-separator-light").trim(),
-      "--codex-plus-project-separator-dark": computed.getPropertyValue("--codex-plus-project-separator-dark").trim(),
-      borderLeft: `6px solid ${accent}`,
-    };
-  }
-
   function style(project) {
     const key = colorKey(project);
     if (!readEnabled() || key.trim() === "") return undefined;
@@ -168,18 +148,39 @@
   function dataAttributes(project, sidebar) {
     const resolvedProject = sidebar ? rememberProject(project) : resolveProject(project);
     const directStyle = style(project);
-    const inlineStyle = resolvedProject ? style(resolvedProject) : directStyle ?? activeSidebarStyle();
+    const canonicalProject = resolvedProject || project;
+    const inlineStyle = resolvedProject ? style(resolvedProject) : directStyle;
     if (inlineStyle == null) return undefined;
     const projectPath = project?.path ?? project?.cwd ?? project?.projectPath ?? project?.remotePath ?? project?.root ?? project?.workspaceRoot;
     const projectless = project?.projectless === true || project?.kind === "chat" || project?.projectKind === "chat";
     return {
       "data-codex-plus-project-color": "",
+      "data-codex-plus-project-key": colorKey(canonicalProject),
       ...(sidebar ? { "data-codex-plus-project-sidebar-color": "" } : {}),
       ...(sidebar && projectless ? { "data-codex-plus-projectless": "true" } : {}),
       ...(sidebar && projectPath ? { "data-codex-plus-project-path": String(projectPath) } : {}),
       style: sidebar ? inlineStyle : {
         ...inlineStyle,
         borderRadius: "var(--composer-border-radius, var(--radius-3xl))",
+      },
+    };
+  }
+
+  function composerDataAttributes(project) {
+    return dataAttributes(project, false) || {
+      "data-codex-plus-project-color": null,
+      style: {
+        "--codex-plus-project-accent": "",
+        "--codex-plus-project-bg-light": "",
+        "--codex-plus-project-fg-light": "",
+        "--codex-plus-project-soft-light": "",
+        "--codex-plus-project-bg-dark": "",
+        "--codex-plus-project-fg-dark": "",
+        "--codex-plus-project-border-dark": "",
+        "--codex-plus-project-separator-light": "",
+        "--codex-plus-project-separator-dark": "",
+        borderLeft: "",
+        borderRadius: "",
       },
     };
   }
@@ -323,7 +324,7 @@
         api.ui.sidebar.decorateProjectRow((props) => dataAttributes(props?.project, true));
         api.ui.sidebar.decorateThreadRow(sidebarThreadDataAttributes);
         api.ui.message.decorateUserBubble((props) => dataAttributes(props?.project, false));
-        api.ui.composer.decorateSurface((props) => dataAttributes(props?.project, false));
+        api.ui.composer.decorateSurface((props) => composerDataAttributes(props?.project));
         setSidebarRailCompensation(needsSidebarRailCompensation());
         const stopWatchingLists = watchRenderedProjectLists();
         return () => {

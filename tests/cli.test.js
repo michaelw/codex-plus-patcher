@@ -39,6 +39,7 @@ const {
   auditRequiredHostAdapters,
   auditIdentity,
   captureVisualContract,
+  captureNewChatComposerProof,
   checkKeepOpenAppStability,
   cleanupLaunchedAuditApp,
   formatAuditJson: formatCoreAuditJson,
@@ -746,11 +747,20 @@ test("project color fixture retry reloads stale sidebar data before focused rech
 
 test("project selector shortcut verifier uses trusted CDP key events", async () => {
   const sent = [];
+  const waits = [];
   const expressions = [];
   const evaluations = [
     { triggerCount: 0, newTask: { x: 80, y: 40 } },
     { triggerCount: 1, newTask: null },
     { triggerCount: 0, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    {
+      codexVersion: "26.730.61309",
+      suitableProjectFound: true,
+      selectedLabel: "alpha-main",
+      query: "aaa",
+      visibleResultCount: 2,
+      inputRect: { x: 100, y: 50, width: 200, height: 30 },
+    },
     {
       suitableProjectFound: true,
       queryLength: 3,
@@ -771,7 +781,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     },
   };
 
-  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait(ms) { waits.push(ms); }, timeoutMs: 1000 });
 
   assert.equal(result.ok, true);
   assert.equal(result.opened, true);
@@ -796,22 +806,31 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
   assert.match(expressions[2], /Array\.from\(document\.querySelectorAll/);
   assert.match(expressions[2], /\.find\(visible\)/);
   assert.doesNotMatch(expressions[2], /searchInput \|\| menuCount > 0/);
-  assert.match(expressions[3], /const currentMenu = \(\) =>/);
-  assert.match(expressions[3], /const waitForInput = \(\) =>/);
-  assert.match(expressions[3], /const findInput = \(\) =>/);
-  assert.match(expressions[3], /setTimeout\(waitForInput, 100\)/);
   assert.match(expressions[3], /candidates\.find\(\(element\) => visible\(element\) && element\.contains\(input\)\)/);
   assert.match(expressions[3], /input\[placeholder='Search projects'\], textarea\[placeholder='Search projects'\]/);
-  assert.match(expressions[3], /HTMLTextAreaElement\.prototype/);
-  assert.match(expressions[3], /const menu = currentMenu\(\);/);
   assert.match(expressions[3], /const selectable = Array\.from\(menu\.querySelectorAll\("\[role='menuitem'\], \[role='option'\], button, a"\)\)\.filter\(visible\)/);
-  assert.match(expressions[3], /const labelRoots = selectable\.length > 0/);
-  assert.match(expressions[3], /const fuzzyMatchesQuery = \(label, query\) =>/);
-  assert.match(expressions[3], /resultLabels\.some\(\(label\) => fuzzyMatchesQuery\(label, query\)\)/);
+  assert.match(expressions[3], /const projectItems = selectable\.filter\(\(element\) => element\.matches\("\[role='menuitem'\], \[role='option'\]"\)\)/);
+  assert.match(expressions[3], /const labelRoots = projectItems\.length > 0/);
+  assert.match(expressions[3], /input\.focus\(\)/);
+  assert.match(expressions[3], /input\.select\?\.\(\)/);
+  assert.match(expressions[3], /inputRect/);
+  assert.match(expressions[4], /const collectState = \(\) =>/);
+  assert.match(expressions[4], /const fuzzyMatchesQuery = \(label\) =>/);
+  assert.match(expressions[4], /labels\.some\(\(label\) => label === selectedLabel \|\| fuzzyMatchesQuery\(label\)\)/);
   assert.deepEqual(sent.map((call) => call.method), [
     "Input.dispatchMouseEvent",
     "Input.dispatchMouseEvent",
     "Page.bringToFront",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchMouseEvent",
+    "Input.dispatchMouseEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
@@ -849,6 +868,21 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     nativeVirtualKeyCode: 47,
     modifiers: 4,
   });
+  assert.deepEqual(sent.slice(7, 9).map((call) => call.params.type), ["mousePressed", "mouseReleased"]);
+  assert.deepEqual(sent.slice(9, 11).map((call) => ({ key: call.params.key, modifiers: call.params.modifiers })), [
+    { key: "a", modifiers: 4 },
+    { key: "a", modifiers: 4 },
+  ]);
+  assert.equal(sent.some((call) => call.method === "Input.insertText"), false);
+  assert.equal(waits.filter((ms) => ms === 50).length, 3);
+  assert.deepEqual(sent.slice(11, 17).map((call) => [call.params.type, call.params.key, call.params.text || ""]), [
+    ["keyDown", "a", "a"],
+    ["keyUp", "a", ""],
+    ["keyDown", "a", "a"],
+    ["keyUp", "a", ""],
+    ["keyDown", "a", "a"],
+    ["keyUp", "a", ""],
+  ]);
 });
 
 test("project selector shortcut verifier retries the trusted shortcut while the menu stays closed", async () => {
@@ -857,6 +891,7 @@ test("project selector shortcut verifier retries the trusted shortcut while the 
     { triggerCount: 1, newTask: null },
     { triggerCount: 1, menuCount: 0, opened: false, activePlaceholder: "" },
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { codexVersion: "26.730.61309", suitableProjectFound: true, selectedLabel: "alpha-main", query: "aaa", visibleResultCount: 1, inputRect: { x: 100, y: 50, width: 200, height: 30 } },
     {
       suitableProjectFound: true,
       queryLength: 3,
@@ -889,6 +924,7 @@ test("project selector shortcut verifier retries when a visible picker disappear
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
     { retryable: true, suitableProjectFound: false },
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { codexVersion: "26.715.61943", suitableProjectFound: true, selectedLabel: "alpha-main", query: "aaa", visibleResultCount: 1, inputRect: { x: 100, y: 50, width: 200, height: 30 } },
     {
       suitableProjectFound: true,
       queryLength: 3,
@@ -992,6 +1028,59 @@ test("broad plugin audit allows its finite probes to outlive the default DevTool
   assert.match(broadProbe, /cdp\.evaluate\(pluginAuditExpression\(\{[\s\S]*?auditPlugins: baseAuditPlugins,[\s\S]*?\}\), \{ timeoutMs: 180000 \}\)/);
 });
 
+test("project color audit proves New Chat project changes and the neutral no-project state", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf('if (shouldProbe("projectColors"))');
+  const end = source.indexOf('if (shouldProbe("projectPathHeader"))', start);
+  const projectAudit = source.slice(start, end);
+
+  assert.match(projectAudit, /projectComposerTransitions/);
+  assert.match(source, /status\.accent !== sidebar\.accent/);
+  assert.match(source, /target, sidebar, previous, neutral, status/);
+  assert.match(source, /data-app-action-sidebar-project-row/);
+  assert.match(projectAudit, /initialNoProjectComposer/);
+  assert.match(projectAudit, /newChatNeutral/);
+  assert.match(projectAudit, /noProjectComposer/);
+  assert.match(projectAudit, /restoredExistingComposer/);
+  assert.match(projectAudit, /dispatchPointerClick/);
+  assert.match(projectAudit, /dispatchPointerClick\(projectlessChatRow\)/);
+  assert.match(projectAudit, /requiresProjectComposerTransitions/);
+  assert.match(projectAudit, /versionAtLeast\(26, 715\)/);
+  assert.match(projectAudit, /requiresNoProjectNewChatProof/);
+  assert.match(projectAudit, /26, 707, 51957/);
+  assert.match(projectAudit, /new-chat-navigation-unavailable/);
+  assert.match(projectAudit, /userEntryMarked/);
+  assert.match(projectAudit, /!initialNoProjectComposer\.userEntryMarked/);
+  assert.match(projectAudit, /!initialNoProjectComposer\.projectMarked/);
+  assert.match(projectAudit, /!initialNoProjectComposer\.accent/);
+  assert.match(projectAudit, /initialNoProjectComposer\.railWidth === 0/);
+  assert.match(projectAudit, /observed\.background !== initialNoProjectComposer\.background/);
+  assert.match(projectAudit, /observed\.railWidth !== 6/);
+  assert.match(projectAudit, /observed\.railColor !== observed\.accentColor/);
+  assert.match(source, /!status\.userEntryMarked/);
+  assert.match(projectAudit, /data-codex-plus-project-color/);
+  assert.match(source, /data-codex-plus-composer-surface/);
+  assert.match(projectAudit, /target\.projectAccent !== selectedProjectAccent/);
+});
+
+test("New Chat visual proof captures neutral and two project-color states with trusted input", () => {
+  const source = captureNewChatComposerProof.toString();
+
+  assert.match(source, /Input\.dispatchMouseEvent/);
+  assert.match(source, /work in a project/);
+  assert.match(source, /data-codex-plus-project-selector-trigger/);
+  assert.match(source, /Choose project/);
+  assert.match(source, /kind === "project-option"/);
+  assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);
+  assert.doesNotMatch(source, /const labels =/);
+  assert.match(source, /new-chat-no-project\.png/);
+  assert.match(source, /new-chat-project-\$\{index \+ 1\}\.png/);
+  assert.match(source, /status\.background !== neutral\.background/);
+  assert.match(source, /status\.railWidth !== 6/);
+  assert.match(source, /status\.railColor !== status\.accentColor/);
+  assert.match(source, /if \(!versionAtLeast\("26\.715"\)\).*projects: \[\]/s);
+});
+
 test("Aharness audit waits for the new run row to become active before asserting its styling", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("const waitForAharness = async");
@@ -1033,6 +1122,7 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
   const evaluations = [
     { triggerCount: 1, newTask: null },
     { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { codexVersion: "26.730.61309", suitableProjectFound: false, selectedLabel: "", query: "", visibleResultCount: 0 },
     {
       suitableProjectFound: false,
       queryLength: 0,
@@ -1067,7 +1157,7 @@ test("sidebar blur command palette verifier uses trusted Enter key activation", 
   const evaluations = [
     undefined,
     undefined,
-    { opened: true, activeTag: "INPUT", inputPlaceholder: "Search commands" },
+    { opened: true, activeTag: "INPUT", inputPlaceholder: "Search commands", inputValue: "Toggle sidebar blur", inputRect: { x: 80, y: 40 } },
     { selected: true, itemText: "Toggle sidebar blur", rect: { x: 64, y: 32 } },
     { rootBlurred: true, rowFilter: "blur(4px)" },
   ];
@@ -1086,13 +1176,65 @@ test("sidebar blur command palette verifier uses trusted Enter key activation", 
   assert.equal(result.ok, true);
   assert.equal(result.selected, true);
   assert.deepEqual(sent.map((call) => call.method), [
-    "Input.insertText",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
   ]);
-  assert.equal(sent[0].params.text, "Toggle sidebar blur");
-  assert.deepEqual(sent.slice(1).map((call) => call.params.type), ["keyDown", "keyUp"]);
-  assert.deepEqual(sent.slice(1).map((call) => call.params.key), ["Enter", "Enter"]);
+  assert.deepEqual(sent.map((call) => call.params.type), ["keyDown", "keyUp"]);
+  assert.deepEqual(sent.map((call) => call.params.key), ["Enter", "Enter"]);
+});
+
+test("sidebar blur command palette verifier focuses and types into an unseeded palette query", async () => {
+  const sent = [];
+  const evaluations = [
+    undefined,
+    undefined,
+    { opened: true, activeTag: "INPUT", inputPlaceholder: "Search commands", inputValue: "", inputRect: { x: 80, y: 40 } },
+    { selected: true, itemText: "Toggle sidebar blur", rect: { x: 64, y: 32 } },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifySidebarBlurCommandPalette(cdp, { activate: false, wait() {}, timeoutMs: 1000 });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(sent.map((call) => call.method), [
+    "Input.dispatchMouseEvent",
+    "Input.dispatchMouseEvent",
+    "Input.insertText",
+  ]);
+  assert.deepEqual(sent.slice(0, 2).map((call) => call.params.type), ["mousePressed", "mouseReleased"]);
+  assert.equal(sent[2].params.text, "Toggle sidebar blur");
+});
+
+test("sidebar blur command palette verifier rejects an unexpected non-empty query", async () => {
+  const sent = [];
+  const evaluations = [
+    undefined,
+    undefined,
+    { opened: true, activeTag: "INPUT", inputPlaceholder: "Search commands", inputValue: "Toggle sidebar blurToggle sidebar blur", inputRect: { x: 80, y: 40 } },
+  ];
+  const cdp = {
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+    evaluate() {
+      return Promise.resolve(evaluations.shift());
+    },
+  };
+
+  const result = await verifySidebarBlurCommandPalette(cdp, { activate: false, wait() {}, timeoutMs: 1000 });
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /unexpected query/);
+  assert.deepEqual(sent, []);
 });
 
 test("sidebar command visual proof waits for transient chat loading to clear", () => {
@@ -3580,7 +3722,14 @@ test("visual contract writes screenshots and compact readbacks", async () => {
           bundleVersion: "4753",
         },
         target: { app: "/tmp/Codex Plus.app" },
-        pluginResults: {},
+        pluginResults: {
+          projectColors: {
+            ok: true,
+            newChatNeutral: true,
+            initialNoProjectComposer: { background: "rgb(24, 24, 24)", railWidth: 0 },
+            projectComposerTransitions: [{ observed: { background: "rgb(24, 24, 24)", railWidth: 6 } }],
+          },
+        },
       },
       wait() {},
       activateFixture: async () => ({ ok: true }),
@@ -3600,6 +3749,9 @@ test("visual contract writes screenshots and compact readbacks", async () => {
     assert.equal(readback.review.diffCardCount, 2);
     assert.equal(readback.composerPill.ok, true);
     assert.equal(readback.sidebarNeedsInput.ok, true);
+    const summary = JSON.parse(fs.readFileSync(path.join(tmpDir, "audit-summary.json"), "utf8"));
+    assert.equal(summary.newChatComposer.newChatNeutral, true);
+    assert.equal(summary.newChatComposer.projectComposerTransitions[0].observed.railWidth, 6);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
