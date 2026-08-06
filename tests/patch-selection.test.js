@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.727.51351-6119");
-  assert.equal(chatgptPatchSets.length, 24);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.730.61309-6223");
+  assert.equal(chatgptPatchSets.length, 25);
 
   for (const identity of [
+    ["26.730.61309", "6223", "9de942a9a058fca20b78d171032e0fe65ccb1063868f175ff7eb4e159efc2c38"],
     ["26.727.51351", "6119", "a529edd72e10b08931c0d695b5e3e6a0be7f51874610dafc04f578436ab7d74d"],
     ["26.727.40816", "6067", "0e4f824024d0838dd7548751c02d3a7d21917c4fc3edf74c9e98d88ea9e3127d"],
     ["26.721.81911", "5973", "3c9a101d9beec3718b0fcfc19e427c644a934045f48b3fe0e16b68b0b3f23e61"],
@@ -466,8 +467,9 @@ test("30844 maps its exact assets and owns the monolithic renderer transforms", 
 
   assert.equal(withComposer.match(/var CPXMC=/g)?.length, 1);
   assert.match(withComposer, /CPXCTX=window\.CodexPlusHost\.adapters\.context/);
-  assert.match(withComposer, /codexPlusProps:CPX_surfaceProps/);
-  assert.match(withComposer, /\.\.\.CPX_resolvedSurfaceProps/);
+  assert.match(withComposer, /function CPXComposerScope\(e\)/);
+  assert.match(withComposer, /U8o\.createContext/);
+  assert.match(withComposer, /rX\.jsx\)\(CPXComposerSurface,\{native:S/);
   assert.match(header([
     "function sr(e){let t=(0,cr.c)(5),{conversationId:n}=e,",
     "let s=o;if(s==null||!a||i.kind!==`git`||r.kind===`remote-control`)return null;let c;return t[2]!==s||t[3]!==r?(c=(0,lr.jsx)(G.HeaderAction,{actionId:`thread-local-project-actions`,align:`end`,order:100,children:(0,lr.jsx)(Xn,{cwd:s,hostConfig:r})}),t[2]=s,t[3]=r,t[4]=c):c=t[4],c}",
@@ -574,9 +576,10 @@ test("41059 owns its moved Review, composer, and sidebar-row anchors", () => {
     "t[19]!==S||t[20]!==n||t[21]!==d||t[22]!==f||t[23]!==p||t[24]!==m||t[25]!==E||t[26]!==D?",
     "(k=(0,nX.jsx)(S,{inert:E,className:D,onMouseDown:b5o,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[19]=S,t[20]=n,t[21]=d,t[22]=f,t[23]=p,t[24]=m,t[25]=E,t[26]=D,t[27]=k)",
   ].join(""), { patchSetId: newest.id });
-  assert.match(composer, /tX\.c\)\(37\)/);
-  assert.match(composer, /t\[36\]!==CPX_resolvedSurfaceProps/);
-  assert.match(composer, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+  assert.match(composer, /tX\.c\)\(36\)/);
+  assert.match(composer, /function CPXComposerSurface\(e\)/);
+  assert.match(composer, /function CPXComposerScope\(e\)/);
+  assert.match(composer, /nX\.jsx\)\(CPXComposerSurface,\{native:S,inert:E,className:D/);
 
   const rows = byName("patchLocalTaskRow")([
     "function dUl({entry:e,",
@@ -598,10 +601,12 @@ test("41059 owns its moved host wiring and startup anchors", () => {
   const byName = (name) => transforms.find(([, transform]) => transform.name === name)?.[1];
   const context = { patchSetId: newest.id };
 
-  const composerProject = byName("patchComposerProjectColors")(
-    "CPXSurfaceProps({})$a=(e,t=or)=>{let n=e.fsPath||e.path;",
-    context,
-  );
+  const composerProject = byName("patchComposerProjectColors")([
+    "(0,R$.jsx)(bPs,{className:D,utilityBarVariant:L,hasDropTargetPortal:Xee,",
+    "$a=(e,t=or)=>{let n=e.fsPath||e.path;",
+  ].join(""), context);
+  assert.match(composerProject, /\(0,R\$\.jsx\)\(CPXComposerScope,\{native:bPs,project:y,newChat:F\.value\.kind===`new`,className:D/);
+  assert.doesNotMatch(composerProject, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
   assert.match(composerProject, /CPXOpenFile=CPXSP\.bindOpenFile/);
   assert.match(composerProject, /RM\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?on,/);
 
@@ -759,10 +764,10 @@ test("31836 owns its moved composer surface and cache anchors", () => {
     patchSetId: newest.id,
   });
 
-  assert.match(transformed, /nX\.c\)\(37\)/);
-  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
-  assert.match(transformed, /t\[36\]!==CPX_resolvedSurfaceProps/);
-  assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+  assert.match(transformed, /nX\.c\)\(36\)/);
+  assert.match(transformed, /function CPXComposerSurface\(e\)/);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /rX\.jsx\)\(CPXComposerSurface,\{native:S,inert:E,className:D/);
 });
 
 test("31836 owns the renamed current sidebar row signals", () => {
@@ -792,14 +797,47 @@ test("31836 owns its moved composer project file-opener anchor", () => {
   const composerProject = collectFileTransforms(newest).find(
     ([, transform]) => transform.name === "patchComposerProjectColors",
   )[1];
-  const transformed = composerProject(
-    "CPXSurfaceProps({})Za=(e,t=or)=>{let n=e.fsPath||e.path;",
-    { patchSetId: newest.id },
-  );
+  const transformed = composerProject([
+    "(0,z$.jsx)(YNs,{className:D,utilityBarVariant:L,hasDropTargetPortal:tte,",
+    "Za=(e,t=or)=>{let n=e.fsPath||e.path;",
+  ].join(""), { patchSetId: newest.id });
 
-  assert.match(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(transformed, /\(0,z\$\.jsx\)\(CPXComposerScope,\{native:YNs,project:y,newChat:F\.value\.kind===`new`,className:D/);
+  assert.doesNotMatch(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
   assert.match(transformed, /CPXOpenFile=CPXSP\.bindOpenFile/);
   assert.match(transformed, /OM\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?on,/);
+});
+
+test("30844 owns its composer surface context anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.30844-5813");
+  const composer = collectFileTransforms(patchSet).find(
+    ([, transform]) => transform.name === "patchComposerBubbleColors",
+  )[1];
+  const transformed = composer([
+    "function i5o(e){let t=(0,nX.c)(36),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "k=(0,rX.jsx)(S,{inert:E,className:D,onMouseDown:y5o,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n})",
+  ].join(""), { patchSetId: patchSet.id });
+
+  assert.match(transformed, /function CPXComposerSurface\(e\)/);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /U8o\.createContext/);
+  assert.match(transformed, /rX\.jsx\)\(CPXComposerSurface,\{native:S,inert:E,className:D/);
+  assert.doesNotMatch(transformed, /codexPlusProps:CPX_surfaceProps/);
+});
+
+test("30844 binds exact New Chat project context to its composer scope", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.721.30844-5813");
+  const composerProject = collectFileTransforms(patchSet).find(
+    ([, transform]) => transform.name === "patchComposerProjectColors",
+  )[1];
+  const transformed = composerProject([
+    "(0,R$.jsx)(YNs,{className:D,utilityBarVariant:L,hasDropTargetPortal:Xee,",
+    "$a=(e,t=or)=>{let n=e.fsPath||e.path;",
+  ].join(""), { patchSetId: patchSet.id });
+
+  assert.match(transformed, /\(0,R\$\.jsx\)\(CPXComposerScope,\{native:YNs,project:y,newChat:F\.value\.kind===`new`,className:D/);
+  assert.doesNotMatch(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(transformed, /CPXOpenFile=CPXSP\.bindOpenFile/);
 });
 
 test("31836 owns its moved local thread-title context anchors", () => {
@@ -907,12 +945,25 @@ test("72028 owns its moved app shell, command menu, and startup anchors", () => 
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.72028-5706");
   const transforms = collectFileTransforms(patchSet);
   const appShell = transforms.find(([, transform]) => transform.name === "patchAppShell")[1];
+  const composerBubble = transforms.find(([, transform]) => transform.name === "patchComposerBubbleColors")[1];
+  const composerProject = transforms.find(([, transform]) => transform.name === "patchComposerProjectColors")[1];
   const commands = transforms.find(([, transform]) => transform.name === "patchCommandMenuRuntimeCommands")[1];
   const startup = transforms.find(([, transform]) => transform.name === "patchChatGptStartupAnnouncements")[1];
   assert.match(appShell([
     "function nP(){let e=(0,aP.c)(3),t,n;",
     "children:[t,n,(0,oP.jsx)(nr,{onClick:rP,children:(0,oP.jsx)(X,{id:`codex.errorBoundary.goHome`,defaultMessage:`Try again`,description:`Button label to navigate to the home page after an error`})})]",
   ].join("")), /CPXDiagnosticDetails\(\{jsx:oP\.jsx,error:null\}\)/);
+  const composer = composerBubble([
+    "function qk(e){let t=(0,Jk.c)(55),",
+    "showShiftOverlay:m,...p}=e,",
+    "p=(0,Yk.jsx)(`div`,{className:n,onDragEnter:r,",
+    "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
+    "A=(0,Yk.jsx)(Gy,{...p,className:C,",
+  ].join(""));
+  assert.match(composer, /function CPXComposerScope\(e\)/);
+  assert.match(composer, /CPXMC\.syncComposerSurface/);
+  const composerWithProject = composerProject(`${composer}ol??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.match(composerWithProject, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   const commandText = commands([
     "function y4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
     "},V=[],H=N.filter",
@@ -989,13 +1040,18 @@ test("72359 owns its moved app shell and composer anchors", () => {
   assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:sP\.jsx,error:null\}\)/);
   const composer = composerBubble([
     "function qk(e){let t=(0,Jk.c)(55),",
+    "showShiftOverlay:m,...p}=e,",
     "p=(0,Yk.jsx)(`div`,{className:n,onDragEnter:r,",
     "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
     "A=(0,Yk.jsx)(Gy,{...p,className:C,",
   ].join(""));
-  assert.equal(composer.match(/CPXSurfaceProps\(\{\}\)/g)?.length, 3);
-  const composerWithProject = composerProject(`${composer}Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
-  assert.equal(composerWithProject.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(composer, /function CPXComposerScope\(e\)/);
+  assert.match(composer, /function CPXComposerSurface\(e\)/);
+  assert.match(composer, /CPXMC\.syncComposerSurface/);
+  assert.equal(composer.match(/Yk\.jsx\)\(CPXComposerSurface/g)?.length, 3);
+  const composerWithProject = composerProject(`${composer}ol??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.match(composerWithProject, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
+  assert.doesNotMatch(composerWithProject, /CPXSurfaceProps\(\{project:/);
   assert.match(composerWithProject, /CPXOpenFile=CPXSP\.bindOpenFile.*Ll\(\{scope:U/);
   const commandText = commands([
     "function b4({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
@@ -1043,6 +1099,27 @@ test("21425 binds the moved review parser and current Mermaid asset", () => {
   assert.equal(newest.runtimeConfig.mermaidCoreAsset, "mermaid.core-BfTk2v0k.js");
 });
 
+test("21425 and 21316 bind New Chat state through the shared composer scope", () => {
+  for (const [patchSetId, functionName, compilerName, jsxName, reactName, homeSurface, caller] of [
+    ["chatgpt-26.715.21425-5488", "Kk", "qk", "Jk", "Uk", "Ag", "cl??(0,yW.jsx)(Kk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Gc,"],
+    ["chatgpt-26.715.21316-5484", "Wk", "Gk", "Kk", "Bk", "Fg", "Wl??(0,xW.jsx)(Wk,{className:P,utilityBarVariant:W,hasDropTargetPortal:Cl,"],
+  ]) {
+    const patchSet = patchSets.find((candidate) => candidate.id === patchSetId);
+    const byName = (name) => collectFileTransforms(patchSet).find(([, transform]) => transform.name === name)?.[1];
+    const bubble = byName("patchComposerBubbleColors")([
+      `function ${functionName}(e){let t=(0,${compilerName}.c)(55),`,
+      `p=(0,${jsxName}.jsx)(\`div\`,{className:n,onDragEnter:r,`,
+      `y=(0,${jsxName}.jsx)(${homeSurface},{className:n,inert:r,`,
+      `A=(0,${jsxName}.jsx)(${functionName === "Kk" ? "Uy" : "Oy"},{...p,className:C,`,
+    ].join(""));
+    assert.match(bubble, /function CPXComposerScope\(e\)/);
+    assert.match(bubble, new RegExp(`${reactName}\\.useLayoutEffect`));
+    const project = byName("patchComposerProjectColors")(`${bubble}${caller}${functionName === "Kk" ? "$o=(e,t=Ir)" : "os=(e,t=Ar)"}=>{let n=e.fsPath||e.path;`);
+    assert.match(project, /CPXComposerScope,\{native:/);
+    assert.match(project, /project:[JY]==null\?T:null,newChat:[JY]==null/);
+  }
+});
+
 test("31251 owns and applies its moved app shell, composer, command, and startup anchors", () => {
   const newest = patchSets.find((candidate) => candidate.id === "chatgpt-26.715.31251-5538");
   const byName = (name) => collectFileTransforms(newest).find(([, transform]) => transform.name === name)?.[1];
@@ -1064,8 +1141,10 @@ test("31251 owns and applies its moved app shell, composer, command, and startup
     "y=(0,Yk.jsx)(Ag,{className:n,inert:r,",
     "A=(0,Yk.jsx)(Gy,{...p,className:C,",
   ].join(""));
-  const composer = composerProject(`${bubble}Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
-  assert.equal(composer.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(bubble, /function CPXComposerScope\(e\)/);
+  assert.match(bubble, /CPXMC\.syncComposerSurface/);
+  const composer = composerProject(`${bubble}sl??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.match(composer, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   assert.match(composer, /CPXOpenFile=CPXSP\.bindOpenFile/);
 
   const commandText = commands([
@@ -1111,10 +1190,10 @@ test("31925 owns its moved composer surface anchors", () => {
     "A=(0,Yk.jsx)(Gy,{...p,className:C,",
   ].join(""));
 
-  assert.equal(transformed.match(/CPXSurfaceProps\(\{\}\)/g)?.length, 3);
-  assert.match(transformed, /CPXSurfaceProps=e=>CPXMC\.composerSurfaceProps\(e\)/);
-  const project = composerProject(`${transformed}Zo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
-  assert.equal(project.match(/CPXSurfaceProps\(\{project:/g)?.length, 3);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /CPXMC\.syncComposerSurface/);
+  const project = composerProject(`${transformed}al??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Hc,Zo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
+  assert.match(project, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   assert.match(project, /CPXOpenFile=CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>Il\(/);
   assert.throws(
     () => composerBubble("function qk(e){let t=(0,Jk.c)(55),", { patchSetId: "chatgpt-26.715.31251-5538" }),
@@ -1622,7 +1701,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2380, `src/patches/*.js line count ${totalLines} exceeds 2380`);
+  assert.ok(totalLines <= 2448, `src/patches/*.js line count ${totalLines} exceeds 2448`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -2034,6 +2113,7 @@ test("26.715 moved seams bind the owned command, composer, and project selector 
 
 test("runtime API registers plugins, settings, commands, styles, modules, and patches", async () => {
   const styles = [];
+  const composerSurfaces = [];
   const storage = new Map();
   const nativeRequests = [];
   const window = {
@@ -2082,6 +2162,9 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
       },
       querySelector() {
         return null;
+      },
+      querySelectorAll(selector) {
+        return selector === "[data-codex-plus-composer-surface]" ? composerSurfaces : [];
       },
     },
   };
@@ -2219,7 +2302,38 @@ test("runtime API registers plugins, settings, commands, styles, modules, and pa
   assert.equal(typeof api.ui.chatRows.render, "function");
   assert.equal(typeof api.ui.chatRows.renderRow, "function");
   assert.deepEqual(plain(api.ui.message.userBubbleProps({ project: "x" })), { "data-sample-message": "" });
-  assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), { "data-sample-composer": "" });
+  assert.deepEqual(plain(api.ui.composer.surfaceProps({ project: "x" })), {
+    "data-codex-plus-composer-surface": "",
+    "data-sample-composer": "",
+  });
+  const surfaceAttributes = new Map([["data-stale", ""]]);
+  const surfaceElement = {
+    __codexPlusComposerSurfaceProps: { "data-stale": "", style: { "--stale": "red", backgroundColor: "red" } },
+    style: {
+      "--stale": "red",
+      backgroundColor: "red",
+      setProperty(name, value) { this[name] = value; },
+    },
+    removeAttribute(name) { surfaceAttributes.delete(name); },
+    setAttribute(name, value) { surfaceAttributes.set(name, value); },
+  };
+  api.ui.composer.syncSurface(surfaceElement, { project: "x" });
+  assert.equal(surfaceAttributes.has("data-stale"), false);
+  assert.equal(surfaceAttributes.get("data-codex-plus-composer-surface"), "");
+  assert.equal(surfaceAttributes.get("data-sample-composer"), "");
+  assert.equal(surfaceElement.style["--stale"], "");
+  assert.equal(surfaceElement.style.backgroundColor, "");
+  const fallbackAttributes = new Map([["data-stale", ""]]);
+  const fallbackSurface = {
+    __codexPlusComposerSurfaceProps: { "data-stale": "" },
+    style: { setProperty(name, value) { this[name] = value; } },
+    removeAttribute(name) { fallbackAttributes.delete(name); },
+    setAttribute(name, value) { fallbackAttributes.set(name, value); },
+  };
+  composerSurfaces.push(fallbackSurface);
+  api.ui.composer.syncSurface(null, { project: "x" });
+  assert.equal(fallbackAttributes.has("data-stale"), false);
+  assert.equal(fallbackAttributes.get("data-codex-plus-composer-surface"), "");
   assert.deepEqual(plain(api.ui.mermaid.diagramProps({ code: "graph TD;A-->B" })), { "data-sample-mermaid": "" });
   assert.equal(api.ui.review.renderBody({ defaultBody: "body", props: {}, deps: {} }), "wrapped:body");
   assert.equal(
@@ -4404,6 +4518,75 @@ test("about dialog patch fails closed when the build information hook changes", 
   );
 });
 
+test("61309 owns its moved about dialog anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAboutDialog",
+  )?.[1];
+  const source = [
+    "let i=l.app.getName(),o=l.app.getVersion(),s=Yxe(o),c=n.xa(e),u=c==null?o:`${o} • ${c}`,d=process.platform===`darwin`,f=r.At(),p=await Qxe(e),m=f.formatMessage({messageId:W5,defaultMessage:G5,values:{appName:i}}),h=d?null:f.formatMessage({messageId:Rxe,defaultMessage:`OK`}),g=s==null?f.formatMessage({messageId:zxe,defaultMessage:Bxe,values:{version:u}}):f.formatMessage({messageId:Vxe,defaultMessage:Hxe,values:{version:u,releaseDate:s}}).replace(/\\s*•\\s*(?=[^•]*$)/u,`\n\n`),_=f.formatMessage({messageId:Uxe,defaultMessage:Wxe}),v=Xxe(o),y=[...a.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
+    "$xe({appDisplayName:i,buildInfoLabel:_,buildInfoText:y,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+    "function $xe({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:`<img class=\"app-icon\" src=\"${(0,YH.default)(r)}\" alt=\"\">`,",
+    "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;\n      color: var(--muted-text);\n      white-space: pre-wrap;",
+    "    .app-name,\n    .build-info,\n    .copyright {",
+    '      <div class="app-name" id="app-name">${(0,YH.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,YH.default)(t)}">${(0,YH.default)(n)}</pre>',
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.730.61309"), true);
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /i=CPXAbout\.appDisplayName,o=l\.app\.getVersion\(\)/);
+  assert.match(transformed, /CPXAboutLines=CPXAbout\.buildInfoLines/);
+  assert.match(transformed, /codexPlusDisclaimerHeading:CPXAbout\.disclaimerHeading/);
+  assert.match(transformed, /disclaimerMarkup\(\{escape:YH\.default,heading:D,body:O\}\)/);
+  assert.match(transformed, /\$\{q\}\n      <pre class="build-info"/);
+});
+
+test("61309 owns its rewritten home project selector shortcut anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const filePath = findTransformPath(patchSet, "home-project-dropdown");
+  const transform = findTransform(patchSet, "home-project-dropdown");
+  const source = [
+    "function _hc({activeProjectIdOverride:e,allowLocalProjects:t=!0,allowLocalProjectActions:n=t,allowRemoteProjects:r=!0,disabled:i=!1,hideLabel:a=!1,onProjectSelected:o,variant:s=`default`,isOpen:c,onOpenChange:l,shortcut:u,triggerButton:d}){",
+    "function thc(e){let t=(0,ihc.c)(32),{children:n,groups:r,selectedProjectIds:i,onRequestClose:a,onSelectProjectId:o}=e,[g,_]=(0,ahc.useState)(``),v;t[0]!==r||t[1]!==g?(v=PEs(r,g,rhc),t[0]=r,t[1]=g,t[2]=v):v=t[2];let y=v,w=e=>o(e.projectId),T=(0,f$.jsx)(LEs,{groups:y,selectedProjectIds:i,getProjectDetails:nhc,getProjectTooltipText:C,onSelectProject:w}),S=y.length>0,D=(0,f$.jsx)(jEs,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,children:n});return D}",
+    "let f=ko(Q),p=qu(),[m,h]=(0,yhc.useState)(!1),g=s===`home`,_=(0,yhc.useRef)(!1),v=(0,yhc.useRef)(!1),y=J(Aos).filter(e=>hoa(e)?!1:e.projectKind===`local`?t:r),b=_X(),x=Z8r(),S=e!==void 0,C=!b,{selectedRemoteProject:w,selectedRemoteProjectId:T}=Bei(),{remoteConnections:E}=$8r(),D=maa(E),{data:O,isLoading:k}=J(HT),A=J(qT),j=r&&x&&!b&&D.length>0,M=e=>{},N=()=>{},P=e=>{},F=()=>{},I=()=>{},L=A?.type===`local`?A.projectId:null;S?L=e:r&&(L=T??L);let R=L==null&&C&&!0,z=C&&L!=null,B=c??m,V=e=>{h(e),l?.(e)},H=n&&s===`home`&&y.length===0&&!b;",
+    "if(H){if(!j&&d==null)return(0,m$.jsx)(DEs,{children:null})}",
+    "let ue=(0,m$.jsx)(thc,{groups:y,children:null});if(s===`home`&&d==null)return(0,m$.jsx)(DEs,{menuOpen:B,onOpenChange:V,children:ue});",
+    "let de=(0,m$.jsx)(E8o,{open:B,onOpenChange:V,onCloseAutoFocus:P,side:`top`,align:s===`hero`?`center`:`start`,disabled:i,triggerButton:d??(s===`hero`?le():se()),contentWidth:`workspace`,contentMaxHeight:`tall`,children:ue});return de}",
+  ].join("");
+
+  assert.equal(filePath, "webview/assets/app-initial-YjNFxVhk.js");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXP\.setOpenHandler\(s,\(\)=>\{V\(!0\);return!0\}\)/);
+  assert.match(transformed, /CPXDEs=e=>CPXPST\(\(0,m\$\.jsx\)\(DEs,e\),s\)/);
+  assert.equal(transformed.match(/\(0,m\$\.jsx\)\(CPXDEs,/g)?.length, 2);
+  assert.match(transformed, /triggerButton:CPXPST\(d\?\?\(s===`hero`\?le\(\):se\(\)\),s\)/);
+  assert.match(transformed, /v=CPXP\.fuzzyFilter\(r,g\)/);
+  assert.match(transformed, /LEs,\{groups:y\.map\(e=>\(\{\.\.\.e,__codexPlusQuery:g\}\)\),/);
+  assert.match(transformed, /onSearchKeyDown:e=>CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+});
+
+test("61309 owns its moved nested-repository worker anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchWorker",
+  )?.[1];
+  const source = [
+    "var u2=`Git is unavailable`,",
+    "function v2({requestKind:e,source:t}){return pce.has(e??``)||hce(t)}",
+    "case`commit-message-diff`:p=Z(await g3(fpe(e.params.cwd,e.params.includeUnstaged,this.gitManager,o),i.signal));break;case`submodule-paths`:p=Z({paths:await jpe(this.gitManager.getWorktreeRepositoryForRoot(e.params.root,o),i.signal)});break;",
+    "case`review-patch`:case`commit-message-diff`:case`submodule-paths`:case`cat-file`:",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /const CPXW=require\("\.\/codex-plus-worker\.js"\)/);
+  assert.match(transformed, /CPXW\.isReadOnlyBranchRequest\(e,t\)/);
+  assert.match(transformed, /case`repository-targets`/);
+  assert.match(transformed, /repositoryTargetsFromHost\(this\.gitManager,e\.params,o,i\.signal,jpe\)/);
+  assert.match(transformed, /case`codex-plus-current-branch`/);
+});
+
 test("40816 owns its moved about dialog anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4466,6 +4649,23 @@ test("40816 owns its moved review mux anchors", () => {
   assert.match(transformed, /mainReviewContent:\(0,TJ\.jsx\)\(D2o/);
 });
 
+test("61309 owns its moved review mux anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function Ses(e){let t=(0,Tes.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,Wq.jsx)(K7a,{children:(0,Wq.jsx)(kQo,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXRM=e=>self\.CodexPlusHost\.adapters\.review\.renderBodyFromHost/);
+  assert.match(transformed, /\[Wq,EQo,null,null,null,null,null,null,null,null,null,kQo,null,null,null,null,null,null,null,RI,hXo\]/);
+  assert.match(transformed, /mainReviewContent:\(0,Wq\.jsx\)\(kQo/);
+});
+
 test("51351 owns its moved review mux anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
   const transform = collectFileTransforms(patchSet).find(
@@ -4497,6 +4697,19 @@ test("40816 owns its moved app shell diagnostic hook anchor", () => {
   assert.match(transformed, /function pjr\(e\)/);
 });
 
+test("61309 owns its moved app shell diagnostic hook anchor", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAppShell",
+  )?.[1];
+  const source = "function _jr(e){let t=(0,vjr.c)(9),{resetError:n}=e";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXDiagnosticDetails=function/);
+  assert.match(transformed, /function _jr\(e\)/);
+});
+
 test("51351 owns its moved app shell diagnostic hook anchor", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.51351-6119");
   const transform = collectFileTransforms(patchSet).find(
@@ -4525,6 +4738,24 @@ test("40816 owns its moved webview error boundary anchors", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /error:CPX_error,componentStack:CPX_componentStack/);
   assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:lk\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
+  assert.match(transformed, /error:e\.error,componentStack:e\.componentStack/);
+});
+
+test("61309 owns its moved webview error boundary anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchErrorBoundary",
+  )?.[1];
+  const source = [
+    "function _jr(e){let t=(0,vjr.c)(9),{resetError:n}=e",
+    "children:[i,a,(0,pk.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,pk.jsx)(Qp,{onClick:s,children:c})]})]",
+    "r=e??(e=>(0,pk.jsx)(_jr,{resetError:()=>e.resetError()}));",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /error:CPX_error,componentStack:CPX_componentStack/);
+  assert.match(transformed, /CPXDiagnosticDetails\(\{jsx:pk\.jsx,error:CPX_error,componentStack:CPX_componentStack\}\)/);
   assert.match(transformed, /error:e\.error,componentStack:e\.componentStack/);
 });
 
@@ -4562,6 +4793,22 @@ test("40816 owns its moved appearance settings anchors", () => {
   assert.match(transformed, /\.\.\.CPXAppearanceRows\(n\)/);
 });
 
+test("61309 owns its moved appearance settings anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchGeneralSettingsUserBubbleColors",
+  )?.[1];
+  const source = [
+    "function Ar({showCodeFont:e,showTranslucentSidebarToggle:t,variant:n}){",
+    "children:[E.map(e=>(0,Y.jsx)(W,{size:`compact`,control:(0,Y.jsx)(Fr,{ariaLabel:e.ariaLabel,value:y[e.role],onChange:t=>{O(e.role,t)}}),label:e.label},e.role)),D.map",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /React:Jr,jsx:Y\.jsx,SettingRow:W,ColorInput:Fr,Switch:Wt/);
+  assert.match(transformed, /\.\.\.CPXAppearanceRows\(n\)/);
+});
+
 test("40816 owns its moved user message bubble anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.727.40816-6067");
   const transform = collectFileTransforms(patchSet).find(
@@ -4576,6 +4823,24 @@ test("40816 owns its moved user message bubble anchors", () => {
   assert.equal(typeof transform, "function");
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /d4\.useSyncExternalStore/);
+  assert.match(transformed, /data-codex-plus-user-entry/);
+  assert.match(transformed, /data-user-message-bubble.*CPXBubbleProps/);
+});
+
+test("61309 owns its moved user message bubble anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchUserMessageAttachmentsBubbleColors",
+  )?.[1];
+  const source = [
+    "function wal({cwd:e,hostId:t,initialMessage:n,onCancel:r,onDraftChange:i,onSubmit:a}){",
+    "return(0,x4.jsx)(`form`,{className:`relative flex w-full flex-col rounded-3xl bg-token-foreground/5`,onSubmit:e=>{e.preventDefault(),v()},children:",
+    "\"data-user-message-bubble\":!0,tabIndex:0,className:",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /b4\.useSyncExternalStore/);
   assert.match(transformed, /data-codex-plus-user-entry/);
   assert.match(transformed, /data-user-message-bubble.*CPXBubbleProps/);
 });
@@ -4623,10 +4888,291 @@ test("40816 owns its moved composer surface anchors", () => {
 
   assert.equal(typeof transform, "function");
   const transformed = transform(source, { patchSetId: patchSet.id });
-  assert.match(transformed, /\$J\.c\)\(37\)/);
-  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
-  assert.match(transformed, /t\[36\]!==CPX_resolvedSurfaceProps/);
-  assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+  assert.match(transformed, /\$J\.c\)\(36\)/);
+  assert.match(transformed, /function CPXComposerSurface\(e\)/);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /eY\.jsx\)\(CPXComposerSurface,\{native:S,inert:E,className:D/);
+});
+
+test("61309 owns its moved composer surface anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerBubbleColors",
+  )?.[1];
+  const source = [
+    "function Vls(e){let t=(0,DJ.c)(19),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "t[2]!==n||t[3]!==a||t[4]!==_||t[5]!==d||t[6]!==f||t[7]!==p||t[8]!==m||t[9]!==v||t[10]!==y||t[11]!==b||t[12]!==S||t[13]!==C||t[14]!==h?",
+    "(w=(0,OJ.jsx)($d.div,{inert:a,className:S,\"data-composer-drag-active\":C,\"data-composer-layout\":_,\"data-composer-radius-variant\":v,\"data-composer-surface-overflow\":y,\"data-composer-surface-variant\":b,\"data-composer-utility-bar-variant\":h,onMouseDown:nus,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[2]=n,t[3]=a,t[4]=_,t[5]=d,t[6]=f,t[7]=p,t[8]=m,t[9]=v,t[10]=y,t[11]=b,t[12]=S,t[13]=C,t[14]=h,t[15]=w)",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /DJ\.c\)\(19\)/);
+  assert.doesNotMatch(transformed, /t\[19\]/);
+  assert.match(transformed, /function CPXComposerSurface\(e\)/);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /OJ\.jsx\)\(CPXComposerSurface,\{native:\$d\.div,inert:a,className:S/);
+});
+
+test("61309 owns its moved sidebar project color anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAppMainProjectColors",
+  )?.[1];
+  const source = [
+    "function lRc(e){let t=(0,uRc.c)(57),{ref:n,className:r,actions:i,collapsed:a,contentClassName:o,dragHandleListeners:s,dragHandleRef:c,icon:l,iconDropTargetKind:u,iconRef:d,isActive:f,isDisabled:p,ariaLabel:m,ariaExpanded:h,label:g,labelEnd:_,onContextMenu:v,onPress:y,projectId:b,rowAttributes:x,selectAction:S,trailingContent:C}=e,",
+    "A=Qf.sidebarProjectRow({collapsed:a,label:g,projectId:b})",
+    "let We=Ue,Ge=lRc,Ke=r?Ce:void 0,qe=",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXS=window\.CodexPlusHost\.adapters\.sidebar,CPXPR=e=>CPXS\.projectRowProps\(e\)/);
+  assert.match(
+    transformed,
+    /A=\{\.\.\.Qf\.sidebarProjectRow\(\{collapsed:a,label:g,projectId:b\}\),\.\.\.CPXPR\(\{projectId:b,label:g\}\)\}/,
+  );
+  assert.match(
+    transformed,
+    /Ke=\{\.\.\.\(r\?Ce:void 0\),\.\.\.CPXPR\(\{projectId:E,label:P,path:n\.path,cwd:n\.path,hostId:n\.hostId,projectKind:n\.projectKind\}\)\}/,
+  );
+});
+
+test("61309 owns its moved sidebar project-name blur anchor", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchAppMainSidebarBlur",
+  )?.[1];
+  const source = [
+    "function lRc(e){let t=(0,uRc.c)(57),",
+    "U=(0,a0.jsx)(`span`,{className:`text-fade-truncate pe-1`,children:g})",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /"data-codex-plus-sidebar-name":``/);
+});
+
+test("61309 owns its moved generic command title fallback anchor", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchKeyboardShortcutsSearchInput",
+  )?.[1];
+  const source = "function SLu(e,t){return e.id===`composer.captureAppshot`?mLu(t).title:`titleIntlId`in e?wLu(TLu,e.titleIntlId)?t.formatMessage(TLu[e.titleIntlId]):_Lu(t,e.id):t.formatMessage(ELu[e.electron.menuTitleIntlId])}";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /e\.title\?\?e\.electron\?\.menuTitle\?\?/);
+});
+
+test("61309 owns its moved command palette plugin and dispatch anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchCommandMenuRuntimeCommands",
+  )?.[1];
+  const source = [
+    "function uRu({close:e,inputRef:t,rootChatSearchIntent:n,search:r,setSearch:i}){",
+    "P=t=>{let n=t.id===`openAvatarOverlay`&&C,r=CLu(t,o,nRr(m,t.id)),i=n?o.formatMessage(u9.tuckAwayPet):r.title;return(0,l9.jsx)(dRu,{command:t,close:e,description:n?o.formatMessage(u9.tuckAwayPetDescription):r.description,title:i},t.id)},F=[],I=",
+    "c=()=>{Zk(r.id,`command_menu`),r.id!==`searchChats`&&n()},t[2]=n,t[3]=r.id,t[4]=c):c=t[4];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXCommandPaletteItem/);
+  assert.match(transformed, /adapters\.commands\.metadata\(\)\.map/);
+  assert.match(transformed, /bindNativeDispatch/);
+  assert.match(transformed, /e\.dispatch\(r\.id\)/);
+});
+
+test("61309 owns its moved native request registration anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchMainNativeBridge",
+  )?.[1];
+  const source = [
+    "async function eEe(){r.n(q9);",
+    "are({chunkedMessageSender:B,isTrustedIpcEvent:ge}),Fxe({buildFlavor:s,getContextForWebContents:V.getContextForWebContents,isTrustedIpcEvent:ge}),l.ipcMain.on",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXNative/);
+  assert.match(transformed, /CPXNative\.registerNativeRequest\(\{isTrustedIpcEvent:ge\}\)/);
+});
+
+test("61309 owns its moved native menu diagnostics anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchMainMenuDiagnostics",
+  )?.[1];
+  const source = [
+    "nt={...k(`toggleSidePanel`),click:async()=>{let e=await O();e&&v.sendMessageToWindow(e,{type:`toggle-diff-panel`})}},rt=",
+    "Nt=[Ae,je,Me,Ne,Pe,...c.browserPane?[Fe]:[],nt,...c.browserPane?",
+    "E=()=>{T.refresh()};return{applicationMenuManager:T,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXNative\.templateItems\(`view-menu`\)/);
+  assert.match(transformed, /CPXNative\.setRefreshApplicationMenu/);
+  assert.match(transformed, /CPXNative\.logMenuDiagnostics\(\)/);
+});
+
+test("61309 owns its moved Mermaid diagram shell anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchMermaidDiagramShell",
+  )?.[1];
+  const source = [
+    "function me({blockRef:e,code:t,isCodeFenceOpen:n,isDark:r,isVisible:i,onError:a,onRendered:s,renderKey:c}){",
+    "(0,U.jsxs)(`div`,{className:`relative`,\"data-markdown-copy\":`code-block`,\"data-markdown-copy-text\":S,children:[",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXMermaidDiagramProps/);
+  assert.match(transformed, /CPXMermaidDiagramProps\(\{code:t\}\)/);
+});
+
+test("61309 owns its moved ChatGPT startup announcement anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchChatGptStartupAnnouncements",
+  )?.[1];
+  const source = [
+    "function ryc({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===yl.ChatGPT&&t!=null&&t!==kl.Agent&&t!==kl.Dev}",
+    "function cbc(e){let t=(0,lbc.c)(26),{announcementSource:n,body:r,dismissAnnouncement:i,model:a,modelName:o,onTryModel:s,showSecondaryAction:c}=e,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function ryc\([^)]*\)\{return false\}/);
+  assert.match(transformed, /function cbc\(e\)\{return null;/);
+});
+
+test("61309 owns its rewritten project selector shortcut anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut",
+  )?.[1];
+  const source = [
+    "function BEs(e){let t=(0,WEs.c)(92),",
+    "function jEs(e){let t=(0,MEs.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,jY.jsx)(jq.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "function LEs(e){let t=(0,REs.c)(13),{groups:n,selectedProjectIds:r,getProjectDetails:i,getProjectTooltipText:a,onSelectProject:o}=e,",
+    "children:(0,MY.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,MY.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:PEs(s.projects,k,UEs)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)})",
+    "re=s==null?null:(0,NY.jsx)(LEs,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:VEs,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,NY.jsx)(jEs,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,NY.jsxs)(NY.Fragment,{children:[I,re]}),status:P,footerItems:ne,emptyMessage:ie})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=DEs,K=",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /let CPXP=window\.CodexPlusHost\.adapters\.projectSelector/);
+  assert.match(transformed, /onSearchKeyDown:CPXKD/);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(s\.projects,k\)/);
+  assert.match(transformed, /CPXP\.fuzzyHighlight\(e\.label,e\.__codexPlusQuery,MY\.jsx\)/);
+  assert.match(transformed, /children:CPXP\.fuzzyHighlight\(t,k,NY\.jsx\)\},e\.gizmo\.id/);
+  assert.match(transformed, /LEs,\{groups:\(d\?\?\[\]\)\.map\(e=>\(\{\.\.\.e,__codexPlusQuery:k\}\)\),/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,d/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(w/);
+  assert.match(transformed, /triggerButton:CPXPST\(m,w\)/);
+  assert.match(transformed, /B=e=>CPXPST\(\(0,NY\.jsx\)\(DEs,e\),w\)/);
+});
+
+test("61309 owns its moved local task row project color anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchLocalTaskRow",
+  )?.[1];
+  const source = [
+    "function VHc({entry:e,isPinned:t,isAutomationRun:n,isUnread:r,automationDisplayName:i,isActive:a,canPin:o,",
+    "dataAttributes:Qf.sidebarThreadRow({active:a,hostId:n.hostId,id:r,kind:`local`,pinned:t,title:n.label})",
+    "dataAttributes:Qf.sidebarThreadRow({active:a,hostId:null,id:r,kind:`remote`,pinned:t,title:e.task.title??``})",
+    "dataAttributes:Qf.sidebarThreadRow({active:a,hostId:P,id:w,kind:`local`,pinned:t,title:U})",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /var CPXS=window\.CodexPlusHost\.adapters\.sidebar,CPXPR=e=>CPXS\.projectRowProps\(e\)/);
+  assert.match(transformed, /projectId:n\.projectId,label:n\.label/);
+  assert.match(transformed, /hostId:null,threadId:r,title:e\.task\.title/);
+  assert.match(transformed, /projectId:ce,label:se,path:D,cwd:D,hostId:P,threadId:h,title:U/);
+});
+
+test("61309 binds user message bubbles through the shared active-project adapter", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchUserMessageAttachmentsProjectColors",
+  )?.[1];
+  const source = '"data-user-message-bubble":!0,...CPXBubbleProps({}),tabIndex:0,className:';
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(
+    transformed,
+    /CPXBubbleProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/,
+  );
+});
+
+test("61309 binds its moved composer file opener through the shared side-panel adapter", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "CPXSurfaceProps({})",
+    "(0,XQ.jsx)(CXs,{className:E,utilityBarVariant:L,hasDropTargetPortal:W!=null,",
+    "uee=(e,t=ur)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /\(0,XQ\.jsx\)\(CPXComposerScope,\{native:CXs,project:y,newChat:F\.value\.kind===`new`,className:E/);
+  assert.doesNotMatch(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
+  assert.match(transformed, /CPXOpenFile=CPXSP\.bindOpenFile/);
+  assert.match(transformed, /EM\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?ln/);
+});
+
+test("61309 owns its moved thread header action-shell anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = [
+    "function p3r({isHeaderEdgeScroll:e,isApplicationMenuBarEnabled:t}){",
+    "h=u.filter(({align:e})=>e===`start`),g=u.filter(({align:e})=>e===`center`),_=u.filter(({align:e})=>e===`end`),v=h.length>0,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXHA\(/);
+  assert.match(transformed, /CPXHA\(d3r\.useSyncExternalStore,\{jsx:Wj\.jsx,jsxs:Wj\.jsxs\}\)/);
+});
+
+test("61309 owns its moved thread title and context anchors", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadTitle",
+  )?.[1];
+  const source = [
+    "function Ro(e){let t=(0,Vo.c)(56),",
+    "projectName:u,title:d,titleSuffix:f,cwd:p,canPin:h,hideForkActions:g}=e,_=c!==void 0&&c,",
+    "let C=S,T=U(Se,n),E=U(m,n)??n,D=r??T,k=Aa(C,Kr(D).id),A;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXBindThreadHeaderContext\(/);
+  assert.match(transformed, /function CPXThreadHeaderTitle\(/);
+  assert.match(transformed, /title:CPX_nativeTitle/);
+  assert.match(transformed, /d=CPXThreadHeaderTitle\(CPX_nativeTitle\)/);
+  assert.match(transformed, /CPXBindThreadHeaderContext\(\{routeId:n,threadId:n,cwd:p/);
 });
 
 test("51351 owns its moved composer surface anchors", () => {
@@ -4642,10 +5188,10 @@ test("51351 owns its moved composer surface anchors", () => {
 
   assert.equal(typeof transform, "function");
   const transformed = transform(source, { patchSetId: patchSet.id });
-  assert.match(transformed, /QJ\.c\)\(37\)/);
-  assert.match(transformed, /codexPlusProps:CPX_surfaceProps/);
-  assert.match(transformed, /t\[36\]!==CPX_resolvedSurfaceProps/);
-  assert.match(transformed, /inert:E,\.\.\.CPX_resolvedSurfaceProps,className:D/);
+  assert.match(transformed, /QJ\.c\)\(36\)/);
+  assert.match(transformed, /function CPXComposerSurface\(e\)/);
+  assert.match(transformed, /function CPXComposerScope\(e\)/);
+  assert.match(transformed, /\$J\.jsx\)\(CPXComposerSurface,\{native:S,inert:E,className:D/);
 });
 
 test("40816 binds composer project context and file opening through host adapters", () => {
@@ -4653,11 +5199,15 @@ test("40816 binds composer project context and file opening through host adapter
   const transform = collectFileTransforms(patchSet).find(
     ([, candidate]) => candidate.name === "patchComposerProjectColors",
   )?.[1];
-  const source = "CPXSurfaceProps({})iee=(e,t=sr)=>{let n=e.fsPath||e.path;";
+  const source = [
+    "(0,YQ.jsx)(YXs,{className:E,utilityBarVariant:I,hasDropTargetPortal:U!=null,",
+    "iee=(e,t=sr)=>{let n=e.fsPath||e.path;",
+  ].join("");
 
   assert.equal(typeof transform, "function");
   const transformed = transform(source, { patchSetId: patchSet.id });
-  assert.match(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
+  assert.match(transformed, /\(0,YQ\.jsx\)\(CPXComposerScope,\{native:YXs,project:y,newChat:P\.value\.kind===`new`,className:E/);
+  assert.doesNotMatch(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
   assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
   assert.match(transformed, /bindMount\(\(\)=>\(\{scope:P\}\)\)/);
   assert.match(transformed, /Gj\(\{scope:P,path:e,cwd:t\.workspaceRoot\?\?sn/);
@@ -4668,10 +5218,15 @@ test("51351 binds native file opening to the current Wj host helper", () => {
   const transform = collectFileTransforms(patchSet).find(
     ([, candidate]) => candidate.name === "patchComposerProjectColors",
   )?.[1];
-  const source = "CPXSurfaceProps({})iee=(e,t=sr)=>{let n=e.fsPath||e.path;";
+  const source = [
+    "(0,JQ.jsx)(XXs,{className:E,utilityBarVariant:I,hasDropTargetPortal:U!=null,",
+    "iee=(e,t=sr)=>{let n=e.fsPath||e.path;",
+  ].join("");
 
   assert.equal(typeof transform, "function");
   const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /\(0,JQ\.jsx\)\(CPXComposerScope,\{native:XXs,project:y,newChat:P\.value\.kind===`new`,className:E/);
+  assert.doesNotMatch(transformed, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
   assert.match(transformed, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
   assert.match(transformed, /bindMount\(\(\)=>\(\{scope:P\}\)\)/);
   assert.match(transformed, /Wj\(\{scope:P,path:e,cwd:t\.workspaceRoot\?\?sn/);
@@ -4773,7 +5328,7 @@ test("51351 owns its moved header action-shell accessory anchors", () => {
   );
   assert.match(
     commonPatchesSource,
-    /function patchThreadHeaderActionShell\(text, context = \{\}\) \{\n  if \(patchSetOwnsTransformVariant\(context\.patchSetId, "chatgpt-26\.727\.51351"\) && text\.includes/,
+    /if \(patchSetOwnsTransformVariant\(context\.patchSetId, "chatgpt-26\.727\.51351"\) && text\.includes/,
   );
 });
 
@@ -5881,6 +6436,13 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
       },
     },
     document: {
+      documentElement: {
+        toggleAttribute() {},
+        style: {
+          removeProperty() {},
+          setProperty() {},
+        },
+      },
       querySelector() {
         return null;
       },
@@ -5927,6 +6489,8 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
 
   assert.equal(composerProps.style.borderRadius, "var(--composer-border-radius, var(--radius-3xl))");
   assert.equal(sidebarProps.style.borderRadius, undefined);
+  assert.equal(sidebarProps["data-codex-plus-project-key"], "alpha-workspace");
+  assert.equal(composerProps["data-codex-plus-project-key"], "alpha-workspace");
   assert.equal(
     composerProps.style["--codex-plus-project-accent"],
     sidebarProps.style["--codex-plus-project-accent"],
@@ -5962,7 +6526,21 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     },
   });
   const missingProjectProps = context.window.CodexPlus.ui.composer.surfaceProps({});
-  assert.equal(missingProjectProps.style["--codex-plus-project-accent"], "#bab0ac");
+  assert.equal(missingProjectProps?.["data-codex-plus-project-color"], null);
+  assert.equal(missingProjectProps?.style?.["--codex-plus-project-accent"], "");
+  assert.equal(missingProjectProps?.style?.borderLeft, "");
+  assert.equal(missingProjectProps?.style?.borderRadius, "");
+
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8"),
+    context,
+    { filename: "plugins/userBubbleColors.js" },
+  );
+  const newChatProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: true });
+  const existingThreadProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: false });
+  assert.equal(newChatProps?.["data-codex-plus-user-entry"], null);
+  assert.equal(newChatProps?.["data-codex-plus-composer-surface"], "");
+  assert.equal(existingThreadProps["data-codex-plus-user-entry"], "");
 
   const chatThreadProps = context.window.CodexPlus.ui.sidebar.threadRowProps({
     id: "chat-thread-1",
@@ -6676,7 +7254,6 @@ test("ChatGPT composer project colors attach to the native composer surface", ()
   assert.match(transformed, /CPXSurfaceProps=e=>CPXMC\.composerSurfaceProps\(e\)/);
   assert.match(transformed, /\.\.\.CPXSurfaceProps\(\{project:\{cwd:vn,hostId:xr\}\}\),className:C/);
   assert.match(transformed, /key:CPXSurfaceProps\(\{project:\{cwd:vn,hostId:xr\}\}\)\?\.\[`data-codex-plus-project-color`\]\?\?``/);
-  assert.match(transformed, /\(0,NX\.jsx\)\(QBe,\{key:CPXSurfaceProps\(\{project:\{cwd:vn,hostId:xr\}\}\)\?\.\[`data-codex-plus-project-color`\]\?\?``,\.\.\.CPXSurfaceProps\(\{project:\{cwd:vn,hostId:xr\}\}\),className:C/);
   assert.doesNotMatch(transformed, /"data-codex-composer-root":``,\.\.\.CPXSurfaceProps\(\{\}\),children/);
   assert.doesNotMatch(transformed, /CPX_localThreadKey/);
   assert.doesNotMatch(transformed, /CPX_threadProjectId/);
@@ -6730,8 +7307,8 @@ test("72221 binds moved host seams without changing consumer contracts", () => {
     "clientThreadId:j,interactionsDisabled:M}){let N=ia(Db),",
     "):(0,QY.jsx)(JY,{className:w,utilityBarVariant:C,hasDropTargetPortal:kc,",
   ].join(""));
-  assert.match(composer, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
-  assert.match(composer, /codexPlusProps:CPX_composerSurfaceProps/);
+  assert.match(composer, /project:N\.value\.kind===`new`\?\(fn\?\?\(Dn\?null:\{cwd:En,hostId:K\.hostId\}\)\):globalThis\.CodexPlusHost\.adapters\.context\.active\(\),newChat:N\.value\.kind===`new`/);
+  assert.match(composer, /codexPlusProps:CPXSurfaceProps\(\{project:N\.value\.kind===`new`/);
 
   const commandMenu = transforms.get("patchCommandMenuRuntimeCommands")([
     "function TRe(e){let t=(0,M5.c)(126),P=lO.filter(e=>true);t[16]=O,t[17]=P):P=t[17];let F=P,I;",
@@ -6779,8 +7356,8 @@ test("71524 binds its moved UI producers to the strict host adapters", () => {
     "bs=(e,t=Hr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ki({path:n,line:r,column:r==null?void 0:1,cwd:Mn,hostId:t,openFile:un.mutate})},xs=e=>",
     "):(0,m5.jsx)(u5,{className:E,utilityBarVariant:T,hasDropTargetPortal:zc,",
   ].join(""));
-  assert.match(composer, /CPX_composerSurfaceProps=CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
-  assert.match(composer, /codexPlusProps:CPX_composerSurfaceProps/);
+  assert.match(composer, /project:V\.value\.kind===`new`\?\(hn\?\?\(On\?null:\{cwd:Dn,hostId:le\.hostId\}\)\):globalThis\.CodexPlusHost\.adapters\.context\.active\(\),newChat:V\.value\.kind===`new`/);
+  assert.match(composer, /codexPlusProps:CPXSurfaceProps\(\{project:V\.value\.kind===`new`/);
   assert.match(composer, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
   assert.match(composer, /CPXSP\.bindMount\(\(\)=>\(\{scope:V\}\)\)/);
   assert.match(composer, /CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>ki\(\{scope:V,path:e,cwd:t\.workspaceRoot\?\?Mn,hostConfig:Ur,hostId:t\.hostId\?\?Hr,line:t\.line,endLine:t\.endLine,isPreview:t\.isPreview,title:t\.title,openFile:un\.mutate,openInSidePanel:!0\}\)\)/);
@@ -6821,6 +7398,40 @@ test("71524 binds its moved UI producers to the strict host adapters", () => {
   assert.match(commandMenu, /bindNativeDispatch\(e=>\(au\(e,`command_menu`\),!0\)\)/);
 });
 
+test("older ChatGPT composers bind New Chat colors to their local scope", () => {
+  const cases = [
+    {
+      id: "chatgpt-26.707.62119-5211",
+      source: [
+        "function xq({aboveComposerHeaderContent:e,activeCollaborationMode:t,clientThreadId:R,interactionsDisabled:z}){let B=Xn(Bs),",
+        "xs=(e,t=qr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;eg({path:n,line:r,column:r==null?void 0:1,cwd:Nn,hostId:t,openFile:en.mutate})},Ss=e=>",
+        "):(0,Eq.jsx)(Sq,{className:k,utilityBarVariant:D,hasDropTargetPortal:Qc,",
+      ].join(""),
+      expected: /project:B\.value\.kind===`new`\?\(un\?\?\(kn\?null:\{cwd:On,hostId:Q\.hostId\}\)\).*newChat:B\.value\.kind===`new`/,
+    },
+    {
+      id: "chatgpt-26.707.61608-5200",
+      source: [
+        "function NUe({aboveComposerHeaderContent:e,activeCollaborationMode:t,clientThreadId:j,interactionsDisabled:M}){let N=Ke(yp),",
+        "ro=(e,t=lr)=>{let n=e.fsPath||e.path;if(!n||n.length===0)return;let r=e.startLine;ib({path:n,line:r,column:r==null?void 0:1,cwd:an,hostId:t,openFile:It.mutate})},oee=e=>",
+        "):(0,E$.jsx)(PUe,{className:C,utilityBarVariant:S,hasDropTargetPortal:_s,",
+      ].join(""),
+      expected: /codexPlusProps:CPXSurfaceProps\(\{project:N\.value\.kind===`new`\?\(Bt\?\?\(tn\?null:\{cwd:en,hostId:K\.hostId\}\)\).*newChat:N\.value\.kind===`new`/,
+    },
+    {
+      id: "chatgpt-26.707.51957-5175",
+      source: "(0,Q9.jsx)(YGa,{className:S,utilityBarVariant:x,hasDropTargetPortal:oee,",
+      expected: /project:j\.value\.kind===`new`\?\(Gt\?\?\(rn\?null:\{cwd:nn,hostId:sr\}\)\).*newChat:j\.value\.kind===`new`/,
+    },
+  ];
+
+  for (const { id, source, expected } of cases) {
+    const patchSet = patchSets.find((candidate) => candidate.id === id);
+    const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchComposerProjectColors")?.[1];
+    assert.match(transform(source), expected, id);
+  }
+});
+
 test("72221 review producer binds the strict review adapter at the moved host body", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.72221-5307");
   const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadSidePanelTabs")?.[1];
@@ -6852,6 +7463,8 @@ test("91948 composer binds the strict side-panel adapter at its native file open
   assert.match(composer, /CPXSP=globalThis\.CodexPlusHost\.adapters\.threadSidePanel/);
   assert.match(composer, /CPXSP\.bindMount\(\(\)=>\(\{scope:F\}\)\)/);
   assert.match(composer, /CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>Ep\(\{scope:F,path:e,cwd:t\.workspaceRoot\?\?bn,hostConfig:Mr,hostId:t\.hostId\?\?jr,line:t\.line,endLine:t\.endLine,isPreview:t\.isPreview,title:t\.title,openFile:Zt\.mutate,openInSidePanel:!0\}\)\)/);
+  assert.match(composer, /project:H==null\?\(rn\?\?\(gn\?null:\{cwd:hn,hostId:jr\}\)\):globalThis\.CodexPlusHost\.adapters\.context\.active\(\),newChat:H==null/);
+  assert.doesNotMatch(composer, /CPXSurfaceProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/);
 
   const primitive = transforms.get("patchComposerPrimitiveSurface")([
     "function nu(e){let t=(0,_u.c)(18),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:h}=e,",

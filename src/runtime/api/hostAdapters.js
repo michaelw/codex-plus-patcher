@@ -26,6 +26,7 @@
     "sidebar.mergeThreadRowAttributes",
     "messageComposer.userBubbleProps",
     "messageComposer.composerSurfaceProps",
+    "messageComposer.syncComposerSurface",
     "threadHeader.accessories",
     "threadHeader.notify",
     "threadHeader.snapshot",

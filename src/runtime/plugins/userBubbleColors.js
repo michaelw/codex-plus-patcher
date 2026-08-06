@@ -164,7 +164,9 @@
           }),
         });
         api.ui.message.decorateUserBubble(() => ({ "data-codex-plus-user-bubble": "" }));
-        api.ui.composer.decorateSurface(() => ({ "data-codex-plus-user-entry": "" }));
+        api.ui.composer.decorateSurface((props) => props?.newChat === true
+          ? { "data-codex-plus-user-entry": null }
+          : { "data-codex-plus-user-entry": "" });
         setVars();
         window.addEventListener(EVENT, setVars);
       },

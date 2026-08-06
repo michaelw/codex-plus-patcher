@@ -237,6 +237,36 @@
     return claimControl({ mode: "input", placeholder: options.placeholder, onSubmit: handler });
   }
 
+  function setStyle(element, name, value) {
+    if (name.startsWith("--") || name.includes("-")) element.style.setProperty(name, value);
+    else element.style[name] = value;
+  }
+
+  function syncSurface(element, props) {
+    if (!element) {
+      const documentObject = globalObject.document || (typeof document !== "undefined" ? document : null);
+      for (const surface of documentObject?.querySelectorAll?.("[data-codex-plus-composer-surface]") || []) {
+        syncSurface(surface, props);
+      }
+      return;
+    }
+    const next = globalObject.CodexPlus.ui.composer.surfaceProps(props) || {};
+    const previous = element.__codexPlusComposerSurfaceProps || {};
+    for (const name of Object.keys(previous)) {
+      if (name !== "style" && !(name in next)) element.removeAttribute(name);
+    }
+    for (const name of Object.keys(previous.style || {})) {
+      if (!(name in (next.style || {}))) setStyle(element, name, "");
+    }
+    for (const [name, value] of Object.entries(next)) {
+      if (name === "style") continue;
+      if (value == null || value === false) element.removeAttribute(name);
+      else element.setAttribute(name, value === true ? "" : String(value));
+    }
+    for (const [name, value] of Object.entries(next.style || {})) setStyle(element, name, value);
+    element.__codexPlusComposerSurfaceProps = next;
+  }
+
   globalObject.CodexPlus.ui.composer = {
     surfaceDecorators: [],
     claimControl,
@@ -246,13 +276,14 @@
       return fn;
     },
     refreshClaimedSurface: applyPlaceholder,
+    syncSurface,
     surfaceProps(props) {
       const decorated = applyDecorators(props, this.surfaceDecorators);
       const claimed = activeControl ? {
         "data-codex-plus-composer-claimed": "",
         "data-codex-plus-composer-mode": activeControl.mode,
       } : null;
-      return mergeDataAttributes(decorated, claimed);
+      return { "data-codex-plus-composer-surface": "", ...mergeDataAttributes(decorated, claimed) };
     },
   };
 })();

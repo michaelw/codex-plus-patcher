@@ -383,7 +383,7 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
     })()`);
     if (status.opened) {
       const fuzzyDomTimeoutMs = Math.max(3000, timeoutMs);
-      const fuzzyDom = await cdp.evaluate(`new Promise((resolve) => {
+      const fuzzySetup = await cdp.evaluate(`(() => {
         const visible = (element) => {
           if (!element) return false;
           const rect = element.getBoundingClientRect();
@@ -391,25 +391,20 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
         };
         const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-        const findInput = () => Array.from(document.querySelectorAll("input[placeholder='Search projects'], textarea[placeholder='Search projects']")).find(visible) ||
+        const input = Array.from(document.querySelectorAll("input[placeholder='Search projects'], textarea[placeholder='Search projects']")).find(visible) ||
           (document.activeElement?.getAttribute?.("placeholder") === "Search projects" && visible(document.activeElement) ? document.activeElement : null);
-        let input = null;
-        const inputStartedAt = Date.now();
-        const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
-        const inputWaitMs = Math.min(1000, timeoutMs);
-        const currentMenu = () => {
-          const candidates = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"));
-          return candidates.find((element) => visible(element) && element.contains(input)) ||
-            candidates.find(visible) ||
-            document.body;
-        };
+        if (!input) return { retryable: true };
+        const candidates = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"));
+        const menu = candidates.find((element) => visible(element) && element.contains(input)) || candidates.find(visible) || document.body;
         const collectLabels = () => {
-          const menu = currentMenu();
           const labels = [];
           const seen = new Set();
           const selectable = Array.from(menu.querySelectorAll("[role='menuitem'], [role='option'], button, a")).filter(visible);
-          const labelRoots = selectable.length > 0
-            ? selectable
+          const projectItems = selectable.filter((element) => element.matches("[role='menuitem'], [role='option']"));
+          const labelRoots = projectItems.length > 0
+            ? projectItems
+            : selectable.length > 0
+              ? selectable
             : Array.from(menu.querySelectorAll("div, span")).filter(visible);
           for (const element of labelRoots) {
             for (const line of String(element.innerText || element.textContent || "").split(/\\n/)) {
@@ -435,90 +430,137 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           const indexes = [0, Math.max(1, Math.floor((letters.length - 1) / 2)), letters.length - 1];
           return indexes.map((index) => letters[index]).join("");
         };
-        const runAudit = () => {
-          const labels = collectLabels();
-          const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
-          const query = queryFor(selectedLabel);
-          if (!selectedLabel || !query) {
-            const menu = currentMenu();
-            resolve({
-              codexVersion: window.CodexPlus?.config?.codexVersion || null,
-              suitableProjectFound: false,
-              queryLength: query.length,
-              visibleResultCount: labels.length,
-              selectedProjectStillVisible: false,
-              noProjectsFoundVisible: Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found")),
-              highlightCount: 0,
-            });
-            return;
+        const labels = collectLabels();
+        const selectedLabel = labels.find((label) => queryFor(label).length >= 3) || "";
+        const query = queryFor(selectedLabel);
+        const rect = input.getBoundingClientRect();
+        input.focus();
+        input.select?.();
+        return {
+          codexVersion: window.CodexPlus?.config?.codexVersion || null,
+          suitableProjectFound: Boolean(selectedLabel && query),
+          selectedLabel,
+          query,
+          visibleResultCount: labels.length,
+          inputRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        };
+      })()`);
+      if (fuzzySetup?.retryable) {
+        await dispatchShortcut();
+        await wait(100);
+        continue;
+      }
+      if (fuzzySetup?.suitableProjectFound) {
+        const inputX = fuzzySetup.inputRect.x + fuzzySetup.inputRect.width / 2;
+        const inputY = fuzzySetup.inputRect.y + fuzzySetup.inputRect.height / 2;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: inputX, y: inputY, button: "left", clickCount: 1 });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: inputX, y: inputY, button: "left", clickCount: 1 });
+        await cdp.send("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          key: "a",
+          code: "KeyA",
+          windowsVirtualKeyCode: 65,
+          nativeVirtualKeyCode: 0,
+          modifiers: 4,
+        });
+        await cdp.send("Input.dispatchKeyEvent", {
+          type: "keyUp",
+          key: "a",
+          code: "KeyA",
+          windowsVirtualKeyCode: 65,
+          nativeVirtualKeyCode: 0,
+          modifiers: 4,
+        });
+        for (const character of fuzzySetup.query) {
+          const upper = character.toUpperCase();
+          const windowsVirtualKeyCode = upper.charCodeAt(0);
+          await cdp.send("Input.dispatchKeyEvent", {
+            type: "keyDown",
+            key: character,
+            code: `Key${upper}`,
+            text: character,
+            unmodifiedText: character,
+            windowsVirtualKeyCode,
+            nativeVirtualKeyCode: 0,
+          });
+          await cdp.send("Input.dispatchKeyEvent", {
+            type: "keyUp",
+            key: character,
+            code: `Key${upper}`,
+            windowsVirtualKeyCode,
+            nativeVirtualKeyCode: 0,
+          });
+          await wait(50);
+        }
+      }
+      const fuzzyDom = await cdp.evaluate(`new Promise((resolve) => {
+        const visible = (element) => {
+          if (!element) return false;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        const query = ${JSON.stringify(fuzzySetup?.query || "")};
+        const selectedLabel = ${JSON.stringify(fuzzySetup?.selectedLabel || "")};
+        const timeoutMs = ${JSON.stringify(fuzzyDomTimeoutMs)};
+        const startedAt = Date.now();
+        const collectState = () => {
+          const input = Array.from(document.querySelectorAll("input[placeholder='Search projects'], textarea[placeholder='Search projects']")).find(visible) ||
+            (document.activeElement?.getAttribute?.("placeholder") === "Search projects" && visible(document.activeElement) ? document.activeElement : null);
+          const candidates = Array.from(document.querySelectorAll("[data-radix-menu-content], [data-radix-popper-content-wrapper], [role='menu']"));
+          const menu = candidates.find((element) => visible(element) && element.contains(input)) || candidates.find(visible) || document.body;
+          const labels = [];
+          const seen = new Set();
+          const selectable = Array.from(menu.querySelectorAll("[role='menuitem'], [role='option'], button, a")).filter(visible);
+          const projectItems = selectable.filter((element) => element.matches("[role='menuitem'], [role='option']"));
+          const labelRoots = projectItems.length > 0 ? projectItems : selectable;
+          for (const element of labelRoots) {
+            for (const line of String(element.innerText || element.textContent || "").split(/\\n/)) {
+              const label = normalize(line);
+              if (label && !seen.has(label)) {
+                seen.add(label);
+                labels.push(label);
+              }
+            }
           }
-          const valuePrototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-          const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
-          setter?.call(input, query);
-          input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: query, inputType: "insertText" }));
-          const startedAt = Date.now();
-          const fuzzyMatchesQuery = (label, query) => {
+          const fuzzyMatchesQuery = (label) => {
             const candidate = String(label || "").toLowerCase();
             let offset = 0;
-            for (const character of String(query || "").toLowerCase()) {
+            for (const character of query.toLowerCase()) {
               const match = candidate.indexOf(character, offset);
               if (match < 0) return false;
               offset = match + 1;
             }
             return true;
           };
-          const finishWhenReady = () => {
-            const menu = currentMenu();
-            const resultLabels = collectLabels();
-            const noProjectsFoundVisible = Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found"));
-            const selectedProjectStillVisible = resultLabels.some((label) => fuzzyMatchesQuery(label, query));
-            const highlightCount = Array.from(menu.querySelectorAll("strong")).filter(visible).length;
-            if (!selectedProjectStillVisible || highlightCount === 0) {
-              if (Date.now() - startedAt < timeoutMs) {
-                setTimeout(finishWhenReady, 100);
-                return;
-              }
-            }
-            resolve({
-              codexVersion: window.CodexPlus?.config?.codexVersion || null,
-              suitableProjectFound: true,
-              queryLength: query.length,
-              visibleResultCount: resultLabels.length,
-              selectedProjectStillVisible,
-              noProjectsFoundVisible,
-              highlightCount,
-            });
+          return {
+            input,
+            menu,
+            labels,
+            selectedProjectStillVisible: labels.some((label) => label === selectedLabel || fuzzyMatchesQuery(label)),
+            noProjectsFoundVisible: Boolean(Array.from(menu.querySelectorAll("*")).find((element) => visible(element) && normalize(element.textContent) === "No projects found")),
+            highlightCount: Array.from(menu.querySelectorAll("strong")).filter(visible).length,
           };
-          setTimeout(finishWhenReady, 100);
         };
-        const waitForInput = () => {
-          input = findInput();
-          if (!input) {
-            if (Date.now() - inputStartedAt < inputWaitMs) {
-              setTimeout(waitForInput, 100);
-              return;
-            }
-            resolve({
-              retryable: true,
-              codexVersion: window.CodexPlus?.config?.codexVersion || null,
-              suitableProjectFound: false,
-              queryLength: 0,
-              visibleResultCount: 0,
-              selectedProjectStillVisible: false,
-              noProjectsFoundVisible: false,
-              highlightCount: 0,
-            });
+        const finishWhenReady = () => {
+          const state = collectState();
+          if ((!state.selectedProjectStillVisible || state.highlightCount === 0) && Date.now() - startedAt < timeoutMs) {
+            setTimeout(finishWhenReady, 100);
             return;
           }
-          runAudit();
+          resolve({
+            codexVersion: ${JSON.stringify(fuzzySetup?.codexVersion || null)},
+            suitableProjectFound: ${JSON.stringify(Boolean(fuzzySetup?.suitableProjectFound))},
+            queryLength: query.length,
+            visibleResultCount: state.labels.length,
+            selectedProjectStillVisible: state.selectedProjectStillVisible,
+            noProjectsFoundVisible: state.noProjectsFoundVisible,
+            highlightCount: state.highlightCount,
+          });
         };
-        waitForInput();
+        finishWhenReady();
       })`);
-      if (fuzzyDom?.retryable) {
-        await dispatchShortcut();
-        await wait(100);
-        continue;
-      }
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
       const versionParts = String(fuzzyDom?.codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -692,6 +734,7 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
 }
 
 async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeActivate = null, wait = delay, timeoutMs = 10000 } = {}) {
+  const sidebarBlurQuery = "Toggle sidebar blur";
   await cdp.evaluate(`(() => {
     document.documentElement.removeAttribute("data-codex-plus-sidebar-names-blurred");
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }));
@@ -715,11 +758,14 @@ async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeAct
             element.getAttribute("aria-label"),
             element.textContent,
           ].filter(Boolean).join(" "))));
+        const inputBounds = input?.getBoundingClientRect?.();
         return {
-          opened: Boolean(dialog || input),
+          opened: Boolean(input),
           activeTag: document.activeElement?.tagName || "",
           activePlaceholder: document.activeElement?.getAttribute?.("placeholder") || "",
           inputPlaceholder: input?.getAttribute?.("placeholder") || "",
+          inputValue: input ? String("value" in input ? input.value : input.textContent || "") : "",
+          inputRect: inputBounds ? { x: inputBounds.left + inputBounds.width / 2, y: inputBounds.top + inputBounds.height / 2 } : null,
         };
       })()`);
       if (status?.opened) return status;
@@ -728,7 +774,7 @@ async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeAct
     return status;
   };
 
-  await cdp.evaluate(`window.postMessage({ type: "command-menu", query: "Toggle sidebar blur" }, "*")`);
+  await cdp.evaluate(`window.postMessage({ type: "command-menu", query: ${JSON.stringify(sidebarBlurQuery)} }, "*")`);
   let opened = await waitForPalette();
 
   const shortcuts = [
@@ -747,7 +793,18 @@ async function verifySidebarBlurCommandPalette(cdp, { activate = true, beforeAct
   if (typeof cdp.send !== "function") {
     return { ok: false, ...opened, message: "Command palette input could not be driven with trusted text events" };
   }
-  await cdp.send("Input.insertText", { text: "Toggle sidebar blur" });
+  const paletteQuery = String(opened.inputValue || "").replace(/\s+/g, " ").trim();
+  if (paletteQuery && paletteQuery !== sidebarBlurQuery) {
+    return { ok: false, ...opened, message: `Command palette opened with an unexpected query: ${JSON.stringify(paletteQuery)}` };
+  }
+  if (!paletteQuery) {
+    if (!opened.inputRect) {
+      return { ok: false, ...opened, message: "Command palette input had no usable bounds" };
+    }
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...opened.inputRect, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...opened.inputRect, button: "left", clickCount: 1 });
+    await cdp.send("Input.insertText", { text: sidebarBlurQuery });
+  }
 
   const selected = await cdp.evaluate(`new Promise((resolve) => {
     const visible = (element) => {
@@ -2103,6 +2160,7 @@ function formatAuditJson(result) {
 }
 
 function compactAuditSummary(result) {
+  const projectColors = result?.pluginResults?.projectColors || null;
   return {
     ok: Boolean(result?.ok),
     failures: result?.failures || [],
@@ -2115,6 +2173,13 @@ function compactAuditSummary(result) {
     runtimeStatus: result?.runtimeStatus || null,
     appShellStatus: result?.appShellStatus || null,
     cleanupResult: result?.cleanupResult || null,
+    newChatComposer: projectColors ? {
+      newChatNeutral: projectColors.newChatNeutral ?? null,
+      initialNoProjectComposer: projectColors.initialNoProjectComposer || null,
+      projectComposerTransitions: projectColors.projectComposerTransitions || [],
+      noProjectComposer: projectColors.noProjectComposer || null,
+      restoredExistingComposer: projectColors.restoredExistingComposer || null,
+    } : null,
     plugins: Object.fromEntries(Object.entries(result?.pluginResults || {}).map(([name, value]) => [
       name,
       {
@@ -2493,6 +2558,191 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
   return filePath;
 }
 
+async function captureNewChatComposerProof(cdp, {
+  artifactDir,
+  codexVersion,
+  fsImpl = fs,
+  wait = delay,
+  timeoutMs = 30000,
+} = {}) {
+  const versionAtLeast = (minimum) => {
+    const left = String(codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+    const right = String(minimum).split(".").map((part) => Number.parseInt(part, 10) || 0);
+    for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+      if ((left[index] || 0) > (right[index] || 0)) return true;
+      if ((left[index] || 0) < (right[index] || 0)) return false;
+    }
+    return true;
+  };
+  if (!versionAtLeast("26.707.51957")) {
+    return { ok: true, supported: false, reason: "new-chat-navigation-unavailable", screenshots: {} };
+  }
+  if (!artifactDir) throw new Error("New Chat composer proof artifactDir is required");
+  const click = async (point) => {
+    if (!point) throw new Error("New Chat composer proof target was not visible");
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, button: "none" });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+  };
+  const pointFor = async (kind, label = "") => cdp.evaluate(`((kind, label) => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    let target = null;
+    if (kind === "projectless-row") {
+      target = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
+        .find((element) => visible(element) &&
+          (element.getAttribute("data-app-action-sidebar-thread-title") === "Fixture: no project chat 1" ||
+            normalize(element.textContent).includes("Fixture: no project chat 1")));
+      target?.scrollIntoView({ block: "center" });
+    } else if (kind === "new-chat") {
+      target = Array.from(document.querySelectorAll("button,[role='button'],a"))
+        .find((element) => {
+          const text = normalize(element.innerText || element.textContent);
+          const aria = normalize(element.getAttribute?.("aria-label"));
+          return visible(element) && !aria.startsWith("Start new chat in ") && (text.startsWith("New chat") || text.startsWith("New task"));
+        });
+    } else if (kind === "project-new-chat") {
+      target = Array.from(document.querySelectorAll("button[aria-label^='Start new chat in ']"))
+        .find((element) => visible(element) && element.getAttribute("aria-label").replace(/^Start new chat in\\s*/, "").trim() === label);
+    } else if (kind === "project-selector-trigger") {
+      target = Array.from(document.querySelectorAll("[data-codex-plus-project-selector-trigger]"))
+        .find(visible) || Array.from(document.querySelectorAll("button,[role='button']"))
+        .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "Choose project");
+    } else if (kind === "no-project-option") {
+      target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
+        .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "Don\\u0027t work in a project");
+    } else if (kind === "project-option") {
+      target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option']"))
+        .find((element) => visible(element) && normalize(element.innerText || element.textContent) === label);
+    }
+    const rect = target?.getBoundingClientRect?.();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+  })(${JSON.stringify(kind)}, ${JSON.stringify(label)})`);
+  const readState = () => cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const markedSurface = Array.from(document.querySelectorAll("[data-codex-plus-composer-surface]")) .find(visible) ||
+      Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible) || null;
+    const editor = Array.from(document.querySelectorAll("[data-codex-composer], [contenteditable='true'], textarea, [role='textbox']"))
+      .find((candidate) => visible(candidate) && candidate.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome")) || null;
+    const surface = markedSurface || editor?.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome") || null;
+    const computed = surface ? getComputedStyle(surface) : null;
+    const boxShadow = computed?.boxShadow || "";
+    const railShadow = boxShadow.match(/((?:rgba?|color)\\([^)]*\\)|#[0-9a-f]+)\\s+6px\\s+0px\\s+0px\\s+0px\\s+inset/i);
+    const normalizeCssColor = (value) => {
+      if (!value || !document.body) return "";
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.body.appendChild(probe);
+      const normalized = getComputedStyle(probe).color;
+      probe.remove();
+      return normalized;
+    };
+    const accent = computed?.getPropertyValue("--codex-plus-project-accent").trim() || "";
+    return {
+      mounted: Boolean(surface),
+      userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
+      projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
+      projectKey: surface?.getAttribute("data-codex-plus-project-key") || "",
+      accent,
+      accentColor: normalizeCssColor(accent),
+      background: computed?.backgroundColor || "",
+      boxShadow,
+      railWidth: railShadow ? 6 : 0,
+      railColor: normalizeCssColor(railShadow?.[1] || ""),
+    };
+  })()`);
+  const waitForState = async (predicate) => {
+    const deadline = Date.now() + timeoutMs;
+    let status = null;
+    while (Date.now() < deadline) {
+      status = await readState();
+      if (predicate(status)) return status;
+      await wait(250);
+    }
+    throw new Error(`Timed out waiting for New Chat composer proof state: ${JSON.stringify(status)}`);
+  };
+
+  if (!versionAtLeast("26.715")) {
+    await click(await pointFor("projectless-row"));
+    await wait(250);
+  }
+  await click(await pointFor("new-chat"));
+  let neutral = await waitForState((status) => status.mounted && !status.userEntryMarked);
+  if (versionAtLeast("26.715") && (neutral.projectMarked || neutral.accent || neutral.railWidth !== 0)) {
+    const triggerDeadline = Date.now() + Math.min(timeoutMs, 10000);
+    let trigger = null;
+    while (!trigger && Date.now() < triggerDeadline) {
+      trigger = await pointFor("project-selector-trigger");
+      if (!trigger) await wait(100);
+    }
+    if (!trigger) throw new Error("New Chat project selector trigger was not visible");
+    await click(trigger);
+    const optionDeadline = Date.now() + Math.min(timeoutMs, 10000);
+    let option = null;
+    while (!option && Date.now() < optionDeadline) {
+      option = await pointFor("no-project-option");
+      if (!option) await wait(100);
+    }
+    if (!option) throw new Error("New Chat project selector did not show the no-project option");
+    await click(option);
+  }
+  neutral = await waitForState((status) => status.mounted && !status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
+  const screenshots = {
+    noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
+  };
+  if (!versionAtLeast("26.715")) {
+    return { ok: true, supported: true, neutral, projects: [], screenshots };
+  }
+  const targets = await cdp.evaluate(`(() => Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
+    .map((row) => ({
+      label: row.getAttribute("data-app-action-sidebar-project-label"),
+      accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
+    }))
+    .filter((target, index, targets) => target.accent && targets.findIndex((candidate) => candidate.accent === target.accent) === index)
+    .slice(0, 2))()`);
+  const projects = [];
+  if (versionAtLeast("26.715") && targets.length < 2) {
+    throw new Error(`Expected two project New Chat screenshot targets: ${JSON.stringify(targets)}`);
+  }
+  for (const [index, target] of targets.entries()) {
+    const previous = projects.at(-1)?.status || neutral;
+    await click(await pointFor("project-selector-trigger"));
+    const projectOptionDeadline = Date.now() + Math.min(timeoutMs, 10000);
+    let projectOption = null;
+    while (!projectOption && Date.now() < projectOptionDeadline) {
+      projectOption = await pointFor("project-option", target.label);
+      if (!projectOption) await wait(100);
+    }
+    if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
+    await click(projectOption);
+    const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent);
+    const sidebar = await cdp.evaluate(`((projectKey) => {
+      const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-codex-plus-project-key]"))
+        .find((candidate) => candidate.getAttribute("data-codex-plus-project-key") === projectKey);
+      return row ? {
+        label: row.getAttribute("data-app-action-sidebar-project-label") || "",
+        projectKey,
+        accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
+      } : null;
+    })(${JSON.stringify(status.projectKey)})`);
+    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || status.userEntryMarked) {
+      throw new Error(`Project New Chat screenshot state is invalid: ${JSON.stringify({ target, sidebar, previous, neutral, status })}`);
+    }
+    const key = `project${index + 1}`;
+    screenshots[key] = await capturePng(cdp, path.join(artifactDir, `new-chat-project-${index + 1}.png`), { fsImpl });
+    projects.push({ requested: target, sidebar, status });
+  }
+  return { ok: true, supported: true, neutral, projects, screenshots };
+}
+
 async function verifyTerminalUnicodeCursor(cdp, {
   artifactDir = null,
   fsImpl = fs,
@@ -2832,6 +3082,7 @@ async function captureVisualContract(cdp, {
   waitReviewFixture = waitForReviewFixtureDiffText,
   verifyCommand = verifySidebarBlurCommandPalette,
   preparedCommand = null,
+  captureNewChat = captureNewChatComposerProof,
 } = {}) {
   if (!artifactDir) throw new Error("visual contract artifactDir is required");
   fsImpl.mkdirSync(artifactDir, { recursive: true });
@@ -2840,6 +3091,15 @@ async function captureVisualContract(cdp, {
     screenshots.terminalUnicode11 = result.terminalUnicodeCursor.screenshot;
   }
   const shellState = await activateFixture(cdp, { wait });
+  const isChatGpt = String(result?.applyResult?.patchSet || "").startsWith("chatgpt-");
+  const newChatComposer = isChatGpt ? await captureNewChat(cdp, {
+    artifactDir,
+    codexVersion: result?.applyResult?.codexVersion,
+    fsImpl,
+    wait,
+  }) : null;
+  if (newChatComposer?.screenshots) Object.assign(screenshots, newChatComposer.screenshots);
+  if (newChatComposer?.supported) await activateFixture(cdp, { wait });
   await wait(2000);
   const sidebarNeedsInput = await verifySidebarStatus(cdp);
   screenshots.sidebarNeedsInput = await capturePng(cdp, path.join(artifactDir, "sidebar-needs-input.png"), { fsImpl });
@@ -2887,6 +3147,7 @@ async function captureVisualContract(cdp, {
     bundleVersion: result?.applyResult?.bundleVersion || null,
     sidebarNeedsInput,
     composerPill,
+    newChatComposer,
     shell,
     review: {
       ...review.review,
@@ -2905,7 +3166,7 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || newChatComposer?.ok === false || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
     contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, sidebarNeedsInput, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
@@ -3369,50 +3630,38 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       return rows;
     };
     const mountedComposerElements = () => {
-      const markedSurface = visibleElements("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")[0] || null;
+      const markedSurface = visibleElements("[data-codex-plus-composer-surface]")[0] ||
+        visibleElements("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")[0] || null;
       const editor = visibleElements("[data-codex-composer], [contenteditable='true'], textarea, [role='textbox']")
-        .find((candidate) => candidate.closest("[data-codex-plus-user-entry], .composer-surface-chrome")) || null;
-      const surface = markedSurface || editor?.closest("[data-codex-plus-user-entry], .composer-surface-chrome") || null;
+        .find((candidate) => candidate.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome")) || null;
+      const surface = markedSurface || editor?.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome") || null;
       return { editor: editor || surface, surface };
     };
-    const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 30000) => {
-      const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < timeoutMs) {
-        const { surface } = mountedComposerElements();
-        if (surface) {
-          const computed = getComputedStyle(surface);
-          const surfaceAccent = computed.getPropertyValue("--codex-plus-project-accent").trim();
-          const cornerRadii = [
-            computed.borderTopLeftRadius,
-            computed.borderTopRightRadius,
-            computed.borderBottomRightRadius,
-            computed.borderBottomLeftRadius,
-          ].map((value) => parseFloat(value) || 0);
-          if (
-            surface.hasAttribute("data-codex-plus-user-entry") &&
-            surface.hasAttribute("data-codex-plus-project-color") &&
-            (expected.length === 0 || expected.includes(surfaceAccent)) &&
-            computed.boxShadow !== "none"
-          ) {
-            return {
-              marked: true,
-              projectMarked: true,
-              accent: surfaceAccent,
-              boxShadow: computed.boxShadow,
-              cornerRadii,
-            };
-          }
-        }
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
+    const mountedComposerStatus = () => {
       const { surface } = mountedComposerElements();
       const computed = surface ? getComputedStyle(surface) : null;
+      const boxShadow = computed?.boxShadow || "";
+      const railShadow = boxShadow.match(/((?:rgba?|color)\([^)]*\)|#[0-9a-f]+)\s+6px\s+0px\s+0px\s+0px\s+inset/i);
+      const normalizeCssColor = (value) => {
+        if (!value || !document.body) return "";
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        document.body.appendChild(probe);
+        const normalized = getComputedStyle(probe).color;
+        probe.remove();
+        return normalized;
+      };
+      const accent = computed?.getPropertyValue("--codex-plus-project-accent").trim() || "";
       return {
-        marked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
+        mounted: Boolean(surface),
+        userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
         projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
-        accent: computed?.getPropertyValue("--codex-plus-project-accent").trim() || "",
-        boxShadow: computed?.boxShadow || "",
+        accent,
+        accentColor: normalizeCssColor(accent),
+        background: computed?.backgroundColor || "",
+        boxShadow,
+        railWidth: railShadow ? 6 : 0,
+        railColor: normalizeCssColor(railShadow?.[1] || ""),
         cornerRadii: computed ? [
           computed.borderTopLeftRadius,
           computed.borderTopRightRadius,
@@ -3420,6 +3669,43 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           computed.borderBottomLeftRadius,
         ].map((value) => parseFloat(value) || 0) : [],
       };
+    };
+    const waitForMountedProjectComposer = async (expectedAccents, timeoutMs = 30000) => {
+      const expected = Array.isArray(expectedAccents) ? expectedAccents : [expectedAccents].filter(Boolean);
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const status = mountedComposerStatus();
+        if (status.mounted) {
+          if (
+            status.projectMarked &&
+            !status.userEntryMarked &&
+            (expected.length === 0 || expected.includes(status.accent)) &&
+            status.boxShadow !== "none"
+          ) {
+            return status;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return mountedComposerStatus();
+    };
+    const waitForNeutralNewChatComposer = async (timeoutMs = 30000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const status = mountedComposerStatus();
+        if (status.mounted && !status.userEntryMarked && !status.projectMarked && !status.accent) return status;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return mountedComposerStatus();
+    };
+    const waitForExistingComposer = async (timeoutMs = 30000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const status = mountedComposerStatus();
+        if (status.mounted && status.userEntryMarked) return status;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return mountedComposerStatus();
     };
     const rgb = (value) => {
       const text = String(value || "");
@@ -4069,25 +4355,98 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           projectThread.click();
         }
       }
-      const projectNewChatButton = visibleElements("button[aria-label^='Start new chat in ']")[0];
-      if (projectNewChatButton) {
-        const label = projectNewChatButton.getAttribute("aria-label").replace(/^Start new chat in\s*/, "").trim();
-        const projectRow = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
-          .find((row) => row.getAttribute("data-app-action-sidebar-project-label") === label);
-        if (projectRow) selectedProjectAccent = getComputedStyle(projectRow).getPropertyValue("--codex-plus-project-accent").trim();
-        projectNewChatButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-        projectNewChatButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-        projectNewChatButton.click();
+      const findNoProjectNewChatButton = () => visibleElements("button,[role='button'],a")
+        .find((button) => {
+          const text = normalize(button.innerText || button.textContent);
+          const ariaLabel = normalize(button.getAttribute?.("aria-label"));
+          return !ariaLabel.startsWith("Start new chat in ") && (text.startsWith("New chat") || text.startsWith("New task"));
+        });
+      const chatGptFamily = window.CodexPlus?.config?.sourceFamily === "chatgpt";
+      const versionParts = String(window.CodexPlus?.config?.codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+      const versionAtLeast = (...minimum) => {
+        for (let index = 0; index < minimum.length; index += 1) {
+          if ((versionParts[index] || 0) > minimum[index]) return true;
+          if ((versionParts[index] || 0) < minimum[index]) return false;
+        }
+        return true;
+      };
+      const requiresNoProjectNewChatProof = chatGptFamily && versionAtLeast(26, 707, 51957);
+      const requiresProjectComposerTransitions = chatGptFamily && versionAtLeast(26, 715);
+      const initialNoProjectNewChatButton = findNoProjectNewChatButton();
+      let initialNoProjectComposer = null;
+      if (projectlessChatRow && initialNoProjectNewChatButton) {
+        dispatchPointerClick(projectlessChatRow);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const currentNoProjectNewChatButton = findNoProjectNewChatButton();
+        if (currentNoProjectNewChatButton) dispatchPointerClick(currentNoProjectNewChatButton);
+        initialNoProjectComposer = await waitForNeutralNewChatComposer();
       }
-      const expectedComposerAccents = Array.from(new Set([selectedProjectAccent, ...liveAccents])).filter(Boolean);
-      if (expectedComposerAccents.length > 0) mountedComposer = await waitForMountedProjectComposer(expectedComposerAccents);
+      const initialNewChatNeutral = Boolean(initialNoProjectComposer?.mounted &&
+        !initialNoProjectComposer.userEntryMarked &&
+        !initialNoProjectComposer.projectMarked &&
+        !initialNoProjectComposer.accent &&
+        initialNoProjectComposer.railWidth === 0);
+      if (requiresNoProjectNewChatProof && !initialNewChatNeutral) {
+        throw new Error(`Could not establish a neutral New Chat composer before project transitions: ${JSON.stringify(initialNoProjectComposer)}`);
+      }
+      if (chatGptFamily && !requiresNoProjectNewChatProof && !initialNewChatNeutral) {
+        warn(
+          "projectColors",
+          "new-chat-navigation-unavailable",
+          "This older ChatGPT source did not expose an auditable New Chat navigation path",
+          { codexVersion: window.CodexPlus?.config?.codexVersion || null, initialNoProjectComposer },
+        );
+      }
+      const projectNewChatTargets = visibleElements("button[aria-label^='Start new chat in ']")
+        .map((button) => {
+          const label = button.getAttribute("aria-label").replace(/^Start new chat in\s*/, "").trim();
+          const projectRow = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
+            .find((row) => row.getAttribute("data-app-action-sidebar-project-label") === label);
+          const projectAccent = projectRow
+            ? getComputedStyle(projectRow).getPropertyValue("--codex-plus-project-accent").trim()
+            : "";
+          return { label, projectAccent };
+        })
+        .filter((target, index, targets) => target.projectAccent &&
+          target.projectAccent !== selectedProjectAccent &&
+          targets.findIndex((candidate) => candidate.projectAccent === target.projectAccent) === index)
+        .slice(0, 2);
+      const projectComposerTransitions = [];
+      for (const target of projectNewChatTargets) {
+        const button = visibleElements("button[aria-label^='Start new chat in ']")
+          .find((candidate) => candidate.getAttribute("aria-label").replace(/^Start new chat in\s*/, "").trim() === target.label);
+        if (!button) throw new Error(`Project New Chat button disappeared before selection: ${target.label}`);
+        dispatchPointerClick(button);
+        const observed = await waitForMountedProjectComposer([target.projectAccent]);
+        projectComposerTransitions.push({ ...target, observed });
+        if (!observed.projectMarked ||
+          observed.accent !== target.projectAccent ||
+          observed.userEntryMarked ||
+          observed.background !== initialNoProjectComposer.background ||
+          observed.railWidth !== 6 ||
+          observed.railColor !== observed.accentColor) {
+          throw new Error(`Project New Chat composer did not switch to the selected project rail on a neutral surface: ${JSON.stringify(projectComposerTransitions)}`);
+        }
+      }
+      mountedComposer = projectComposerTransitions.at(-1)?.observed ?? null;
+      const noProjectComposer = initialNoProjectComposer;
+      const newChatNeutral = Boolean(noProjectComposer?.mounted &&
+        !noProjectComposer.userEntryMarked &&
+        !noProjectComposer.projectMarked &&
+        !noProjectComposer.accent &&
+        noProjectComposer.railWidth === 0);
       if (!accent) throw new Error("Project accent was not computed");
       if (!matchingProps) throw new Error("Project, thread, bubble, and composer props do not share an accent");
-      const chatGptFamily = window.CodexPlus?.config?.sourceFamily === "chatgpt";
       const minimumProjectRows = chatGptFamily ? 6 : 10;
       const minimumProjectAccents = chatGptFamily ? 4 : 6;
       if (liveProjectRows.length < minimumProjectRows) throw new Error(`Expected at least ${minimumProjectRows} styled project rows, found ${liveProjectRows.length}`);
       if (new Set(liveProjectAccents).size < minimumProjectAccents) throw new Error(`Expected at least ${minimumProjectAccents} distinct project accents, found ${new Set(liveProjectAccents).size}`);
+      if (requiresProjectComposerTransitions && projectComposerTransitions.length < 2) {
+        throw new Error(`Expected two distinct project New Chat composer transitions: ${JSON.stringify(projectNewChatTargets)}`);
+      }
+      if (requiresNoProjectNewChatProof && !newChatNeutral) {
+        throw new Error(`No-project New Chat composer retained user or project coloring: ${JSON.stringify(noProjectComposer)}`);
+      }
       if (!projectlessChat?.marked || !projectlessChat?.accent || isTransparentColor(projectlessChat?.background)) {
         const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map(rowTitle).slice(0, 12);
         throw new Error(`Projectless chat row is not styled: ${JSON.stringify({ projectlessChat, rowTitles })}`);
@@ -4107,8 +4466,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!sidebarStatusPill.mounted || Number(sidebarStatusPill.opacity) < 0.99 || Number(sidebarStatusPill.textOpacity) < 0.99 || sidebarStatusPill.contrast == null || sidebarStatusPill.contrast < 4.5) {
         throw new Error(`Sidebar Needs input pill is unreadable: ${JSON.stringify(sidebarStatusPill)}`);
       }
-      const composerObserved = Boolean(mountedComposer?.marked || mountedComposer?.projectMarked || mountedComposer?.accent || mountedComposer?.boxShadow);
-      if (composerObserved && (!mountedComposer?.marked || !mountedComposer?.projectMarked || !expectedComposerAccents.includes(mountedComposer?.accent))) {
+      const composerObserved = Boolean(mountedComposer?.projectMarked || mountedComposer?.accent || mountedComposer?.boxShadow);
+      if (composerObserved && (!mountedComposer?.projectMarked || mountedComposer?.userEntryMarked)) {
         throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
       }
       if (composerObserved && mountedComposer.cornerRadii.some((radius) => radius <= 0)) {
@@ -4121,6 +4480,13 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           "Project composer was not mounted during the in-page project color probe",
           mountedComposer,
         );
+      }
+      const restoreThreadRow = visibleElements("[data-app-action-sidebar-thread-row]")
+        .find((row) => rowTitle(row) === projectlessChat.title);
+      if (restoreThreadRow) dispatchPointerClick(restoreThreadRow);
+      const restoredExistingComposer = await waitForExistingComposer();
+      if (!restoredExistingComposer.userEntryMarked) {
+        throw new Error(`Could not restore an existing-thread composer after New Chat proof: ${JSON.stringify(restoredExistingComposer)}`);
       }
       pass("projectColors", {
         ...details,
@@ -4138,6 +4504,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         projectChildRowsAvailable: projectThreadRowCount > 0,
         sidebarStatusPill,
         mountedComposer,
+        initialNoProjectComposer,
+        projectComposerTransitions,
+        newChatNeutral,
+        noProjectComposer,
+        restoredExistingComposer,
       });
     } catch (error) {
       fail("projectColors", error);
@@ -5989,6 +6360,7 @@ module.exports = {
   checkKeepOpenAppStability,
   closeActiveVirtualRoute,
   captureVisualContract,
+  captureNewChatComposerProof,
   createAuditProgress,
   createJsonlProgress,
   DEFAULT_PORT,
