@@ -3757,6 +3757,17 @@ test("visual contract writes screenshots and compact readbacks", async () => {
   }
 });
 
+test("visual contract treats the fenced-code language control as a 26.730 capability", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf("async function verifyComposerVerbatimContrast");
+  const end = source.indexOf("async function verifySidebarStatusPillContrast", start);
+  const verifier = source.slice(start, end);
+
+  assert.match(verifier, /versionAtLeast\(codexVersion, "26\.730"\)/);
+  assert.match(verifier, /supported: supportsVerbatimLanguageControl/);
+  assert.match(source, /composerVerbatim\?\.supported !== false/);
+});
+
 test("visual contract rejects Review screenshots while diff cards are still loading", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-review-loading-"));
   try {
@@ -3940,7 +3951,7 @@ test("visual contract waits for fixture diff text immediately before capturing R
     });
 
     assert.equal(contract.ok, true);
-    assert.deepEqual(events.slice(0, 6), ["capture", "capture", "capture", "verify", "fixture-text", "capture"]);
+    assert.deepEqual(events.slice(0, 7), ["capture", "capture", "capture", "capture", "verify", "fixture-text", "capture"]);
     assert.deepEqual(contract.review.fixtureDiffText, {
       ok: true,
       plusTomlVisible: true,
