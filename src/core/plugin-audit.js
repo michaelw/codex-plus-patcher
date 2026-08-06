@@ -3008,6 +3008,88 @@ async function verifyComposerPillContrast(cdp) {
   })()`);
 }
 
+async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion = "" } = {}) {
+  const versionAtLeast = (version, minimum) => {
+    const left = String(version || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+    const right = String(minimum || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+    for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+      if ((left[index] || 0) > (right[index] || 0)) return true;
+      if ((left[index] || 0) < (right[index] || 0)) return false;
+    }
+    return true;
+  };
+  const supportsVerbatimLanguageControl = versionAtLeast(codexVersion, "26.730");
+  if (!supportsVerbatimLanguageControl) {
+    return { ok: true, supported: false, reason: "composer-verbatim-language-control-unavailable" };
+  }
+  const editorPoint = await cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
+    const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
+    const rect = editor?.getBoundingClientRect?.();
+    return rect ? { x: rect.left + Math.min(rect.width / 2, 24), y: rect.top + Math.min(rect.height / 2, 18) } : null;
+  })()`);
+  if (!editorPoint) return { ok: false, message: "Visible composer editor was not found" };
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...editorPoint, button: "none" });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...editorPoint, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...editorPoint, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  await cdp.send("Input.insertText", { text: "```" });
+  await wait(500);
+  const details = await cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const rgb = (value) => {
+      const match = String(value || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => { const normalized = value / 255; return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4); };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
+    const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
+    const control = Array.from(surface?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || [])
+      .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "None");
+    const surfaceStyle = surface ? getComputedStyle(surface) : null;
+    const controlStyle = control ? getComputedStyle(control) : null;
+    const textTarget = Array.from(control?.querySelectorAll?.("span,*") || []).find((element) => normalize(element.textContent) === "None") || control;
+    const textStyle = textTarget ? getComputedStyle(textTarget) : null;
+    const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
+    const fg = luminance(rgb(foreground));
+    const bg = luminance(rgb(controlStyle?.backgroundColor));
+    const contrast = fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    const details = {
+      surfaceMounted: Boolean(surface),
+      editorMounted: Boolean(editor),
+      controlMounted: Boolean(control),
+      surfaceBackground: surfaceStyle?.backgroundColor || "",
+      controlBackground: controlStyle?.backgroundColor || "",
+      foreground: foreground || "",
+      contrast,
+      controlTag: control?.tagName || "",
+      controlRole: control?.getAttribute?.("role") || "",
+      controlClassName: control?.className || "",
+      controlHtml: control?.outerHTML?.slice(0, 1200) || "",
+      parentHtml: control?.parentElement?.outerHTML?.slice(0, 2000) || "",
+    };
+    return { ok: details.controlMounted && details.controlBackground === details.surfaceBackground && details.contrast != null && details.contrast >= 4.5, ...details };
+  })()`);
+  return { supported: supportsVerbatimLanguageControl, ...details };
+}
+
 async function verifySidebarStatusPillContrast(cdp) {
   return cdp.evaluate(`(() => {
     const visible = (element) => {
@@ -3077,6 +3159,7 @@ async function captureVisualContract(cdp, {
   wait = delay,
   activateFixture = activateFixtureThread,
   verifyComposer = verifyComposerPillContrast,
+  verifyComposerVerbatim = verifyComposerVerbatimContrast,
   verifySidebarStatus = verifySidebarStatusPillContrast,
   verifyReview = verifyReviewPanelRender,
   waitReviewFixture = waitForReviewFixtureDiffText,
@@ -3092,6 +3175,12 @@ async function captureVisualContract(cdp, {
   }
   const shellState = await activateFixture(cdp, { wait });
   const isChatGpt = String(result?.applyResult?.patchSet || "").startsWith("chatgpt-");
+  const composerVerbatim = isChatGpt ? await verifyComposerVerbatim(cdp, {
+    wait,
+    codexVersion: result?.applyResult?.codexVersion,
+  }) : null;
+  if (composerVerbatim?.supported !== false) screenshots.composerVerbatim = await capturePng(cdp, path.join(artifactDir, "composer-verbatim.png"), { fsImpl });
+  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control is unreadable: ${JSON.stringify(composerVerbatim)}`);
   const newChatComposer = isChatGpt ? await captureNewChat(cdp, {
     artifactDir,
     codexVersion: result?.applyResult?.codexVersion,
@@ -3147,6 +3236,7 @@ async function captureVisualContract(cdp, {
     bundleVersion: result?.applyResult?.bundleVersion || null,
     sidebarNeedsInput,
     composerPill,
+    composerVerbatim,
     newChatComposer,
     shell,
     review: {
@@ -3166,9 +3256,9 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || newChatComposer?.ok === false || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || composerVerbatim?.ok === false || newChatComposer?.ok === false || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
-    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, sidebarNeedsInput, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
+    contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, composerVerbatim, sidebarNeedsInput, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
   writeJsonFile(path.join(artifactDir, "contract.json"), contract, { fsImpl });
   writeJsonFile(path.join(artifactDir, "audit-summary.json"), compactAuditSummary(result), { fsImpl });

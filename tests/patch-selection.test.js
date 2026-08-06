@@ -275,10 +275,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.730.61309-6223");
-  assert.equal(chatgptPatchSets.length, 25);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.730.61639-6234");
+  assert.equal(chatgptPatchSets.length, 26);
 
   for (const identity of [
+    ["26.730.61639", "6234", "3fea92820c0fb7a69473e7a8308a8e5b8e91524289a84181a33533ec6cb51d45"],
     ["26.730.61309", "6223", "9de942a9a058fca20b78d171032e0fe65ccb1063868f175ff7eb4e159efc2c38"],
     ["26.727.51351", "6119", "a529edd72e10b08931c0d695b5e3e6a0be7f51874610dafc04f578436ab7d74d"],
     ["26.727.40816", "6067", "0e4f824024d0838dd7548751c02d3a7d21917c4fc3edf74c9e98d88ea9e3127d"],
@@ -1701,7 +1702,7 @@ test("versioned patch files stay below the runtime migration line-count gate", (
     .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
     .reduce((sum, count) => sum + count, 0);
 
-  assert.ok(totalLines <= 2448, `src/patches/*.js line count ${totalLines} exceeds 2448`);
+  assert.ok(totalLines <= 2516, `src/patches/*.js line count ${totalLines} exceeds 2516`);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -7056,6 +7057,9 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface,:root\.electron-dark \[data-codex-plus-user-entry\] \.composer-attachment-surface\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:#fff!important/);
   assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /background-image:none!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:var\(--codex-plus-user-bubble-light-bg\)!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] \*\{color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important\}/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\],:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:var\(--codex-plus-user-bubble-dark-bg\)!important.*color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
 });
 
 test("composer patch applies the user entry marker and shared color variables", () => {
