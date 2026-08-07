@@ -1078,6 +1078,9 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /neutral\.occludingDescendants\.length > 0/);
   assert.match(source, /status\.occludingDescendants\.length > 0/);
   assert.match(source, /New Chat composer color is covered by a differently colored child surface/);
+  assert.match(source, /borderRadii/);
+  assert.match(source, /New Chat composer does not preserve rounded upstream corners/);
+  assert.match(source, /Project New Chat composer radius differs from the no-project composer/);
   assert.match(source, /Choose project/);
   assert.match(source, /kind === "project-option"/);
   assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);

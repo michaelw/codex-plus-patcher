@@ -2681,6 +2681,12 @@ async function captureNewChatComposerProof(cdp, {
       accent,
       accentColor: normalizeCssColor(accent),
       background: surfaceBackground,
+      borderRadii: {
+        topLeft: computed?.borderTopLeftRadius || "",
+        topRight: computed?.borderTopRightRadius || "",
+        bottomRight: computed?.borderBottomRightRadius || "",
+        bottomLeft: computed?.borderBottomLeftRadius || "",
+      },
       occludingDescendants,
       boxShadow,
       railWidth: railShadow ? 6 : 0,
@@ -2697,6 +2703,8 @@ async function captureNewChatComposerProof(cdp, {
     }
     throw new Error(`Timed out waiting for New Chat composer proof state: ${JSON.stringify(status)}`);
   };
+  const hasRoundedCorners = (status) => Object.values(status.borderRadii)
+    .every((value) => Number.parseFloat(value) > 0);
 
   if (!versionAtLeast("26.715")) {
     await click(await pointFor("projectless-row"));
@@ -2725,6 +2733,9 @@ async function captureNewChatComposerProof(cdp, {
   neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
   if (neutral.occludingDescendants.length > 0) {
     throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(neutral)}`);
+  }
+  if (!hasRoundedCorners(neutral)) {
+    throw new Error(`New Chat composer does not preserve rounded upstream corners: ${JSON.stringify(neutral)}`);
   }
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
@@ -2757,6 +2768,9 @@ async function captureNewChatComposerProof(cdp, {
     const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent);
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
+    }
+    if (!hasRoundedCorners(status) || JSON.stringify(status.borderRadii) !== JSON.stringify(neutral.borderRadii)) {
+      throw new Error(`Project New Chat composer radius differs from the no-project composer: ${JSON.stringify({ neutral, status })}`);
     }
     const sidebar = await cdp.evaluate(`((projectKey) => {
       const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-codex-plus-project-key]"))

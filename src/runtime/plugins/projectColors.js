@@ -2,6 +2,7 @@
   const CodexPlus = window.CodexPlus;
   const STORAGE_KEY = "codex-plus:project-colors-enabled";
   const EVENT = "codex-plus:project-colors-change";
+  const composerBorderRadius = "var(--composer-border-radius, var(--radius-3xl))";
   const palette = [
     ["#5b8ff9", "#dbeafe", "#1d4ed8", "#f8fbff"], ["#61dDAA", "#dcfce7", "#15803d", "#f7fff9"],
     ["#65789b", "#e0e7ff", "#4338ca", "#f8faff"], ["#f6bd16", "#fef3c7", "#b45309", "#fffdf5"],
@@ -161,7 +162,7 @@
       ...(sidebar && projectPath ? { "data-codex-plus-project-path": String(projectPath) } : {}),
       style: sidebar ? inlineStyle : {
         ...inlineStyle,
-        borderRadius: "var(--composer-border-radius, var(--radius-3xl))",
+        borderRadius: composerBorderRadius,
       },
     };
   }
@@ -180,7 +181,7 @@
         "--codex-plus-project-separator-light": "",
         "--codex-plus-project-separator-dark": "",
         borderLeft: "",
-        borderRadius: "",
+        borderRadius: composerBorderRadius,
       },
     };
   }

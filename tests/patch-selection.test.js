@@ -6530,7 +6530,7 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   assert.equal(missingProjectProps?.["data-codex-plus-project-color"], null);
   assert.equal(missingProjectProps?.style?.["--codex-plus-project-accent"], "");
   assert.equal(missingProjectProps?.style?.borderLeft, "");
-  assert.equal(missingProjectProps?.style?.borderRadius, "");
+  assert.equal(missingProjectProps?.style?.borderRadius, composerProps.style.borderRadius);
 
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8"),
