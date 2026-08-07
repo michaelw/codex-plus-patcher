@@ -612,7 +612,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /composerControlContrast/);
   assert.match(defaultExpression, /occludingDescendants/);
   assert.match(defaultExpression, /codeToolbarBackground/);
-  assert.match(defaultExpression, /Composer code toolbar does not have a distinct background/);
+  assert.match(defaultExpression, /codeToolbarMatchesSubmit/);
+  assert.match(defaultExpression, /Composer code toolbar does not match the submit button background/);
   assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
   assert.match(defaultExpression, /userBubbleShapeStatus/);
   assert.match(defaultExpression, /User message wrapper painted behind the rounded bubble/);
@@ -3770,7 +3771,10 @@ test("visual contract treats the fenced-code language control as a 26.730 capabi
   assert.match(verifier, /versionAtLeast\(codexVersion, "26\.730"\)/);
   assert.match(verifier, /supported: supportsVerbatimLanguageControl/);
   assert.match(verifier, /srgbMatch/);
-  assert.match(verifier, /controlLuminance < surfaceLuminance/);
+  assert.match(verifier, /submitBackground/);
+  assert.match(verifier, /button\[aria-label\*='Send'\]/);
+  assert.match(verifier, /querySelectorAll\?\.\("button"\).*\.at\(-1\)/s);
+  assert.match(verifier, /details\.controlBackground === details\.submitBackground/);
   assert.match(verifier, /details\.controlBackground !== details\.surfaceBackground/);
   assert.match(source, /composerVerbatim\?\.supported !== false/);
 });
