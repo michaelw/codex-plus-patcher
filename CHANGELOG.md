@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.31.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.30.0...v0.31.0) (2026-08-07)
+
+
+### Features
+
+* support ChatGPT 26.730.61309 ([#141](https://github.com/michaelw/codex-plus-patcher/issues/141)) ([d5eb0fb](https://github.com/michaelw/codex-plus-patcher/commit/d5eb0fbe032d553c14837900fbde85d05cb6c229))
+* support ChatGPT 26.730.61639 and fix composer code controls ([#142](https://github.com/michaelw/codex-plus-patcher/issues/142)) ([764933c](https://github.com/michaelw/codex-plus-patcher/commit/764933c5025e98b05e7574820204cbc1a26df68b))
+
+
+### Bug Fixes
+
+* improve sidebar Needs Input contrast ([#139](https://github.com/michaelw/codex-plus-patcher/issues/139)) ([6b30cf9](https://github.com/michaelw/codex-plus-patcher/commit/6b30cf9667caf882728a5b6241e84a113c015431))
+* restore composer surface colors ([#143](https://github.com/michaelw/codex-plus-patcher/issues/143)) ([e5284b7](https://github.com/michaelw/codex-plus-patcher/commit/e5284b750130f7b7ba0aa56cd5a0d5f4b6346f30))
+
 ## [0.30.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.29.0...v0.30.0) (2026-08-01)
 
 
