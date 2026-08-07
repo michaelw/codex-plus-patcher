@@ -6530,7 +6530,7 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   assert.equal(missingProjectProps?.["data-codex-plus-project-color"], null);
   assert.equal(missingProjectProps?.style?.["--codex-plus-project-accent"], "");
   assert.equal(missingProjectProps?.style?.borderLeft, "");
-  assert.equal(missingProjectProps?.style?.borderRadius, "");
+  assert.equal(missingProjectProps?.style?.borderRadius, composerProps.style.borderRadius);
 
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8"),
@@ -7019,6 +7019,7 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /function textColor/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-light-bg/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\]:not\(:has\(\[data-codex-plus-user-bubble\]\)\)/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-layout\]\{background-color:transparent!important;background-image:none!important\}/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\]:has\(\[data-codex-plus-user-bubble\]\)\{background-color:transparent!important;box-shadow:none!important\}/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\]:has\(\[data-user-message-bubble\]\)\{background-color:transparent!important;box-shadow:none!important;border-left:0!important\}/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] \[data-user-message-bubble\].*background-color:var\(--codex-plus-user-bubble-light-bg\).*color:var\(--codex-plus-user-bubble-light-fg\)/);

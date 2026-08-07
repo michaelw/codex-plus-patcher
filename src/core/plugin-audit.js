@@ -2634,6 +2634,32 @@ async function captureNewChatComposerProof(cdp, {
       .find((candidate) => visible(candidate) && candidate.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome")) || null;
     const surface = markedSurface || editor?.closest("[data-codex-plus-composer-surface], [data-codex-plus-user-entry], .composer-surface-chrome") || null;
     const computed = surface ? getComputedStyle(surface) : null;
+    const surfaceRect = surface?.getBoundingClientRect?.();
+    const surfaceBackground = computed?.backgroundColor || "";
+    const transparent = (value) => {
+      if (!value || value === "transparent") return true;
+      if (!value.toLowerCase().startsWith("rgba(")) return false;
+      return Number(value.slice(value.lastIndexOf(",") + 1, -1).trim()) === 0;
+    };
+    const occludingDescendants = Array.from(surface?.querySelectorAll?.("*") || [])
+      .map((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return {
+          tagName: element.tagName || "",
+          className: String(element.className || ""),
+          background: style.backgroundColor,
+          widthRatio: surfaceRect?.width > 0 ? rect.width / surfaceRect.width : 0,
+          heightRatio: surfaceRect?.height > 0 ? rect.height / surfaceRect.height : 0,
+          html: element.outerHTML?.slice(0, 1200) || "",
+        };
+      })
+      .filter((element) =>
+        element.widthRatio >= 0.9 &&
+        element.heightRatio >= 0.5 &&
+        !transparent(element.background) &&
+        element.background !== surfaceBackground
+      );
     const boxShadow = computed?.boxShadow || "";
     const railShadow = boxShadow.match(/((?:rgba?|color)\\([^)]*\\)|#[0-9a-f]+)\\s+6px\\s+0px\\s+0px\\s+0px\\s+inset/i);
     const normalizeCssColor = (value) => {
@@ -2654,7 +2680,14 @@ async function captureNewChatComposerProof(cdp, {
       projectKey: surface?.getAttribute("data-codex-plus-project-key") || "",
       accent,
       accentColor: normalizeCssColor(accent),
-      background: computed?.backgroundColor || "",
+      background: surfaceBackground,
+      borderRadii: {
+        topLeft: computed?.borderTopLeftRadius || "",
+        topRight: computed?.borderTopRightRadius || "",
+        bottomRight: computed?.borderBottomRightRadius || "",
+        bottomLeft: computed?.borderBottomLeftRadius || "",
+      },
+      occludingDescendants,
       boxShadow,
       railWidth: railShadow ? 6 : 0,
       railColor: normalizeCssColor(railShadow?.[1] || ""),
@@ -2670,6 +2703,8 @@ async function captureNewChatComposerProof(cdp, {
     }
     throw new Error(`Timed out waiting for New Chat composer proof state: ${JSON.stringify(status)}`);
   };
+  const hasRoundedCorners = (status) => Object.values(status.borderRadii)
+    .every((value) => Number.parseFloat(value) > 0);
 
   if (!versionAtLeast("26.715")) {
     await click(await pointFor("projectless-row"));
@@ -2696,6 +2731,12 @@ async function captureNewChatComposerProof(cdp, {
     await click(option);
   }
   neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
+  if (neutral.occludingDescendants.length > 0) {
+    throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(neutral)}`);
+  }
+  if (!hasRoundedCorners(neutral)) {
+    throw new Error(`New Chat composer does not preserve rounded upstream corners: ${JSON.stringify(neutral)}`);
+  }
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
   };
@@ -2725,6 +2766,12 @@ async function captureNewChatComposerProof(cdp, {
     if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
     await click(projectOption);
     const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent);
+    if (status.occludingDescendants.length > 0) {
+      throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
+    }
+    if (!hasRoundedCorners(status) || JSON.stringify(status.borderRadii) !== JSON.stringify(neutral.borderRadii)) {
+      throw new Error(`Project New Chat composer radius differs from the no-project composer: ${JSON.stringify({ neutral, status })}`);
+    }
     const sidebar = await cdp.evaluate(`((projectKey) => {
       const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-codex-plus-project-key]"))
         .find((candidate) => candidate.getAttribute("data-codex-plus-project-key") === projectKey);
