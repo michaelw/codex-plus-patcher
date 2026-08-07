@@ -611,6 +611,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-codex-plus-rich-content/);
   assert.match(defaultExpression, /composerControlContrast/);
   assert.match(defaultExpression, /occludingDescendants/);
+  assert.match(defaultExpression, /codeToolbarBackground/);
+  assert.match(defaultExpression, /Composer code toolbar does not have a distinct background/);
   assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
   assert.match(defaultExpression, /userBubbleShapeStatus/);
   assert.match(defaultExpression, /User message wrapper painted behind the rounded bubble/);
@@ -1050,14 +1052,15 @@ test("project color audit proves New Chat project changes and the neutral no-pro
   assert.match(projectAudit, /26, 707, 51957/);
   assert.match(projectAudit, /new-chat-navigation-unavailable/);
   assert.match(projectAudit, /userEntryMarked/);
-  assert.match(projectAudit, /!initialNoProjectComposer\.userEntryMarked/);
+  assert.match(source, /projectSelectorMounted/);
+  assert.match(projectAudit, /initialNoProjectComposer\.userEntryMarked/);
   assert.match(projectAudit, /!initialNoProjectComposer\.projectMarked/);
   assert.match(projectAudit, /!initialNoProjectComposer\.accent/);
   assert.match(projectAudit, /initialNoProjectComposer\.railWidth === 0/);
   assert.match(projectAudit, /observed\.background !== initialNoProjectComposer\.background/);
   assert.match(projectAudit, /observed\.railWidth !== 6/);
   assert.match(projectAudit, /observed\.railColor !== observed\.accentColor/);
-  assert.match(source, /!status\.userEntryMarked/);
+  assert.match(source, /status\.userEntryMarked/);
   assert.match(projectAudit, /data-codex-plus-project-color/);
   assert.match(source, /data-codex-plus-composer-surface/);
   assert.match(projectAudit, /target\.projectAccent !== selectedProjectAccent/);
@@ -1069,6 +1072,7 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /Input\.dispatchMouseEvent/);
   assert.match(source, /work in a project/);
   assert.match(source, /data-codex-plus-project-selector-trigger/);
+  assert.match(source, /projectSelectorMounted/);
   assert.match(source, /Choose project/);
   assert.match(source, /kind === "project-option"/);
   assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);
@@ -3765,6 +3769,9 @@ test("visual contract treats the fenced-code language control as a 26.730 capabi
 
   assert.match(verifier, /versionAtLeast\(codexVersion, "26\.730"\)/);
   assert.match(verifier, /supported: supportsVerbatimLanguageControl/);
+  assert.match(verifier, /srgbMatch/);
+  assert.match(verifier, /controlLuminance < surfaceLuminance/);
+  assert.match(verifier, /details\.controlBackground !== details\.surfaceBackground/);
   assert.match(source, /composerVerbatim\?\.supported !== false/);
 });
 
