@@ -3067,8 +3067,12 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
     const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
     const control = Array.from(surface?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || [])
       .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "None");
+    const submit = Array.from(surface?.querySelectorAll?.("button[type='submit'], button[aria-label*='Send'], button[aria-label*='send']") || []).find(visible) ||
+      Array.from(surface?.querySelectorAll?.("button") || []).filter(visible).at(-1) ||
+      null;
     const surfaceStyle = surface ? getComputedStyle(surface) : null;
     const controlStyle = control ? getComputedStyle(control) : null;
+    const submitStyle = submit ? getComputedStyle(submit) : null;
     const textTarget = Array.from(control?.querySelectorAll?.("span,*") || []).find((element) => normalize(element.textContent) === "None") || control;
     const textStyle = textTarget ? getComputedStyle(textTarget) : null;
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
@@ -3080,8 +3084,10 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
       surfaceMounted: Boolean(surface),
       editorMounted: Boolean(editor),
       controlMounted: Boolean(control),
+      submitMounted: Boolean(submit),
       surfaceBackground: surfaceStyle?.backgroundColor || "",
       controlBackground: controlStyle?.backgroundColor || "",
+      submitBackground: submitStyle?.backgroundColor || "",
       foreground: foreground || "",
       surfaceLuminance,
       controlLuminance,
@@ -3092,7 +3098,7 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
       controlHtml: control?.outerHTML?.slice(0, 1200) || "",
       parentHtml: control?.parentElement?.outerHTML?.slice(0, 2000) || "",
     };
-    return { ok: details.controlMounted && details.controlBackground !== details.surfaceBackground && controlLuminance < surfaceLuminance && details.contrast != null && details.contrast >= 4.5, ...details };
+    return { ok: details.controlMounted && details.submitMounted && details.controlBackground !== details.surfaceBackground && details.controlBackground === details.submitBackground, ...details };
   })()`);
   return { supported: supportsVerbatimLanguageControl, ...details };
 }
@@ -3187,7 +3193,7 @@ async function captureVisualContract(cdp, {
     codexVersion: result?.applyResult?.codexVersion,
   }) : null;
   if (composerVerbatim?.supported !== false) screenshots.composerVerbatim = await capturePng(cdp, path.join(artifactDir, "composer-verbatim.png"), { fsImpl });
-  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control is unreadable: ${JSON.stringify(composerVerbatim)}`);
+  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control does not match the submit button background: ${JSON.stringify(composerVerbatim)}`);
   const newChatComposer = isChatGpt ? await captureNewChat(cdp, {
     artifactDir,
     codexVersion: result?.applyResult?.codexVersion,
@@ -3937,6 +3943,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       probe.innerHTML =
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
         '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' +
+        '<button type="submit" class="rounded-full bg-token-foreground" data-codex-plus-contrast-kind="submit">Submit</button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" data-state="open"><span>Approve for me</span><svg><path d="M0 0h1"/></svg></button>' +
@@ -3976,8 +3983,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       });
       const codeToolbar = probe.querySelector("[data-composer-code-block-toolbar]");
       const codeToolbarBackground = codeToolbar ? getComputedStyle(codeToolbar).backgroundColor : null;
-      const surfaceLuminance = luminance(rgb(surfaceBackground));
-      const codeToolbarLuminance = luminance(rgb(codeToolbarBackground));
+      const submit = probe.querySelector("[data-codex-plus-contrast-kind='submit']");
+      const submitBackground = submit ? getComputedStyle(submit).backgroundColor : null;
       probe.remove();
       return {
         editorMounted: Boolean(editor),
@@ -3986,7 +3993,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         policyLabels,
         liveControlCount: actualControls.length,
         codeToolbarBackground,
-        codeToolbarDarker: surfaceLuminance != null && codeToolbarLuminance != null && codeToolbarLuminance < surfaceLuminance,
+        submitBackground,
+        codeToolbarMatchesSubmit: codeToolbarBackground !== surfaceBackground && codeToolbarBackground === submitBackground,
         occludingDescendants,
         checks,
       };
@@ -4725,8 +4733,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (status.occludingDescendants.length > 0) {
           throw new Error(`Composer custom color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
         }
-        if (!status.codeToolbarDarker) {
-          throw new Error(`Composer code toolbar does not have a distinct background: ${JSON.stringify(status)}`);
+        if (!status.codeToolbarMatchesSubmit) {
+          throw new Error(`Composer code toolbar does not match the submit button background: ${JSON.stringify(status)}`);
         }
         const unreadable = status.checks.find((check) =>
           Number(check.opacity) < 0.99 ||
