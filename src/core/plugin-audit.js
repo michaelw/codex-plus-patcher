@@ -2649,6 +2649,7 @@ async function captureNewChatComposerProof(cdp, {
     return {
       mounted: Boolean(surface),
       userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
+      projectSelectorMounted: Boolean(Array.from(document.querySelectorAll("[data-codex-plus-project-selector-trigger]")).find(visible)),
       projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
       projectKey: surface?.getAttribute("data-codex-plus-project-key") || "",
       accent,
@@ -2675,7 +2676,7 @@ async function captureNewChatComposerProof(cdp, {
     await wait(250);
   }
   await click(await pointFor("new-chat"));
-  let neutral = await waitForState((status) => status.mounted && !status.userEntryMarked);
+  let neutral = await waitForState((status) => status.mounted && status.userEntryMarked && (!versionAtLeast("26.715") || status.projectSelectorMounted));
   if (versionAtLeast("26.715") && (neutral.projectMarked || neutral.accent || neutral.railWidth !== 0)) {
     const triggerDeadline = Date.now() + Math.min(timeoutMs, 10000);
     let trigger = null;
@@ -2694,7 +2695,7 @@ async function captureNewChatComposerProof(cdp, {
     if (!option) throw new Error("New Chat project selector did not show the no-project option");
     await click(option);
   }
-  neutral = await waitForState((status) => status.mounted && !status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
+  neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
   };
@@ -2733,7 +2734,7 @@ async function captureNewChatComposerProof(cdp, {
         accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
       } : null;
     })(${JSON.stringify(status.projectKey)})`);
-    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || status.userEntryMarked) {
+    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked) {
       throw new Error(`Project New Chat screenshot state is invalid: ${JSON.stringify({ target, sidebar, previous, neutral, status })}`);
     }
     const key = `project${index + 1}`;
@@ -3051,8 +3052,11 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
     };
     const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const rgb = (value) => {
-      const match = String(value || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+      const text = String(value || "");
+      const rgbMatch = text.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+      const srgbMatch = text.match(/color\\(srgb\\s+([0-9.]+)\\s+([0-9.]+)\\s+([0-9.]+)/);
+      return srgbMatch ? [Number(srgbMatch[1]) * 255, Number(srgbMatch[2]) * 255, Number(srgbMatch[3]) * 255] : null;
     };
     const luminance = (color) => {
       if (!color) return null;
@@ -3069,8 +3073,9 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
     const textStyle = textTarget ? getComputedStyle(textTarget) : null;
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
     const fg = luminance(rgb(foreground));
-    const bg = luminance(rgb(controlStyle?.backgroundColor));
-    const contrast = fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    const controlLuminance = luminance(rgb(controlStyle?.backgroundColor));
+    const surfaceLuminance = luminance(rgb(surfaceStyle?.backgroundColor));
+    const contrast = fg == null || controlLuminance == null ? null : (Math.max(fg, controlLuminance) + 0.05) / (Math.min(fg, controlLuminance) + 0.05);
     const details = {
       surfaceMounted: Boolean(surface),
       editorMounted: Boolean(editor),
@@ -3078,6 +3083,8 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
       surfaceBackground: surfaceStyle?.backgroundColor || "",
       controlBackground: controlStyle?.backgroundColor || "",
       foreground: foreground || "",
+      surfaceLuminance,
+      controlLuminance,
       contrast,
       controlTag: control?.tagName || "",
       controlRole: control?.getAttribute?.("role") || "",
@@ -3085,7 +3092,7 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
       controlHtml: control?.outerHTML?.slice(0, 1200) || "",
       parentHtml: control?.parentElement?.outerHTML?.slice(0, 2000) || "",
     };
-    return { ok: details.controlMounted && details.controlBackground === details.surfaceBackground && details.contrast != null && details.contrast >= 4.5, ...details };
+    return { ok: details.controlMounted && details.controlBackground !== details.surfaceBackground && controlLuminance < surfaceLuminance && details.contrast != null && details.contrast >= 4.5, ...details };
   })()`);
   return { supported: supportsVerbatimLanguageControl, ...details };
 }
@@ -3745,6 +3752,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       return {
         mounted: Boolean(surface),
         userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
+        projectSelectorMounted: Boolean(visibleElements("[data-codex-plus-project-selector-trigger]")[0]),
         projectMarked: surface?.hasAttribute("data-codex-plus-project-color") || false,
         accent,
         accentColor: normalizeCssColor(accent),
@@ -3768,7 +3776,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         if (status.mounted) {
           if (
             status.projectMarked &&
-            !status.userEntryMarked &&
+            status.userEntryMarked &&
             (expected.length === 0 || expected.includes(status.accent)) &&
             status.boxShadow !== "none"
           ) {
@@ -3779,11 +3787,11 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       }
       return mountedComposerStatus();
     };
-    const waitForNeutralNewChatComposer = async (timeoutMs = 30000) => {
+    const waitForNeutralNewChatComposer = async (requireProjectSelector = false, timeoutMs = 30000) => {
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
         const status = mountedComposerStatus();
-        if (status.mounted && !status.userEntryMarked && !status.projectMarked && !status.accent) return status;
+        if (status.mounted && status.userEntryMarked && (!requireProjectSelector || status.projectSelectorMounted) && !status.projectMarked && !status.accent) return status;
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       return mountedComposerStatus();
@@ -3928,6 +3936,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
       probe.innerHTML =
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
+        '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' +
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" data-state="open"><span>Approve for me</span><svg><path d="M0 0h1"/></svg></button>' +
@@ -3965,6 +3974,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           synthetic: probe.contains(element),
         };
       });
+      const codeToolbar = probe.querySelector("[data-composer-code-block-toolbar]");
+      const codeToolbarBackground = codeToolbar ? getComputedStyle(codeToolbar).backgroundColor : null;
+      const surfaceLuminance = luminance(rgb(surfaceBackground));
+      const codeToolbarLuminance = luminance(rgb(codeToolbarBackground));
       probe.remove();
       return {
         editorMounted: Boolean(editor),
@@ -3972,6 +3985,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         surfaceBackground,
         policyLabels,
         liveControlCount: actualControls.length,
+        codeToolbarBackground,
+        codeToolbarDarker: surfaceLuminance != null && codeToolbarLuminance != null && codeToolbarLuminance < surfaceLuminance,
         occludingDescendants,
         checks,
       };
@@ -4469,10 +4484,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         await new Promise((resolve) => setTimeout(resolve, 250));
         const currentNoProjectNewChatButton = findNoProjectNewChatButton();
         if (currentNoProjectNewChatButton) dispatchPointerClick(currentNoProjectNewChatButton);
-        initialNoProjectComposer = await waitForNeutralNewChatComposer();
+        initialNoProjectComposer = await waitForNeutralNewChatComposer(requiresProjectComposerTransitions);
       }
       const initialNewChatNeutral = Boolean(initialNoProjectComposer?.mounted &&
-        !initialNoProjectComposer.userEntryMarked &&
+        initialNoProjectComposer.userEntryMarked &&
         !initialNoProjectComposer.projectMarked &&
         !initialNoProjectComposer.accent &&
         initialNoProjectComposer.railWidth === 0);
@@ -4511,7 +4526,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         projectComposerTransitions.push({ ...target, observed });
         if (!observed.projectMarked ||
           observed.accent !== target.projectAccent ||
-          observed.userEntryMarked ||
+          !observed.userEntryMarked ||
           observed.background !== initialNoProjectComposer.background ||
           observed.railWidth !== 6 ||
           observed.railColor !== observed.accentColor) {
@@ -4521,7 +4536,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       mountedComposer = projectComposerTransitions.at(-1)?.observed ?? null;
       const noProjectComposer = initialNoProjectComposer;
       const newChatNeutral = Boolean(noProjectComposer?.mounted &&
-        !noProjectComposer.userEntryMarked &&
+        noProjectComposer.userEntryMarked &&
         !noProjectComposer.projectMarked &&
         !noProjectComposer.accent &&
         noProjectComposer.railWidth === 0);
@@ -4535,7 +4550,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         throw new Error(`Expected two distinct project New Chat composer transitions: ${JSON.stringify(projectNewChatTargets)}`);
       }
       if (requiresNoProjectNewChatProof && !newChatNeutral) {
-        throw new Error(`No-project New Chat composer retained user or project coloring: ${JSON.stringify(noProjectComposer)}`);
+        throw new Error(`No-project New Chat composer lost its user color or retained project coloring: ${JSON.stringify(noProjectComposer)}`);
       }
       if (!projectlessChat?.marked || !projectlessChat?.accent || isTransparentColor(projectlessChat?.background)) {
         const rowTitles = visibleElements("[data-app-action-sidebar-thread-row]").map(rowTitle).slice(0, 12);
@@ -4557,7 +4572,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         throw new Error(`Sidebar Needs input pill is unreadable: ${JSON.stringify(sidebarStatusPill)}`);
       }
       const composerObserved = Boolean(mountedComposer?.projectMarked || mountedComposer?.accent || mountedComposer?.boxShadow);
-      if (composerObserved && (!mountedComposer?.projectMarked || mountedComposer?.userEntryMarked)) {
+      if (composerObserved && (!mountedComposer?.projectMarked || !mountedComposer?.userEntryMarked)) {
         throw new Error(`Mounted composer does not carry the selected project accent: ${JSON.stringify(mountedComposer)}`);
       }
       if (composerObserved && mountedComposer.cornerRadii.some((radius) => radius <= 0)) {
@@ -4709,6 +4724,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (status.surfaceMounted) {
         if (status.occludingDescendants.length > 0) {
           throw new Error(`Composer custom color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
+        }
+        if (!status.codeToolbarDarker) {
+          throw new Error(`Composer code toolbar does not have a distinct background: ${JSON.stringify(status)}`);
         }
         const unreadable = status.checks.find((check) =>
           Number(check.opacity) < 0.99 ||

@@ -6539,7 +6539,7 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   );
   const newChatProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: true });
   const existingThreadProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: false });
-  assert.equal(newChatProps?.["data-codex-plus-user-entry"], null);
+  assert.equal(newChatProps?.["data-codex-plus-user-entry"], "");
   assert.equal(newChatProps?.["data-codex-plus-composer-surface"], "");
   assert.equal(existingThreadProps["data-codex-plus-user-entry"], "");
 
@@ -7057,9 +7057,11 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface,:root\.electron-dark \[data-codex-plus-user-entry\] \.composer-attachment-surface\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:#fff!important/);
   assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /background-image:none!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:var\(--codex-plus-user-bubble-light-bg\)!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,#000 2%,var\(--codex-plus-user-bubble-light-bg\)\)!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button\{background-color:color-mix\(in srgb,#000 2%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] \*\{color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important\}/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\],:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:var\(--codex-plus-user-bubble-dark-bg\)!important.*color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\],:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,#000 2%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button,:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button\{background-color:color-mix\(in srgb,#000 2%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
 });
 
 test("composer patch applies the user entry marker and shared color variables", () => {
