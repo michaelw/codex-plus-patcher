@@ -1,4 +1,7 @@
 const TRANSFORM_VARIANT_OWNERS = Object.freeze({
+  "chatgpt-26.803.41515": Object.freeze([
+    "chatgpt-26.803.41515-6321",
+  ]),
   "chatgpt-26.730.61639": Object.freeze([
     "chatgpt-26.730.61639-6234",
   ]),
