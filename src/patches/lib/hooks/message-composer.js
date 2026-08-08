@@ -7,7 +7,7 @@ function messageComposerHook(reactExpression) {
 
 function composerSurfaceElementHook(jsxExpression, reactExpression) {
   if (reactExpression) {
-    return `var CPXComposerContext;function CPXComposerScope(e){let{native:t,project:n,newChat:r,...i}=e,a=CPXComposerContext??=${reactExpression}.createContext({});return ${jsxExpression}(a.Provider,{value:{project:n,newChat:r},children:${jsxExpression}(t,i)})}function CPXComposerSurface(e){let{native:t,...n}=e,r=CPXComposerContext??=${reactExpression}.createContext({}),i=${reactExpression}.useContext(r),o=${reactExpression}.useRef(null);return ${reactExpression}.useLayoutEffect(()=>CPXMC.syncComposerSurface(o.current,i),[i]),${jsxExpression}(t,{...n,ref:o,...CPXMC.composerSurfaceProps(i)})}`;
+    return `var CPXMC=window.CodexPlusHost.adapters.messageComposer,CPXComposerContext;function CPXComposerScope(e){let{native:t,project:n,newChat:r,...i}=e,a=CPXComposerContext??=${reactExpression}.createContext({});return ${jsxExpression}(a.Provider,{value:{project:n,newChat:r},children:${jsxExpression}(t,i)})}function CPXComposerSurface(e){let{native:t,...n}=e,r=CPXComposerContext??=${reactExpression}.createContext({}),i=${reactExpression}.useContext(r),o=${reactExpression}.useRef(null);return ${reactExpression}.useLayoutEffect(()=>CPXMC.syncComposerSurface(o.current,i),[i]),${jsxExpression}(t,{...n,ref:o,...CPXMC.composerSurfaceProps(i)})}`;
   }
   return `function CPXComposerSurface(e){let{native:t,...n}=e;return ${jsxExpression}(t,{...n,...CPXSurfaceProps({})})}`;
 }

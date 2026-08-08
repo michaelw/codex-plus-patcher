@@ -22,8 +22,12 @@ const { detectSourceCapabilities } = require("../src/core/source-capabilities");
 const { validatePatchManifestConfig, validatePatchSetRegistry } = require("../src/patches/lib/manifest-validation");
 const { replaceOnce } = require("../src/patches/lib/replace");
 const { makePatchSet } = require("../src/patches/lib/make-patch-set");
+const { composerSurfaceElementHook } = require("../src/patches/lib/hooks/message-composer");
 const { patchSetOwnsTransformVariant, patchSetUsesTransformVariant } = require("../src/patches/lib/transform-ownership");
-const { patchHomeProjectDropdownProjectSelectorShortcut } = require("../src/patches/lib/project-selector-shortcut-patch");
+const {
+  patchHomeProjectDropdownProjectSelectorShortcut,
+  patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut,
+} = require("../src/patches/lib/project-selector-shortcut-patch");
 const {
   browserRuntimeFilesForConfig,
   codexPlusRuntimeAssets,
@@ -293,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.730.61639-6234");
-  assert.equal(chatgptPatchSets.length, 26);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.803.41515-6321");
+  assert.equal(chatgptPatchSets.length, 27);
 
   for (const identity of [
+    ["26.803.41515", "6321", "5f6e773aafd542d3cf09e10b5dca6cabd301d0a155f4b8ce870e3915fc3da25e"],
     ["26.730.61639", "6234", "3fea92820c0fb7a69473e7a8308a8e5b8e91524289a84181a33533ec6cb51d45"],
     ["26.730.61309", "6223", "9de942a9a058fca20b78d171032e0fe65ccb1063868f175ff7eb4e159efc2c38"],
     ["26.727.51351", "6119", "a529edd72e10b08931c0d695b5e3e6a0be7f51874610dafc04f578436ab7d74d"],
@@ -1595,6 +1600,13 @@ test("hook builders stay within the compact glue budget", () => {
       assert.ok(length <= 180, `${fileName}:${name} is ${length} compact characters`);
     }
   }
+});
+
+test("composer surface hook owns its message-composer adapter dependency", () => {
+  const hook = composerSurfaceElementHook("jsx", "React");
+
+  assert.match(hook, /var CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
+  assert.match(hook, /CPXMC\.syncComposerSurface/);
 });
 
 test("project selector shortcut replacements stay within the compact behavior budget", () => {
@@ -5190,6 +5202,28 @@ test("61309 owns its rewritten project selector shortcut anchors", () => {
   assert.match(transformed, /B=e=>CPXPST\(\(0,NY\.jsx\)\(DEs,e\),w\)/);
 });
 
+test("41515 project selector trigger binds the live React namespace", () => {
+  const source = [
+    "function Lys(e){let t=(0,Vys.c)(92),",
+    "function Oys(e){let t=(0,kys.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,t0.jsx)(FQ.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,n0.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,n0.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:jys(s.projects,k,Bys)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)})",
+    "re=s==null?null:(0,r0.jsx)(Pys,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:Rys,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,r0.jsx)(Oys,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,r0.jsxs)(r0.Fragment,{children:[I,re]}),status:P,footerItems:ne,emptyMessage:ie})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=Tys,K=",
+  ].join("");
+
+  const transformed = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.803.41515-6321",
+  });
+
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,Hys\)\}/);
+});
+
 test("61309 owns its moved local task row project color anchors", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.730.61309-6223");
   const transform = collectFileTransforms(patchSet).find(
@@ -5223,6 +5257,25 @@ test("61309 binds user message bubbles through the shared active-project adapter
     transformed,
     /CPXBubbleProps\(\{project:globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\}\)/,
   );
+});
+
+test("41515 binds New Chat composer color to the native selected project", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.803.41515-6321");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "(0,D3.jsx)(iWs,{className:E,utilityBarVariant:L,hasDropTargetPortal:W!=null,",
+    "Ka=(e,t=lr)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(
+    transformed,
+    /CPXComposerScope,\{native:iWs,project:ko==null\?null:\{projectId:ko\},newChat:F\.value\.kind===`new`/,
+  );
+  assert.doesNotMatch(transformed, /adapters\.context\.active\(\)/);
 });
 
 test("61309 binds its moved composer file opener through the shared side-panel adapter", () => {
