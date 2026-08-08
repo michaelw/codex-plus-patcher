@@ -1,10 +1,11 @@
-function makePatchSet({ id, codexVersion, bundleVersion, asarSha256, sourceFamily, assetFiles, patches, runtimeConfig }) {
+function makePatchSet({ id, codexVersion, bundleVersion, asarSha256, sourceFamily, sourceFiles, assetFiles, patches, runtimeConfig }) {
   const patchSet = {
     id,
     codexVersion,
     bundleVersion,
     asarSha256,
     sourceFamily,
+    sourceFiles,
     patches,
     runtimeConfig,
   };

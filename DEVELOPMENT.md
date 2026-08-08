@@ -196,6 +196,13 @@ runtime assets, and the host-adapter manifest entirely in memory. It writes a
 single ignored `preflight-summary.json` under `work/regression/preflight/` and
 stops on the first supported-source failure.
 
+Preflight also detects versioned source capabilities from the original,
+SHA-verified ASAR. The live runner resolves the complete capability matrix
+before launching the first app and writes `capability-summary.json` beside the
+visual contracts. A capability whose required source evidence is missing (or
+appears before its declared introduction boundary) fails before Electron is
+launched; older versions record the capability as explicitly unavailable.
+
 The runner scans the main checkout's ignored `work/sources/*/ChatGPT.app` and
 `work/sources/*/Codex.app`, matches each source against the registered patch
 sets, sorts supported versions newest-first, applies them to family-specific
@@ -247,6 +254,13 @@ check the Git diff and its declared transform owner before editing the old
 hook. When its owned transform code did not change, treat the preflight,
 fixture, or audit as the leading suspect. After any fix, restart at the focused
 tests and newest affected preflight/live proof.
+
+Versioned patch manifests are declarative inputs to the shared patch builder.
+Repository checks validate their filename and exact source identity, safe and
+known file mappings, unique registry entry, mapped-file presence in the
+original ASAR, and a per-manifest size ceiling. Do not replace these structural
+checks with an aggregate line-count budget that grows whenever a version is
+added.
 
 Use `--auto-clean` to remove each generated app/home/user-data regression
 directory after its audit finishes, or run cleanup only:
