@@ -120,12 +120,14 @@ function auditIdentity({ cwd = path.resolve(__dirname, "../.."), execFileSync = 
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
     }).trim() || "unknown";
     identity.gitAvailable = true;
     identity.gitDirty = execFileSync("git", ["status", "--porcelain"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
     }).trim().length > 0;
   } catch {
     identity.gitSha = "unknown";
@@ -296,7 +298,12 @@ async function verifyMermaidViewerRender(appCdp, port, { Session = CdpSession, t
   }
 }
 
-async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs = 30000, retryIntervalMs = 2000 } = {}) {
+async function verifyProjectSelectorShortcutKey(cdp, {
+  wait = delay,
+  timeoutMs = 30000,
+  retryIntervalMs = 2000,
+  fuzzyRetryCount = 1,
+} = {}) {
   const selectorSetup = async () => cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
@@ -471,27 +478,8 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
           nativeVirtualKeyCode: 0,
           modifiers: 4,
         });
-        for (const character of fuzzySetup.query) {
-          const upper = character.toUpperCase();
-          const windowsVirtualKeyCode = upper.charCodeAt(0);
-          await cdp.send("Input.dispatchKeyEvent", {
-            type: "keyDown",
-            key: character,
-            code: `Key${upper}`,
-            text: character,
-            unmodifiedText: character,
-            windowsVirtualKeyCode,
-            nativeVirtualKeyCode: 0,
-          });
-          await cdp.send("Input.dispatchKeyEvent", {
-            type: "keyUp",
-            key: character,
-            code: `Key${upper}`,
-            windowsVirtualKeyCode,
-            nativeVirtualKeyCode: 0,
-          });
-          await wait(50);
-        }
+        await cdp.send("Input.insertText", { text: fuzzySetup.query });
+        await wait(150);
       }
       const fuzzyDom = await cdp.evaluate(`new Promise((resolve) => {
         const visible = (element) => {
@@ -574,6 +562,14 @@ async function verifyProjectSelectorShortcutKey(cdp, { wait = delay, timeoutMs =
         fuzzyDom.highlightCount > 0
       );
       const fuzzyOk = strictFuzzyVersion ? strictFuzzyOk : Boolean(fuzzyDom?.suitableProjectFound);
+      if (!fuzzyOk && fuzzyDom?.suitableProjectFound && fuzzyRetryCount > 0) {
+        return verifyProjectSelectorShortcutKey(cdp, {
+          wait,
+          timeoutMs,
+          retryIntervalMs,
+          fuzzyRetryCount: fuzzyRetryCount - 1,
+        });
+      }
       return {
         ok: fuzzyOk,
         ...setup,
@@ -2561,6 +2557,7 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
 async function captureNewChatComposerProof(cdp, {
   artifactDir,
   codexVersion,
+  capabilities = {},
   fsImpl = fs,
   wait = delay,
   timeoutMs = 30000,
@@ -2646,6 +2643,7 @@ async function captureNewChatComposerProof(cdp, {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return {
+          contentSurface: Boolean(element.closest("[data-composer-code-block]")),
           tagName: element.tagName || "",
           className: String(element.className || ""),
           background: style.backgroundColor,
@@ -2655,6 +2653,7 @@ async function captureNewChatComposerProof(cdp, {
         };
       })
       .filter((element) =>
+        !element.contentSurface &&
         element.widthRatio >= 0.9 &&
         element.heightRatio >= 0.5 &&
         !transparent(element.background) &&
@@ -2672,6 +2671,30 @@ async function captureNewChatComposerProof(cdp, {
       return normalized;
     };
     const accent = computed?.getPropertyValue("--codex-plus-project-accent").trim() || "";
+    const toolbar = Array.from(surface?.querySelectorAll?.("[data-composer-code-block-toolbar]") || []).find(visible) || null;
+    const control = Array.from(toolbar?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || []).find(visible) || null;
+    const submit = Array.from(surface?.querySelectorAll?.("button[type='submit'],button") || []).filter(visible).at(-1) || null;
+    const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
+    const controlStyle = control ? getComputedStyle(control) : null;
+    const submitStyle = submit ? getComputedStyle(submit) : null;
+    const textTarget = Array.from(control?.querySelectorAll?.("span,*") || []).find((element) => String(element.textContent || "").trim()) || control;
+    const textStyle = textTarget ? getComputedStyle(textTarget) : null;
+    const rgb = (value) => {
+      const text = String(value || "");
+      if (!text) return null;
+      const rgbMatch = text.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+      const srgbMatch = text.match(/color\\(srgb\\s+([0-9.]+)\\s+([0-9.]+)\\s+([0-9.]+)/);
+      return srgbMatch ? [Number(srgbMatch[1]) * 255, Number(srgbMatch[2]) * 255, Number(srgbMatch[3]) * 255] : null;
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => { const normalized = value / 255; return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4); };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
+    const fg = luminance(rgb(foreground));
+    const bg = luminance(rgb(controlStyle?.backgroundColor));
     return {
       mounted: Boolean(surface),
       userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
@@ -2691,6 +2714,11 @@ async function captureNewChatComposerProof(cdp, {
       boxShadow,
       railWidth: railShadow ? 6 : 0,
       railColor: normalizeCssColor(railShadow?.[1] || ""),
+      codeToolbarMounted: Boolean(toolbar),
+      codeToolbarBackground: toolbarStyle?.backgroundColor || "",
+      codeControlBackground: controlStyle?.backgroundColor || "",
+      submitBackground: submitStyle?.backgroundColor || "",
+      codeControlContrast: fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
     };
   })()`);
   const waitForState = async (predicate) => {
@@ -2705,14 +2733,37 @@ async function captureNewChatComposerProof(cdp, {
   };
   const hasRoundedCorners = (status) => Object.values(status.borderRadii)
     .every((value) => Number.parseFloat(value) > 0);
+  const requiresCodeToolbar = capabilities.composerCodeLanguageControl?.status === "required";
+  const validCodeToolbar = (status) => !requiresCodeToolbar || (
+    status.codeToolbarMounted &&
+    status.codeToolbarBackground === status.submitBackground &&
+    status.codeControlBackground === status.submitBackground &&
+    status.codeControlBackground !== status.background &&
+    status.codeControlContrast != null && status.codeControlContrast >= 4.5
+  );
+  const typeFencedBlock = async () => {
+    const point = await cdp.evaluate(`(() => {
+      const visible = (element) => element?.getBoundingClientRect?.().width > 0 && element?.getBoundingClientRect?.().height > 0;
+      const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
+      const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
+      const rect = editor?.getBoundingClientRect?.();
+      return rect ? { x: rect.left + Math.min(rect.width / 2, 24), y: rect.top + Math.min(rect.height / 2, 18) } : null;
+    })()`);
+    if (!point) throw new Error("New Chat fenced-code editor was not visible");
+    await click(point);
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+    await cdp.send("Input.insertText", { text: "```" });
+  };
 
-  if (!versionAtLeast("26.715")) {
-    await click(await pointFor("projectless-row"));
-    await wait(250);
-  }
+  await click(await pointFor("projectless-row"));
+  await wait(250);
   await click(await pointFor("new-chat"));
-  let neutral = await waitForState((status) => status.mounted && status.userEntryMarked && (!versionAtLeast("26.715") || status.projectSelectorMounted));
-  if (versionAtLeast("26.715") && (neutral.projectMarked || neutral.accent || neutral.railWidth !== 0)) {
+  await wait(500);
+  let neutral = await waitForState((status) => status.mounted && status.userEntryMarked);
+  if (neutral.projectMarked || neutral.accent || neutral.railWidth !== 0) {
     const triggerDeadline = Date.now() + Math.min(timeoutMs, 10000);
     let trigger = null;
     while (!trigger && Date.now() < triggerDeadline) {
@@ -2731,6 +2782,10 @@ async function captureNewChatComposerProof(cdp, {
     await click(option);
   }
   neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
+  if (requiresCodeToolbar) {
+    await typeFencedBlock();
+    neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && status.railWidth === 0 && validCodeToolbar(status));
+  }
   if (neutral.occludingDescendants.length > 0) {
     throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(neutral)}`);
   }
@@ -2740,9 +2795,6 @@ async function captureNewChatComposerProof(cdp, {
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
   };
-  if (!versionAtLeast("26.715")) {
-    return { ok: true, supported: true, neutral, projects: [], screenshots };
-  }
   const targets = await cdp.evaluate(`(() => Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
     .map((row) => ({
       label: row.getAttribute("data-app-action-sidebar-project-label"),
@@ -2751,21 +2803,26 @@ async function captureNewChatComposerProof(cdp, {
     .filter((target, index, targets) => target.accent && targets.findIndex((candidate) => candidate.accent === target.accent) === index)
     .slice(0, 2))()`);
   const projects = [];
-  if (versionAtLeast("26.715") && targets.length < 2) {
+  if (targets.length < 2) {
     throw new Error(`Expected two project New Chat screenshot targets: ${JSON.stringify(targets)}`);
   }
   for (const [index, target] of targets.entries()) {
     const previous = projects.at(-1)?.status || neutral;
-    await click(await pointFor("project-selector-trigger"));
-    const projectOptionDeadline = Date.now() + Math.min(timeoutMs, 10000);
-    let projectOption = null;
-    while (!projectOption && Date.now() < projectOptionDeadline) {
-      projectOption = await pointFor("project-option", target.label);
-      if (!projectOption) await wait(100);
+    const projectSelectorTrigger = await pointFor("project-selector-trigger");
+    if (projectSelectorTrigger) {
+      await click(projectSelectorTrigger);
+      const projectOptionDeadline = Date.now() + Math.min(timeoutMs, 10000);
+      let projectOption = null;
+      while (!projectOption && Date.now() < projectOptionDeadline) {
+        projectOption = await pointFor("project-option", target.label);
+        if (!projectOption) await wait(100);
+      }
+      if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
+      await click(projectOption);
+    } else {
+      await click(await pointFor("project-new-chat", target.label));
     }
-    if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
-    await click(projectOption);
-    const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent);
+    const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent && validCodeToolbar(candidate));
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
     }
@@ -2781,7 +2838,7 @@ async function captureNewChatComposerProof(cdp, {
         accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
       } : null;
     })(${JSON.stringify(status.projectKey)})`);
-    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked) {
+    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked || !validCodeToolbar(status)) {
       throw new Error(`Project New Chat screenshot state is invalid: ${JSON.stringify({ target, sidebar, previous, neutral, status })}`);
     }
     const key = `project${index + 1}`;
@@ -3056,19 +3113,18 @@ async function verifyComposerPillContrast(cdp) {
   })()`);
 }
 
-async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion = "" } = {}) {
-  const versionAtLeast = (version, minimum) => {
-    const left = String(version || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
-    const right = String(minimum || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
-    for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-      if ((left[index] || 0) > (right[index] || 0)) return true;
-      if ((left[index] || 0) < (right[index] || 0)) return false;
-    }
-    return true;
-  };
-  const supportsVerbatimLanguageControl = versionAtLeast(codexVersion, "26.730");
-  if (!supportsVerbatimLanguageControl) {
+async function verifyComposerVerbatimContrast(cdp, {
+  wait = delay,
+  capabilities = {},
+  artifactDir = null,
+  fsImpl = fs,
+} = {}) {
+  const capability = capabilities.composerCodeLanguageControl;
+  if (capability?.status === "unavailable") {
     return { ok: true, supported: false, reason: "composer-verbatim-language-control-unavailable" };
+  }
+  if (capability?.status !== "required") {
+    return { ok: false, supported: null, message: "Composer code language control capability was not preflighted" };
   }
   const editorPoint = await cdp.evaluate(`(() => {
     const visible = (element) => {
@@ -3091,19 +3147,32 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
   await cdp.send("Input.insertText", { text: "```" });
   await wait(500);
-  const details = await cdp.evaluate(`(() => {
+  const originalState = await cdp.evaluate(`(() => ({
+    className: document.documentElement.className,
+    colors: localStorage.getItem("codex-plus:user-message-bubble-colors"),
+  }))()`);
+  const inspect = () => cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
       const style = element ? getComputedStyle(element) : null;
       return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
     };
-    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const rgb = (value) => {
       const text = String(value || "");
       const rgbMatch = text.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
       if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
       const srgbMatch = text.match(/color\\(srgb\\s+([0-9.]+)\\s+([0-9.]+)\\s+([0-9.]+)/);
-      return srgbMatch ? [Number(srgbMatch[1]) * 255, Number(srgbMatch[2]) * 255, Number(srgbMatch[3]) * 255] : null;
+      if (srgbMatch) return [Number(srgbMatch[1]) * 255, Number(srgbMatch[2]) * 255, Number(srgbMatch[3]) * 255];
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return null;
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = text;
+      context.fillRect(0, 0, 1, 1);
+      const pixel = context.getImageData(0, 0, 1, 1).data;
+      return pixel[3] === 0 ? null : [pixel[0], pixel[1], pixel[2]];
     };
     const luminance = (color) => {
       if (!color) return null;
@@ -3112,42 +3181,204 @@ async function verifyComposerVerbatimContrast(cdp, { wait = delay, codexVersion 
     };
     const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
     const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
-    const control = Array.from(surface?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || [])
-      .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "None");
+    const toolbar = Array.from(surface?.querySelectorAll?.("[data-composer-code-block-toolbar]") || []).find(visible);
+    const control = Array.from(toolbar?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || []).find(visible);
     const submit = Array.from(surface?.querySelectorAll?.("button[type='submit'], button[aria-label*='Send'], button[aria-label*='send']") || []).find(visible) ||
       Array.from(surface?.querySelectorAll?.("button") || []).filter(visible).at(-1) ||
       null;
     const surfaceStyle = surface ? getComputedStyle(surface) : null;
+    const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
     const controlStyle = control ? getComputedStyle(control) : null;
     const submitStyle = submit ? getComputedStyle(submit) : null;
-    const textTarget = Array.from(control?.querySelectorAll?.("span,*") || []).find((element) => normalize(element.textContent) === "None") || control;
+    const textTarget = Array.from(control?.querySelectorAll?.("span,*") || []).find((element) => String(element.textContent || "").trim()) || control;
     const textStyle = textTarget ? getComputedStyle(textTarget) : null;
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
     const fg = luminance(rgb(foreground));
     const controlLuminance = luminance(rgb(controlStyle?.backgroundColor));
     const surfaceLuminance = luminance(rgb(surfaceStyle?.backgroundColor));
     const contrast = fg == null || controlLuminance == null ? null : (Math.max(fg, controlLuminance) + 0.05) / (Math.min(fg, controlLuminance) + 0.05);
+    const menu = Array.from(document.querySelectorAll("[role='listbox'],[role='menu']")).find(visible) || null;
+    const semanticOptions = Array.from(menu?.querySelectorAll?.("[role='option'],[role='menuitem'],[role='menuitemradio'],[data-radix-collection-item],[cmdk-item],[tabindex]") || [])
+      .filter((element) => visible(element) && !["INPUT", "TEXTAREA"].includes(element.tagName));
+    const options = semanticOptions.length > 0 ? semanticOptions : Array.from(menu?.querySelectorAll?.("*") || []).filter((element) => {
+      if (!visible(element) || ["INPUT", "TEXTAREA", "SVG", "PATH"].includes(element.tagName)) return false;
+      const text = String(element.innerText || element.textContent || "").trim();
+      if (!text) return false;
+      return !Array.from(element.children || []).some((child) => String(child.innerText || child.textContent || "").trim() === text);
+    });
+    const option = options.find((element) => element.getAttribute("aria-checked") === "true" || element.getAttribute("aria-selected") === "true") || options[0] || null;
+    const optionStyle = option ? getComputedStyle(option) : null;
+    const backgroundElement = (() => {
+      let element = option;
+      while (element) {
+        const background = getComputedStyle(element).backgroundColor;
+        if (background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)") return element;
+        element = element.parentElement;
+      }
+      return null;
+    })();
+    const menuStyle = backgroundElement ? getComputedStyle(backgroundElement) : null;
+    const optionForeground = optionStyle?.webkitTextFillColor && optionStyle.webkitTextFillColor !== "transparent" ? optionStyle.webkitTextFillColor : optionStyle?.color;
+    const optionFg = luminance(rgb(optionForeground));
+    const menuBg = luminance(rgb(menuStyle?.backgroundColor));
+    const menuContrast = optionFg == null || menuBg == null ? null : (Math.max(optionFg, menuBg) + 0.05) / (Math.min(optionFg, menuBg) + 0.05);
+    const rect = control?.getBoundingClientRect?.();
     const details = {
       surfaceMounted: Boolean(surface),
       editorMounted: Boolean(editor),
+      toolbarMounted: Boolean(toolbar),
       controlMounted: Boolean(control),
       submitMounted: Boolean(submit),
       surfaceBackground: surfaceStyle?.backgroundColor || "",
+      toolbarBackground: toolbarStyle?.backgroundColor || "",
       controlBackground: controlStyle?.backgroundColor || "",
       submitBackground: submitStyle?.backgroundColor || "",
       foreground: foreground || "",
       surfaceLuminance,
       controlLuminance,
       contrast,
+      hovered: Boolean(control?.matches?.(":hover")),
+      focused: document.activeElement === control || Boolean(control?.contains?.(document.activeElement)),
+      open: control?.getAttribute?.("aria-expanded") === "true" || control?.getAttribute?.("data-state") === "open" || Boolean(menu),
+      menuMounted: Boolean(menu),
+      optionCount: options.length,
+      menuForeground: optionForeground || "",
+      menuBackground: menuStyle?.backgroundColor || "",
+      menuContrast,
+      selectedText: String(control?.innerText || control?.textContent || "").trim(),
+      point: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null,
       controlTag: control?.tagName || "",
       controlRole: control?.getAttribute?.("role") || "",
       controlClassName: control?.className || "",
       controlHtml: control?.outerHTML?.slice(0, 1200) || "",
       parentHtml: control?.parentElement?.outerHTML?.slice(0, 2000) || "",
     };
-    return { ok: details.controlMounted && details.submitMounted && details.controlBackground !== details.surfaceBackground && details.controlBackground === details.submitBackground, ...details };
+    return details;
   })()`);
-  return { supported: supportsVerbatimLanguageControl, ...details };
+  const optionPoint = (currentText) => cdp.evaluate(`((currentText) => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const menu = Array.from(document.querySelectorAll("[role='listbox'],[role='menu']")).find(visible);
+    const semanticOptions = Array.from(menu?.querySelectorAll?.("[role='option'],[role='menuitem'],[role='menuitemradio'],[data-radix-collection-item],[cmdk-item],[tabindex]") || [])
+      .filter((element) => visible(element) && !["INPUT", "TEXTAREA"].includes(element.tagName) && element.getAttribute("aria-disabled") !== "true");
+    const options = semanticOptions.length > 0 ? semanticOptions : Array.from(menu?.querySelectorAll?.("*") || []).filter((element) => {
+      if (!visible(element) || ["INPUT", "TEXTAREA", "SVG", "PATH"].includes(element.tagName)) return false;
+      const text = String(element.innerText || element.textContent || "").trim();
+      if (!text) return false;
+      return !Array.from(element.children || []).some((child) => String(child.innerText || child.textContent || "").trim() === text);
+    });
+    const option = options.find((element) => String(element.innerText || element.textContent || "").trim() !== currentText) || options[0];
+    const rect = option?.getBoundingClientRect?.();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+  })(${JSON.stringify(currentText)})`);
+  const focusControl = () => cdp.evaluate(`(() => {
+    const visible = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      const style = element ? getComputedStyle(element) : null;
+      return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden");
+    };
+    const toolbar = Array.from(document.querySelectorAll("[data-composer-code-block-toolbar]")).find(visible);
+    const control = Array.from(toolbar?.querySelectorAll?.("button,[role='button'],[role='combobox'],select") || []).find(visible);
+    control?.focus?.();
+    return document.activeElement === control || Boolean(control?.contains?.(document.activeElement));
+  })()`);
+  const click = async (point) => {
+    if (!point) return false;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, button: "none" });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+    return true;
+  };
+  const cases = [];
+  const screenshots = {};
+  const themes = ["light", "dark"];
+  const colors = [
+    ["light", "#f8fafc"],
+    ["mid", "#e0218a"],
+    ["dark", "#111827"],
+  ];
+  try {
+    for (const theme of themes) {
+      for (const [colorName, color] of colors) {
+        await cdp.evaluate(`((theme, color) => {
+          const root = document.documentElement;
+          root.classList.toggle("electron-dark", theme === "dark");
+          root.classList.toggle("dark", false);
+          const plugin = window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports;
+          plugin?.writeColor?.(theme, color);
+          plugin?.setVars?.();
+        })(${JSON.stringify(theme)}, ${JSON.stringify(color)})`);
+        await wait(100);
+        const initial = await inspect();
+        if (!initial.point) return { ok: false, supported: true, message: "Composer code language control was not mounted", cases, screenshots };
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1, button: "none" });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...initial.point, button: "none" });
+        await wait(50);
+        const hover = await inspect();
+        await focusControl();
+        const focused = await inspect();
+        await click(initial.point);
+        await wait(150);
+        const open = await inspect();
+        const choice = await optionPoint(initial.selectedText);
+        if (choice) {
+          await click(choice);
+          await wait(100);
+        }
+        const selected = await inspect();
+        let reopened = null;
+        for (let attempt = 0; attempt < 3 && !reopened?.menuMounted; attempt += 1) {
+          const current = await inspect();
+          await click(current.point);
+          await wait(150);
+          reopened = await inspect();
+        }
+        const key = `composerVerbatim-${theme}-${colorName}`;
+        if (artifactDir) screenshots[key] = await capturePng(cdp, path.join(artifactDir, `composer-verbatim-${theme}-${colorName}.png`), { fsImpl });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
+        const stateOk = [initial, hover, focused, open, selected, reopened].every((state) =>
+          state.toolbarMounted && state.controlMounted && state.submitMounted &&
+          state.toolbarBackground === state.submitBackground &&
+          state.controlBackground === state.submitBackground &&
+          state.controlBackground !== state.surfaceBackground &&
+          state.contrast != null && state.contrast >= 4.5);
+        const menuStatesOk = [open, reopened].every((state) =>
+          state.menuContrast != null && state.menuContrast >= 4.5);
+        const interactionsOk = hover.hovered && focused.focused && open.open && open.menuMounted && open.optionCount > 0 &&
+          reopened.open && reopened.menuMounted && reopened.optionCount > 0 &&
+          selected.selectedText.length > 0 && selected.selectedText !== initial.selectedText;
+        cases.push({ theme, colorName, color, ok: stateOk && menuStatesOk && interactionsOk, initial, hover, focused, open, selected, reopened });
+      }
+    }
+  } finally {
+    await cdp.evaluate(`((state) => {
+      document.documentElement.className = state.className;
+      if (state.colors == null) localStorage.removeItem("codex-plus:user-message-bubble-colors");
+      else localStorage.setItem("codex-plus:user-message-bubble-colors", state.colors);
+      window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.setVars?.();
+    })(${JSON.stringify(originalState)})`);
+  }
+  const contract = {
+    ok: cases.length === 6 && cases.every((entry) => entry.ok),
+    supported: true,
+    summary: cases.map((entry) => ({
+      theme: entry.theme,
+      colorName: entry.colorName,
+      ok: entry.ok,
+      focused: entry.focused.focused,
+      opened: entry.open.open && entry.open.menuMounted && entry.open.optionCount > 0,
+      selected: entry.selected.selectedText !== entry.initial.selectedText,
+      reopened: entry.reopened.open && entry.reopened.menuMounted && entry.reopened.optionCount > 0,
+    })),
+    cases,
+    screenshots,
+  };
+  if (artifactDir) fsImpl.writeFileSync(path.join(artifactDir, "composer-verbatim-contract.json"), `${JSON.stringify(contract, null, 2)}\n`);
+  return contract;
 }
 
 async function verifySidebarStatusPillContrast(cdp) {
@@ -3237,13 +3468,16 @@ async function captureVisualContract(cdp, {
   const isChatGpt = String(result?.applyResult?.patchSet || "").startsWith("chatgpt-");
   const composerVerbatim = isChatGpt ? await verifyComposerVerbatim(cdp, {
     wait,
-    codexVersion: result?.applyResult?.codexVersion,
+    capabilities: result?.applyResult?.capabilities || result?.capabilities || {},
+    artifactDir,
+    fsImpl,
   }) : null;
-  if (composerVerbatim?.supported !== false) screenshots.composerVerbatim = await capturePng(cdp, path.join(artifactDir, "composer-verbatim.png"), { fsImpl });
-  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control does not match the submit button background: ${JSON.stringify(composerVerbatim)}`);
+  if (composerVerbatim?.screenshots) Object.assign(screenshots, composerVerbatim.screenshots);
+  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control does not match the submit button background: ${JSON.stringify(composerVerbatim.summary || composerVerbatim)}`);
   const newChatComposer = isChatGpt ? await captureNewChat(cdp, {
     artifactDir,
     codexVersion: result?.applyResult?.codexVersion,
+    capabilities: result?.applyResult?.capabilities || result?.capabilities || {},
     fsImpl,
     wait,
   }) : null;
@@ -3294,6 +3528,7 @@ async function captureVisualContract(cdp, {
     patchSet: result?.applyResult?.patchSet || null,
     codexVersion: result?.applyResult?.codexVersion || null,
     bundleVersion: result?.applyResult?.bundleVersion || null,
+    capabilities: result?.applyResult?.capabilities || result?.capabilities || {},
     sidebarNeedsInput,
     composerPill,
     composerVerbatim,
@@ -3533,8 +3768,8 @@ async function refreshFixtureRendererForRetry(cdp, fixture, {
   return { reload, runtime, shell, dialogs, browserState, activation };
 }
 
-function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins = [] } = {}) {
-  const options = JSON.stringify({ includeNativeOpenProbes, auditPlugins });
+function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins = [], capabilities = {} } = {}) {
+  const options = JSON.stringify({ includeNativeOpenProbes, auditPlugins, capabilities });
   return `(${async function runPluginAudit(options) {
     const requiredPlugins = [
       "aboutMetadata",
@@ -3987,9 +4222,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         );
       const probe = document.createElement("div");
       probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
+      const requiresCodeToolbar = options.capabilities?.composerCodeLanguageControl?.status === "required";
       probe.innerHTML =
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
-        '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' +
+        (requiresCodeToolbar ? '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' : '') +
         '<button type="submit" class="rounded-full bg-token-foreground" data-codex-plus-contrast-kind="submit">Submit</button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
@@ -4012,6 +4248,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         const style = getComputedStyle(element);
         const textFillColor = style.webkitTextFillColor || null;
         const effectiveColor = textFillColor && !isTransparent(textFillColor) ? textFillColor : style.color;
+        const effectiveBackground = isTransparent(style.backgroundColor) ? surfaceBackground : style.backgroundColor;
         const icon = element.querySelector?.("svg,svg path");
         const iconStyle = icon ? getComputedStyle(icon) : null;
         const iconColor = iconStyle?.stroke && iconStyle.stroke !== "none" ? iconStyle.stroke : iconStyle?.color || null;
@@ -4022,9 +4259,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           color: style.color,
           textFillColor,
           textFillTransparent: isTransparent(textFillColor),
-          contrast: contrast(effectiveColor, surfaceBackground),
+          background: effectiveBackground,
+          contrast: contrast(effectiveColor, effectiveBackground),
           iconColor,
-          iconContrast: iconColor ? contrast(iconColor, surfaceBackground) : null,
+          iconContrast: iconColor ? contrast(iconColor, effectiveBackground) : null,
           synthetic: probe.contains(element),
         };
       });
@@ -4041,7 +4279,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         liveControlCount: actualControls.length,
         codeToolbarBackground,
         submitBackground,
-        codeToolbarMatchesSubmit: codeToolbarBackground !== surfaceBackground && codeToolbarBackground === submitBackground,
+        codeToolbarRequired: requiresCodeToolbar,
+        codeToolbarMatchesSubmit: !requiresCodeToolbar || (codeToolbarBackground !== surfaceBackground && codeToolbarBackground === submitBackground),
         occludingDescendants,
         checks,
       };
@@ -5815,6 +6054,7 @@ async function runAudit(args, {
           runtimeConfig: args.disabledRuntimePlugins?.length > 0 ? {
             runtimePluginsDisabled: args.disabledRuntimePlugins,
           } : undefined,
+          sourceCapabilities: args.sourceCapabilities,
         }),
       );
     }
@@ -6110,6 +6350,7 @@ async function runAudit(args, {
       () => cdp.evaluate(pluginAuditExpression({
         includeNativeOpenProbes: args.includeNativeOpenProbes,
         auditPlugins: baseAuditPlugins,
+        capabilities: applyResult?.capabilities || args.sourceCapabilities || {},
       }), { timeoutMs: 180000 }),
     );
     if (fixtureResult && projectColorsNeedsFixtureRetry(live)) {

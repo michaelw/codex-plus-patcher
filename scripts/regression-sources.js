@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { getAppIdentity, preflightPatchSet } = require("../src/core/patch-engine");
+const { detectSourceCapabilities } = require("../src/core/source-capabilities");
 const { sourceFamilyConfig } = require("../src/core/app-identity");
 const {
   createAuditProgress,
@@ -524,6 +525,7 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     useLiveSourceHome: Boolean(args.useLiveSourceHome),
     visualContract: args.visualContract,
     artifactDir,
+    sourceCapabilities: source.capabilities,
   };
   sourceProgress?.start?.(`Running regression audit with ${source.patchSet}`);
   let auditResult = await runAuditImpl(auditArgs, {
@@ -625,6 +627,68 @@ function runSourcePreflight(source, { operations = {}, progress = null, index = 
     };
   } finally {
     sourceProgress?.close?.();
+  }
+}
+
+function buildCapabilityMatrix(results) {
+  const matrix = {};
+  for (const result of results) {
+    for (const [capability, details] of Object.entries(result.capabilities || {})) {
+      matrix[capability] ||= [];
+      matrix[capability].push({
+        version: result.version,
+        bundleVersion: result.bundleVersion,
+        patchSet: result.patchSet,
+        status: details.status,
+        evidence: details.evidence,
+      });
+    }
+  }
+  return matrix;
+}
+
+function detectSourceRegressionCapabilities(source, { operations = {}, progress = null, index = 1, total = 1 }) {
+  const sourceProgress = prefixProgress(progress, `[${index}/${total} ${source.version}] `, {
+    version: source.version,
+    bundleVersion: source.bundleVersion,
+    patchSet: source.patchSet,
+    sourceApp: source.sourceApp,
+    sourceIndex: index,
+    sourceTotal: total,
+  });
+  if (!source.supported) return { ...source, capabilities: {}, capabilityOk: null };
+  const selected = findPatchSet(source, operations.patchSets || patchSets);
+  const detect = operations.detectSourceCapabilities || detectSourceCapabilities;
+  sourceProgress?.start?.(`Detecting source capabilities for ${selected.id}`);
+  try {
+    const capabilities = detect({
+      sourceApp: source.sourceApp,
+      identity: {
+        version: source.version,
+        bundleVersion: source.bundleVersion,
+        asarSha256: source.asarSha256,
+        sourceFamily: source.sourceFamily,
+      },
+      patchSet: selected,
+      operations: operations.capabilityOperations || {},
+    });
+    sourceProgress?.succeed?.("Source capabilities detected");
+    for (const [capability, details] of Object.entries(capabilities)) {
+      sourceProgress?.item?.("capability", capability, {
+        phase: "capability",
+        capability,
+        capabilityStatus: details.status,
+      });
+    }
+    return { ...source, capabilities, capabilityOk: true };
+  } catch (error) {
+    sourceProgress?.fail?.("Source capability detection failed");
+    return {
+      ...source,
+      capabilities: {},
+      capabilityOk: false,
+      failures: [{ plugin: "capability-preflight", message: error.message || String(error) }],
+    };
   }
 }
 
@@ -756,12 +820,56 @@ async function runRegressionSources(args, operations = {}) {
       preflightOnly: true,
       sourcesDir,
       results,
+      capabilityMatrix: buildCapabilityMatrix(results.map((result) => ({
+        ...result,
+        capabilities: result.preflight?.capabilities || {},
+      }))),
     };
     const fsImpl = operations.fs || fs;
     fsImpl.mkdirSync(preflightRoot, { recursive: true });
     fsImpl.writeFileSync(preflightSummary, `${JSON.stringify(summary, null, 2)}\n`);
     return { ...summary, regressionDir, preflightSummary };
   }
+
+  const capabilityResults = sources.map((source, index) => detectSourceRegressionCapabilities(source, {
+    operations,
+    progress,
+    index: index + 1,
+    total: sources.length,
+  }));
+  const capabilityMatrix = buildCapabilityMatrix(capabilityResults);
+  const capabilitySummary = path.join(contractRoot, "capability-summary.json");
+  const capabilityFailures = capabilityResults.filter((result) => result.capabilityOk === false);
+  const fsImpl = operations.fs || fs;
+  fsImpl.mkdirSync(contractRoot, { recursive: true });
+  fsImpl.writeFileSync(capabilitySummary, `${JSON.stringify({
+    ok: capabilityFailures.length === 0,
+    sourcesDir,
+    capabilityMatrix,
+    results: capabilityResults,
+  }, null, 2)}\n`);
+  if (capabilityFailures.length > 0) {
+    return {
+      ok: false,
+      interrupted: false,
+      cleanOnly: false,
+      sourcesDir,
+      regressionDir,
+      affectedSince: args.affectedSince,
+      impact: impact ? { ...impact, selected: impact.selected, skipped: impact.skipped } : null,
+      impactSummary: impact ? impactSummary : null,
+      filter: args.filter,
+      newest: args.newest,
+      autoClean: args.autoClean,
+      visualContract,
+      contractRoot,
+      capabilitySummary,
+      capabilityMatrix,
+      useLiveSourceHome: args.useLiveSourceHome,
+      results: capabilityResults,
+    };
+  }
+  sources = capabilityResults;
 
   const results = [];
   for (let index = 0; index < sources.length; index += 1) {
@@ -806,6 +914,8 @@ async function runRegressionSources(args, operations = {}) {
     autoClean: args.autoClean,
     visualContract,
     contractRoot,
+    capabilitySummary,
+    capabilityMatrix,
     useLiveSourceHome: args.useLiveSourceHome,
     results,
   };
@@ -986,6 +1096,8 @@ module.exports = {
   runRegressionSources,
   runSourceRegression,
   runSourcePreflight,
+  detectSourceRegressionCapabilities,
+  buildCapabilityMatrix,
   selectAffectedSources,
   sourceMatchesFilter,
   terminateActiveSource,

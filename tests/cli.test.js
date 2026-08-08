@@ -569,10 +569,12 @@ test("audit probe expression skips native window-opening probes by default", () 
   const defaultExpression = pluginAuditExpression();
   const strictExpression = pluginAuditExpression({ includeNativeOpenProbes: true });
   const focusedExpression = pluginAuditExpression({ auditPlugins: ["projectColors"] });
+  const capableExpression = pluginAuditExpression({ capabilities: { composerCodeLanguageControl: { status: "required" } } });
 
   assert.match(defaultExpression, /"includeNativeOpenProbes":false/);
   assert.match(strictExpression, /"includeNativeOpenProbes":true/);
   assert.match(focusedExpression, /"auditPlugins":\["projectColors"\]/);
+  assert.match(capableExpression, /"composerCodeLanguageControl":\{"status":"required"\}/);
   assert.match(focusedExpression, /shouldProbe = \(id\) => !disabledPlugins\.has\(id\) && \(focusedPlugins\.length === 0 \|\| focusedPlugins\.includes\(id\)\)/);
   assert.match(defaultExpression, /if \(options\.includeNativeOpenProbes\)/);
   assert.match(defaultExpression, /window\.CodexPlus\.commands\.run\("codexPlusOpenDevTools"\)/);
@@ -613,6 +615,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /occludingDescendants/);
   assert.match(defaultExpression, /codeToolbarBackground/);
   assert.match(defaultExpression, /codeToolbarMatchesSubmit/);
+  assert.match(defaultExpression, /!requiresCodeToolbar \|\| \(codeToolbarBackground !== surfaceBackground/);
+  assert.match(defaultExpression, /effectiveBackground = isTransparent\(style\.backgroundColor\) \? surfaceBackground : style\.backgroundColor/);
   assert.match(defaultExpression, /Composer code toolbar does not match the submit button background/);
   assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
   assert.match(defaultExpression, /userBubbleShapeStatus/);
@@ -832,12 +836,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     "Input.dispatchMouseEvent",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
-    "Input.dispatchKeyEvent",
+    "Input.insertText",
     "Input.dispatchKeyEvent",
     "Input.dispatchKeyEvent",
   ]);
@@ -876,16 +875,9 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     { key: "a", modifiers: 4 },
     { key: "a", modifiers: 4 },
   ]);
-  assert.equal(sent.some((call) => call.method === "Input.insertText"), false);
-  assert.equal(waits.filter((ms) => ms === 50).length, 3);
-  assert.deepEqual(sent.slice(11, 17).map((call) => [call.params.type, call.params.key, call.params.text || ""]), [
-    ["keyDown", "a", "a"],
-    ["keyUp", "a", ""],
-    ["keyDown", "a", "a"],
-    ["keyUp", "a", ""],
-    ["keyDown", "a", "a"],
-    ["keyUp", "a", ""],
-  ]);
+  assert.equal(sent.some((call) => call.method === "Input.insertText"), true);
+  assert.equal(waits.filter((ms) => ms === 150).length, 1);
+  assert.deepEqual(sent[11], { method: "Input.insertText", params: { text: "aaa" } });
 });
 
 test("project selector shortcut verifier retries the trusted shortcut while the menu stays closed", async () => {
@@ -952,6 +944,29 @@ test("project selector shortcut verifier retries when a visible picker disappear
 
   assert.equal(result.ok, true);
   assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent" && call.params.key === ".").length, 4);
+});
+
+test("project selector shortcut verifier retries once when strict fuzzy highlighting is transient", async () => {
+  const evaluations = [
+    { triggerCount: 1, newTask: null },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { codexVersion: "26.730.61309", suitableProjectFound: true, selectedLabel: "alpha-main", query: "aaa", visibleResultCount: 1, inputRect: { x: 100, y: 50, width: 200, height: 30 } },
+    { codexVersion: "26.730.61309", suitableProjectFound: true, queryLength: 3, visibleResultCount: 1, selectedProjectStillVisible: true, noProjectsFoundVisible: false, highlightCount: 0 },
+    { triggerCount: 1, newTask: null },
+    { triggerCount: 1, menuCount: 1, opened: true, activePlaceholder: "Search projects" },
+    { codexVersion: "26.730.61309", suitableProjectFound: true, selectedLabel: "alpha-main", query: "aaa", visibleResultCount: 1, inputRect: { x: 100, y: 50, width: 200, height: 30 } },
+    { codexVersion: "26.730.61309", suitableProjectFound: true, queryLength: 3, visibleResultCount: 1, selectedProjectStillVisible: true, noProjectsFoundVisible: false, highlightCount: 1 },
+  ];
+  const cdp = {
+    send() { return Promise.resolve(); },
+    evaluate() { return Promise.resolve(evaluations.shift()); },
+  };
+
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.fuzzyDom.highlightCount, 1);
+  assert.equal(evaluations.length, 0);
 });
 
 test("fixture activation verifies the canonical active cwd and retries the stable thread identity", () => {
@@ -1028,7 +1043,7 @@ test("broad plugin audit allows its finite probes to outlive the default DevTool
   const end = source.indexOf("if (fixtureResult && projectColorsNeedsFixtureRetry", start);
   const broadProbe = source.slice(start, end);
 
-  assert.match(broadProbe, /cdp\.evaluate\(pluginAuditExpression\(\{[\s\S]*?auditPlugins: baseAuditPlugins,[\s\S]*?\}\), \{ timeoutMs: 180000 \}\)/);
+  assert.match(broadProbe, /cdp\.evaluate\(pluginAuditExpression\(\{[\s\S]*?auditPlugins: baseAuditPlugins,[\s\S]*?capabilities: applyResult\?\.capabilities \|\| args\.sourceCapabilities \|\| \{\},[\s\S]*?\}\), \{ timeoutMs: 180000 \}\)/);
 });
 
 test("project color audit proves New Chat project changes and the neutral no-project state", () => {
@@ -1075,6 +1090,7 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /data-codex-plus-project-selector-trigger/);
   assert.match(source, /projectSelectorMounted/);
   assert.match(source, /occludingDescendants/);
+  assert.match(source, /element\.closest\("\[data-composer-code-block\]"\)/);
   assert.match(source, /neutral\.occludingDescendants\.length > 0/);
   assert.match(source, /status\.occludingDescendants\.length > 0/);
   assert.match(source, /New Chat composer color is covered by a differently colored child surface/);
@@ -1083,6 +1099,11 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /Project New Chat composer radius differs from the no-project composer/);
   assert.match(source, /Choose project/);
   assert.match(source, /kind === "project-option"/);
+  assert.doesNotMatch(source, /const usesProjectSelector =/);
+  assert.match(source, /const projectSelectorTrigger = await pointFor\("project-selector-trigger"\)/);
+  assert.match(source, /if \(projectSelectorTrigger\)/);
+  assert.match(source, /await click\(projectSelectorTrigger\)/);
+  assert.match(source, /pointFor\("project-new-chat", target\.label\)/);
   assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);
   assert.doesNotMatch(source, /const labels =/);
   assert.match(source, /new-chat-no-project\.png/);
@@ -1090,7 +1111,9 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /status\.background !== neutral\.background/);
   assert.match(source, /status\.railWidth !== 6/);
   assert.match(source, /status\.railColor !== status\.accentColor/);
-  assert.match(source, /if \(!versionAtLeast\("26\.715"\)\).*projects: \[\]/s);
+  assert.doesNotMatch(source, /newChatProjectSelector|requiresProjectSelector/);
+  assert.doesNotMatch(source, /projects: \[\], screenshots/);
+  assert.doesNotMatch(source, /versionAtLeast\("26\.715"\)/);
 });
 
 test("Aharness audit waits for the new run row to become active before asserting its styling", () => {
@@ -1154,7 +1177,7 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
     },
   };
 
-  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000 });
+  const result = await verifyProjectSelectorShortcutKey(cdp, { wait() {}, timeoutMs: 1000, fuzzyRetryCount: 0 });
 
   assert.equal(result.ok, false);
   assert.equal(result.opened, true);
@@ -3245,10 +3268,12 @@ test("audit cleanup stops matching app helpers for a direct launch", async () =>
 });
 
 test("audit identity helper handles clean, dirty, and non-git cases", () => {
+  const gitOptions = [];
   const clean = auditIdentity({
     cwd: "/repo",
-    execFileSync(command, args) {
+    execFileSync(command, args, options) {
       assert.equal(command, "git");
+      gitOptions.push(options);
       if (args[0] === "rev-parse") return "abc123\n";
       if (args[0] === "status") return "";
       throw new Error("unexpected git command");
@@ -3259,6 +3284,8 @@ test("audit identity helper handles clean, dirty, and non-git cases", () => {
   assert.equal(clean.gitSha, "abc123");
   assert.equal(clean.gitDirty, false);
   assert.equal(clean.gitAvailable, true);
+  assert.equal(gitOptions.length, 2);
+  assert.ok(gitOptions.every((options) => options.timeout === 2000));
 
   const dirty = auditIdentity({
     cwd: "/repo",
@@ -3769,21 +3796,30 @@ test("visual contract writes screenshots and compact readbacks", async () => {
   }
 });
 
-test("visual contract treats the fenced-code language control as a 26.730 capability", () => {
+test("visual contract uses preflighted capability evidence for the fenced-code language control matrix", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("async function verifyComposerVerbatimContrast");
   const end = source.indexOf("async function verifySidebarStatusPillContrast", start);
   const verifier = source.slice(start, end);
 
-  assert.match(verifier, /versionAtLeast\(codexVersion, "26\.730"\)/);
-  assert.match(verifier, /supported: supportsVerbatimLanguageControl/);
+  assert.doesNotMatch(verifier, /versionAtLeast|codexVersion/);
+  assert.match(verifier, /capability\?\.status === "unavailable"/);
+  assert.match(verifier, /capability\?\.status !== "required"/);
   assert.match(verifier, /srgbMatch/);
   assert.match(verifier, /submitBackground/);
-  assert.match(verifier, /button\[aria-label\*='Send'\]/);
-  assert.match(verifier, /querySelectorAll\?\.\("button"\).*\.at\(-1\)/s);
-  assert.match(verifier, /details\.controlBackground === details\.submitBackground/);
-  assert.match(verifier, /details\.controlBackground !== details\.surfaceBackground/);
-  assert.match(source, /composerVerbatim\?\.supported !== false/);
+  assert.match(verifier, /const themes = \["light", "dark"\]/);
+  assert.match(verifier, /#f8fafc/);
+  assert.match(verifier, /#e0218a/);
+  assert.match(verifier, /#111827/);
+  assert.match(verifier, /mouseMoved", x: 1, y: 1/);
+  assert.match(verifier, /hover\.hovered/);
+  assert.match(verifier, /focused\.focused && open\.open/);
+  assert.match(verifier, /open\.menuMounted && open\.optionCount > 0/);
+  assert.match(verifier, /state\.menuContrast != null && state\.menuContrast >= 4\.5/);
+  assert.match(verifier, /for \(let attempt = 0; attempt < 3 && !reopened\?\.menuMounted; attempt \+= 1\)/);
+  assert.match(verifier, /selected\.selectedText !== initial\.selectedText/);
+  assert.match(verifier, /state\.toolbarBackground === state\.submitBackground/);
+  assert.match(source, /composerVerbatim\?\.screenshots/);
 });
 
 test("visual contract rejects Review screenshots while diff cards are still loading", async () => {
@@ -3969,7 +4005,8 @@ test("visual contract waits for fixture diff text immediately before capturing R
     });
 
     assert.equal(contract.ok, true);
-    assert.deepEqual(events.slice(0, 7), ["capture", "capture", "capture", "capture", "verify", "fixture-text", "capture"]);
+    const reviewVerification = events.indexOf("verify");
+    assert.deepEqual(events.slice(reviewVerification, reviewVerification + 3), ["verify", "fixture-text", "capture"]);
     assert.deepEqual(contract.review.fixtureDiffText, {
       ok: true,
       plusTomlVisible: true,

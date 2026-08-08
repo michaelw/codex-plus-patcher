@@ -6,6 +6,7 @@ const { patchAsar, sha256, sha256File, transformAsarBuffer } = require("./asar")
 const { detectSourceFamily, readBundleExecutable, sourceFamilyConfig } = require("./app-identity");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
 const { codexPlusRuntimeAssets } = require("../runtime/assets");
+const { detectSourceCapabilities } = require("./source-capabilities");
 
 const ASAR_PATH_IN_BUNDLE = "Contents/Resources/app.asar";
 const PATCHER_REPO_URL = "https://github.com/michaelw/codex-plus-patcher";
@@ -176,6 +177,7 @@ function getPatcherGitSha({ cwd = path.resolve(__dirname, "../.."), execFileSync
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
     }).trim() || "unknown";
   } catch {
     return "unknown";
@@ -239,6 +241,12 @@ function preflightPatchSet({ sourceApp, identity, patchSet, operations = {}, run
   if (actualAsarSha256 !== selected.asarSha256) {
     throw new Error(`Original app.asar SHA-256 mismatch: expected ${selected.asarSha256}, got ${actualAsarSha256}`);
   }
+  const capabilities = detectSourceCapabilities({
+    sourceApp,
+    identity: { ...identity, sourceFamily: actualFamily },
+    patchSet: selected,
+    operations: { readSourceAsar: () => sourceAsar },
+  });
 
   const patchContext = buildPatchContext(effectivePatchSet, patchQueue, operations);
   const transformed = transformAsarBuffer(sourceAsar, fileTransforms, {
@@ -246,6 +254,9 @@ function preflightPatchSet({ sourceApp, identity, patchSet, operations = {}, run
     sourceIdentity: { ...identity, sourceFamily: actualFamily },
     assetFiles,
   });
+  for (const filePath of selected.sourceFiles || []) {
+    if (!transformed.contents.has(filePath)) throw new Error(`Preflight mapped source file is missing from app.asar: ${filePath}`);
+  }
   for (const record of transformed.transformedFiles) {
     if (record.expectedChange && !record.changed) {
       throw new Error(`Transform variant ${record.variantId} did not change ${record.filePath}`);
@@ -277,6 +288,8 @@ function preflightPatchSet({ sourceApp, identity, patchSet, operations = {}, run
     transformedFiles: transformed.transformedFiles,
     assetFileCount: assetFiles.length,
     requiredAssets,
+    sourceFiles: selected.sourceFiles || [],
+    capabilities,
     patchedAsarSha256: transformed.sha256,
   };
 }
@@ -357,10 +370,16 @@ async function applyPatchSet({
   };
 }
 
-async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, progress, operations, runtimeConfig }) {
+async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, progress, operations, runtimeConfig, sourceCapabilities }) {
   const applyProgress = dryRun ? undefined : progress;
   const identity = await withProgress(applyProgress, 1, 8, "Inspect source app", () => getAppIdentity(sourceApp));
   const patchSet = await withProgress(applyProgress, 2, 8, "Select patch set", () => selectPatch(patchSets, identity));
+  const capabilities = sourceCapabilities || detectSourceCapabilities({
+    sourceApp,
+    identity,
+    patchSet,
+    operations: operations || {},
+  });
   reportItems(applyProgress, "patch-set", [patchSet.id], {
     patchSet: patchSet.id,
     codexVersion: patchSet.codexVersion,
@@ -369,7 +388,7 @@ async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, 
   reportItems(applyProgress, "patch", collectPatchQueue(patchSet).map((patch) => patch.id), {
     patchSet: patchSet.id,
   });
-  return applyPatchSet({
+  const result = await applyPatchSet({
     sourceApp,
     targetApp,
     patchSet,
@@ -380,6 +399,7 @@ async function patchCodexApp({ sourceApp, targetApp, patchSets, dryRun = false, 
     operations,
     runtimeConfig,
   });
+  return { ...result, capabilities };
 }
 
 module.exports = {

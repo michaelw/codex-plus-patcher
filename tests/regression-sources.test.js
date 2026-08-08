@@ -49,6 +49,15 @@ function patchSet(version, bundleVersion, asarSha256, id = `codex-${version}-${b
   return { codexVersion: version, bundleVersion, asarSha256, id };
 }
 
+function unavailableCapabilities() {
+  return {
+    composerCodeLanguageControl: {
+      status: "unavailable",
+      evidence: { javascriptMatches: [], stylesheetMatches: [] },
+    },
+  };
+}
+
 test("regression sources parses options and rejects unsafe combinations", () => {
   assert.deepEqual(parseArgs(["--filter", "61825", "--auto-clean", "--json"]), {
     affectedSince: null,
@@ -319,6 +328,7 @@ test("affected live regression writes an impact summary and audits only selected
           { ...patchSet("26.715.61943", "5628", "sha-old", "chatgpt-old"), sourceFamily: "chatgpt" },
           patchSet("26.623.141536", "4753", "sha-codex", "codex-new"),
         ],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async ({ source }) => {
           audited.push(source);
           return { ok: true, failures: [] };
@@ -371,6 +381,7 @@ test("regression sweep stops before the next source when interrupted", async () 
           return identity(version, version, `sha-${version}`);
         },
         patchSets: [patchSet("2", "2", "sha-2"), patchSet("1", "1", "sha-1")],
+        detectSourceCapabilities: unavailableCapabilities,
         progress: null,
         async runAudit(args) {
           audited.push(args.source);
@@ -500,6 +511,83 @@ test("preflight-only stops after the first supported source failure", async () =
     assert.equal(calls.length, 1);
     assert.equal(result.results.length, 1);
     assert.match(result.results[0].failures[0].message, /newest anchor/);
+  });
+});
+
+test("live regression writes the capability matrix before launching any source", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "26.730.61309", "ChatGPT.app");
+    let audits = 0;
+    const result = await runRegressionSources({
+      autoClean: false,
+      clean: false,
+      filter: "chatgpt",
+      includeNativeOpenProbes: false,
+      json: false,
+      jsonl: false,
+      keepOpen: false,
+      newest: null,
+      noProgress: true,
+      preflightOnly: false,
+      visualContract: true,
+      artifactDir: path.join(tmpDir, "contracts"),
+      remoteDebuggingPort: 9234,
+      sourcesDir,
+      useLiveSourceHome: false,
+    }, {
+      cwd: tmpDir,
+      getAppIdentity: () => familyIdentity("26.730.61309", "6223", "sha-a", "chatgpt"),
+      patchSets: [{ ...patchSet("26.730.61309", "6223", "sha-a", "chatgpt-26.730.61309-6223"), sourceFamily: "chatgpt" }],
+      detectSourceCapabilities: () => ({
+        composerCodeLanguageControl: { status: "required", evidence: { javascriptMatches: [{ filePath: "app.js", count: 1 }], stylesheetMatches: [{ filePath: "app.css", count: 2 }] } },
+      }),
+      runAudit: async (args) => {
+        audits += 1;
+        assert.equal(args.sourceCapabilities.composerCodeLanguageControl.status, "required");
+        assert.equal(fs.existsSync(path.join(path.dirname(args.artifactDir), "capability-summary.json")), true);
+        return { ok: true, failures: [] };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(audits, 1);
+    assert.equal(result.capabilityMatrix.composerCodeLanguageControl[0].status, "required");
+    assert.equal(fs.existsSync(result.capabilitySummary), true);
+  });
+});
+
+test("capability preflight failure prevents every Electron audit", async () => {
+  await withTempDir(async (tmpDir) => {
+    const sourcesDir = path.join(tmpDir, "work", "sources");
+    createSourceApp(sourcesDir, "26.730.61639", "ChatGPT.app");
+    const result = await runRegressionSources({
+      autoClean: false,
+      clean: false,
+      filter: "chatgpt",
+      includeNativeOpenProbes: false,
+      json: false,
+      jsonl: false,
+      keepOpen: false,
+      newest: null,
+      noProgress: true,
+      preflightOnly: false,
+      visualContract: false,
+      artifactDir: null,
+      remoteDebuggingPort: 9234,
+      sourcesDir,
+      useLiveSourceHome: false,
+    }, {
+      cwd: tmpDir,
+      getAppIdentity: () => familyIdentity("26.730.61639", "6234", "sha-a", "chatgpt"),
+      patchSets: [{ ...patchSet("26.730.61639", "6234", "sha-a", "chatgpt-26.730.61639-6234"), sourceFamily: "chatgpt" }],
+      detectSourceCapabilities: () => { throw new Error("required toolbar marker is absent"); },
+      runAudit: async () => { throw new Error("Electron audit must not launch"); },
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.results[0].failures[0].message, /toolbar marker is absent/);
+    assert.equal(fs.existsSync(result.capabilitySummary), true);
   });
 });
 
@@ -689,6 +777,7 @@ test("regression sources runs newest-first and stops after the first failure", a
           patchSet("26.623.61825", "4548", "sha-b"),
           patchSet("26.623.42026", "4514", "sha-c"),
         ],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async (args) => {
           calls.push(args);
           return args.source === firstApp
@@ -744,6 +833,7 @@ test("regression sources retries one transient startup-logo audit failure", asyn
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async () => {
           calls += 1;
           return calls === 1
@@ -791,6 +881,7 @@ test("regression source retry works without a visual contract artifact directory
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async () => {
           calls += 1;
           return calls === 1
@@ -859,6 +950,7 @@ test("regression sources passes prefixed progress into audits", async () => {
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         progress,
         runAudit: async (_args, options) => {
           options.progress({ status: "start", step: 1, total: 2, label: "Applying patch set" });
@@ -871,6 +963,9 @@ test("regression sources passes prefixed progress into audits", async () => {
 
     assert.equal(result.ok, true);
     assert.deepEqual(events, [
+      ["start", "[1/1 26.623.70822] Detecting source capabilities for codex-26.623.70822-4559"],
+      ["succeed", "[1/1 26.623.70822] Source capabilities detected"],
+      ["item", "capability: composerCodeLanguageControl"],
       ["start", "[1/1 26.623.70822] Running regression audit with codex-26.623.70822-4559"],
       ["start", "[1/1 26.623.70822] [1/2] Applying patch set"],
       ["item", "patch: identity"],
@@ -907,6 +1002,7 @@ test("regression sources auto-cleans generated version output", async () => {
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async (args) => {
           fs.mkdirSync(regressionRoot, { recursive: true });
           fs.writeFileSync(path.join(regressionRoot, "marker"), "generated");
@@ -971,6 +1067,7 @@ test("regression sources jsonl progress carries source identity", async () => {
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         progressOptions: { stream, now: () => new Date("2026-07-07T00:00:00.000Z") },
         createJsonlProgress: (options) => require("../src/core/plugin-audit").createJsonlProgress(options),
         runAudit: async (_args, options) => {
@@ -1015,6 +1112,7 @@ test("regression sources jsonl progress includes the first audit failure", async
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         progressOptions: { stream, now: () => new Date("2026-07-07T00:00:00.000Z") },
         createJsonlProgress: (options) => require("../src/core/plugin-audit").createJsonlProgress(options),
         runAudit: async () => ({ ok: false, failures: [{ plugin: "aharnessRuns", message: "precise failure" }] }),
@@ -1130,6 +1228,7 @@ test("regression sources formats json-shaped result data", async () => {
         cwd: tmpDir,
         getAppIdentity: () => identity("26.623.70822", "4559", "sha-a"),
         patchSets: [patchSet("26.623.70822", "4559", "sha-a")],
+        detectSourceCapabilities: unavailableCapabilities,
         runAudit: async () => ({
           ok: true,
           failures: [],

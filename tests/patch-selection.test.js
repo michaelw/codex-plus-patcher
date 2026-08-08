@@ -12,11 +12,14 @@ const {
   collectAssetFiles,
   collectFileTransforms,
   collectInfoPlistStrings,
+  getPatcherGitSha,
   mergeRuntimeConfig,
   preflightPatchSet,
   selectPatch,
 } = require("../src/core/patch-engine");
 const { patchSets } = require("../src/patches");
+const { detectSourceCapabilities } = require("../src/core/source-capabilities");
+const { validatePatchManifestConfig, validatePatchSetRegistry } = require("../src/patches/lib/manifest-validation");
 const { replaceOnce } = require("../src/patches/lib/replace");
 const { makePatchSet } = require("../src/patches/lib/make-patch-set");
 const { patchSetOwnsTransformVariant, patchSetUsesTransformVariant } = require("../src/patches/lib/transform-ownership");
@@ -30,6 +33,21 @@ const {
 
 const codexPatchSets = patchSets.filter((patchSet) => patchSet.runtimeConfig?.sourceFamily !== "chatgpt");
 const chatgptPatchSets = patchSets.filter((patchSet) => patchSet.runtimeConfig?.sourceFamily === "chatgpt");
+
+test("patcher Git identity lookup is bounded", () => {
+  let options;
+  const sha = getPatcherGitSha({
+    cwd: "/repo",
+    execFileSync(command, args, receivedOptions) {
+      assert.equal(command, "git");
+      assert.deepEqual(args, ["rev-parse", "--short=12", "HEAD"]);
+      options = receivedOptions;
+      return "abc123\n";
+    },
+  });
+  assert.equal(sha, "abc123");
+  assert.equal(options.timeout, 2000);
+});
 
 function ownedTestTransform(patchSetId, variantId, transformOrder, transform = (text) => text) {
   Object.defineProperties(transform, {
@@ -1694,15 +1712,42 @@ test("current patch queues expose project colors and project selector shortcut s
   }
 });
 
-test("versioned patch files stay below the runtime migration line-count gate", () => {
+test("versioned patch manifests stay declarative and map exactly to the registry", () => {
   const patchDir = path.join(__dirname, "../src/patches");
-  const totalLines = fs
+  const manifests = fs
     .readdirSync(patchDir)
-    .filter((file) => file.endsWith(".js"))
-    .map((file) => fs.readFileSync(path.join(patchDir, file), "utf8").split("\n").length - 1)
-    .reduce((sum, count) => sum + count, 0);
+    .filter((file) => /^\d+\.\d+\.\d+-\d+\.js$/.test(file));
+  assert.equal(manifests.length, patchSets.length);
+  for (const file of manifests) {
+    const source = fs.readFileSync(path.join(patchDir, file), "utf8");
+    const [codexVersion, bundleVersion] = file.slice(0, -3).split("-");
+    const matches = patchSets.filter((patchSet) =>
+      patchSet.codexVersion === codexVersion && patchSet.bundleVersion === bundleVersion);
+    assert.equal(matches.length, 1, `${file} must map to exactly one registered patch set`);
+    assert.ok(source.split("\n").length - 1 <= 120, `${file} exceeds the 120-line declarative manifest ceiling`);
+    assert.match(source, /^const \{ buildCodexPlusPatchSet \} = require\("\.\/lib\/common-patches"\);\n\nmodule\.exports = buildCodexPlusPatchSet\(\{/);
+    assert.doesNotMatch(source, /\n(?:async )?function\s|\nclass\s|require\("\.\.\//);
+  }
+});
 
-  assert.ok(totalLines <= 2516, `src/patches/*.js line count ${totalLines} exceeds 2516`);
+test("patch manifest validation rejects unsafe structure and duplicate identities", () => {
+  const valid = {
+    id: "chatgpt-1.2.3-4",
+    codexVersion: "1.2.3",
+    bundleVersion: "4",
+    asarSha256: "a".repeat(64),
+    sourceFamily: "chatgpt",
+    files: { main: ".vite/build/main.js", composer: "webview/assets/composer.js" },
+    anchors: { terminalConstruction: null },
+  };
+  assert.deepEqual(validatePatchManifestConfig(valid).sourceFiles, [".vite/build/main.js", "webview/assets/composer.js"]);
+  assert.throws(() => validatePatchManifestConfig({ ...valid, surprise: true }), /Unknown patch manifest key surprise/);
+  assert.throws(() => validatePatchManifestConfig({ ...valid, files: { main: "../main.js" } }), /Unsafe patch file mapping/);
+  assert.throws(() => validatePatchManifestConfig({ ...valid, id: "chatgpt-wrong" }), /does not match/);
+  assert.throws(() => validatePatchSetRegistry([
+    { ...valid },
+    { ...valid, id: "chatgpt-copy" },
+  ]), /Duplicate patch source identity/);
 });
 
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
@@ -1839,6 +1884,66 @@ function makeAsar(fileMap) {
   prefix.writeUInt32LE(json.length, 12);
   return Buffer.concat([prefix, json, padding, ...buffers]);
 }
+
+test("source capability detection proves the fenced-code control from original ASAR evidence", () => {
+  const marker = "data-composer-code-block-toolbar";
+  const requiredSource = makeAsar({
+    "webview/assets/app.js": `document.querySelector("[${marker}]")`,
+    "webview/assets/app.css": `[${marker}]{color:inherit}[data-composer-navigation-target]{display:flex}`,
+  });
+  const requiredSha = sha256(requiredSource);
+  const requiredIdentity = {
+    version: "26.730.61309",
+    bundleVersion: "6223",
+    asarSha256: requiredSha,
+    sourceFamily: "chatgpt",
+  };
+  const required = detectSourceCapabilities({
+    sourceApp: "/source/ChatGPT.app",
+    identity: requiredIdentity,
+    patchSet: { ...requiredIdentity, codexVersion: requiredIdentity.version, id: "chatgpt-26.730.61309-6223" },
+    operations: { readSourceAsar: () => requiredSource },
+  });
+  assert.equal(required.composerCodeLanguageControl.status, "required");
+  assert.equal(required.composerCodeLanguageControl.evidence.javascriptMatches.length, 1);
+  assert.equal(required.composerCodeLanguageControl.evidence.stylesheetMatches.length, 1);
+  assert.equal("newChatProjectSelector" in required, false);
+
+  const oldSource = makeAsar({ "webview/assets/app.js": "export const old = true;" });
+  const oldSha = sha256(oldSource);
+  const oldIdentity = { version: "26.727.51351", bundleVersion: "6119", asarSha256: oldSha, sourceFamily: "chatgpt" };
+  const unavailable = detectSourceCapabilities({
+    sourceApp: "/source/ChatGPT.app",
+    identity: oldIdentity,
+    patchSet: { ...oldIdentity, codexVersion: oldIdentity.version, id: "chatgpt-26.727.51351-6119" },
+    operations: { readSourceAsar: () => oldSource },
+  });
+  assert.equal(unavailable.composerCodeLanguageControl.status, "unavailable");
+  assert.equal("newChatProjectSelector" in unavailable, false);
+});
+
+test("source capability detection fails closed for partial or regressed evidence", () => {
+  const marker = "data-composer-code-block-toolbar";
+  const partial = makeAsar({ "webview/assets/app.js": `document.querySelector("[${marker}]")` });
+  const sha = sha256(partial);
+  const identity = { version: "26.730.61639", bundleVersion: "6234", asarSha256: sha, sourceFamily: "chatgpt" };
+  const options = {
+    sourceApp: "/source/ChatGPT.app",
+    identity,
+    patchSet: { ...identity, codexVersion: identity.version, id: "chatgpt-26.730.61639-6234" },
+    operations: { readSourceAsar: () => partial },
+  };
+  assert.throws(() => detectSourceCapabilities(options), /partial source evidence/);
+
+  const absent = makeAsar({ "webview/assets/app.js": "export const current = true;" });
+  const absentSha = sha256(absent);
+  assert.throws(() => detectSourceCapabilities({
+    ...options,
+    identity: { ...identity, asarSha256: absentSha },
+    patchSet: { ...options.patchSet, asarSha256: absentSha },
+    operations: { readSourceAsar: () => absent },
+  }), /expected required but source evidence is absent/);
+});
 
 function readAsarFileContent(archive, filePath) {
   const files = new Map(walkFiles(archive.header));
@@ -6537,6 +6642,9 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     context,
     { filename: "plugins/userBubbleColors.js" },
   );
+  const bubbleColors = context.window.CodexPlus.plugins.get("userBubbleColors").exports;
+  assert.equal(bubbleColors.textColor("#e0218a"), "#000000");
+  assert.equal(bubbleColors.controlTextColor("#e0218a"), "#ffffff");
   const newChatProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: true });
   const existingThreadProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: false });
   assert.equal(newChatProps?.["data-codex-plus-user-entry"], "");
@@ -7027,8 +7135,8 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.doesNotMatch(bubblePlugin, /:is\(\[data-codex-plus-user-bubble\],\[data-codex-plus-user-entry\]\)\{background-color/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(\.ProseMirror,\.ProseMirror \*,\[data-codex-plus-rich-content\],\[data-codex-plus-rich-content\] \*\).*color:var\(--codex-plus-user-bubble-light-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-bubble\] :is\(h1,h2,h3,h4,h5,h6,p,li,blockquote,table,thead,tbody,tr,th,td,code,a,span,\[class\*="text-token"\],\[class\*="opacity-"\]\).*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-code-block-toolbar\] \*\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\).*opacity:1!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] :is\(button,\[role="button"\]\):not\(\[data-composer-code-block-toolbar\] \*\):not\(\[data-composer-attachment-pill\]\):not\(\[class\*="bg-token-foreground-inverse"\]\):not\(\[class\*="bg-token-foreground-primary"\]\):not\(\[class\*="bg-token-foreground-button"\]\) \*.*color:inherit!important.*stroke:currentColor!important/);
   assert.match(bubblePlugin, /--codex-plus-user-bubble-dark-fg\)!important.*opacity:1!important.*-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /button\[aria-disabled="true"\]/);
   assert.match(bubblePlugin, /opacity:1!important/);
@@ -7058,10 +7166,10 @@ test("user message patch applies variant-specific bubble colors with default fal
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \.composer-attachment-surface,:root\.electron-dark \[data-codex-plus-user-entry\] \.composer-attachment-surface\{background-color:color-mix\(in srgb,#000 62%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:#fff!important/);
   assert.match(bubblePlugin, /-webkit-text-fill-color:currentColor!important/);
   assert.match(bubblePlugin, /background-image:none!important/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important.*color:var\(--codex-plus-user-bubble-light-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important.*color:var\(--codex-plus-user-bubble-light-control-fg\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-light-fg\) 14%,var\(--codex-plus-user-bubble-light-bg\)\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] \*\{color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important\}/);
-  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\],:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:var\(--codex-plus-user-bubble-dark-fg\)!important/);
+  assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\],:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\]\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important.*color:var\(--codex-plus-user-bubble-dark-control-fg\)!important/);
   assert.match(bubblePlugin, /\[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button,:root\.electron-dark \[data-codex-plus-user-entry\] \[data-composer-code-block-toolbar\] button\{background-color:color-mix\(in srgb,var\(--codex-plus-user-bubble-dark-fg\) 14%,var\(--codex-plus-user-bubble-dark-bg\)\)!important/);
 });
 

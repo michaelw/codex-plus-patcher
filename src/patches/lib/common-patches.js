@@ -2,6 +2,7 @@ const { codexPlusRuntimeAssets } = require("../../runtime/assets");
 const { sourceFamilyConfig } = require("../../core/app-identity");
 const { replaceOnce } = require("./replace");
 const { makePatchSet } = require("./make-patch-set");
+const { validatePatchManifestConfig } = require("./manifest-validation");
 // Reuse is declared separately from the exact owner recorded by each wrapper.
 const { patchSetUsesTransformVariant: patchSetOwnsTransformVariant } = require("./transform-ownership");
 const { aboutMetadataRequire } = require("./hooks/about");
@@ -22,6 +23,7 @@ const {
 } = require("./project-selector-shortcut-patch");
 
 function buildCodexPlusPatchSet(config) {
+  const manifest = validatePatchManifestConfig(config);
   const oldTitle = "<title>Codex</title>";
   const sourceFamily = config.sourceFamily || "codex";
   const familyConfig = sourceFamilyConfig(sourceFamily);
@@ -8318,12 +8320,23 @@ function patchTerminalUnicode11(text) {
     }),
   }));
 
+  const patchIds = new Set(ownedPatches.map((patch) => patch.id));
+  for (const patchId of config.enabledPatches || []) {
+    if (!patchIds.has(patchId)) throw new Error(`Patch manifest ${config.id} enables unknown patch ${patchId}`);
+  }
+  const transformNames = new Set(ownedPatches.flatMap((patch) =>
+    patch.fileTransforms.map(([, transform]) => `${patch.id}/${transform.name || "anonymous"}`)));
+  for (const variant of config.unchangedTransformVariants || []) {
+    if (!transformNames.has(variant)) throw new Error(`Patch manifest ${config.id} declares unknown unchanged transform ${variant}`);
+  }
+
 return makePatchSet({
     id: config.id,
     codexVersion: config.codexVersion,
     bundleVersion: config.bundleVersion,
     asarSha256: config.asarSha256,
     sourceFamily,
+    sourceFiles: manifest.sourceFiles,
     runtimeConfig: {
       ...(config.runtimeConfig || {}),
       bundleVersion: config.bundleVersion,
