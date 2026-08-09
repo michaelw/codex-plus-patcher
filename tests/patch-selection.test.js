@@ -985,7 +985,7 @@ test("72028 owns its moved app shell, command menu, and startup anchors", () => 
     "A=(0,Yk.jsx)(Gy,{...p,className:C,",
   ].join(""));
   assert.match(composer, /function CPXComposerScope\(e\)/);
-  assert.match(composer, /CPXMC\.syncComposerSurface/);
+  assert.match(composer, /CPXMS\.syncComposerSurface/);
   const composerWithProject = composerProject(`${composer}ol??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
   assert.match(composerWithProject, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   const commandText = commands([
@@ -1071,7 +1071,7 @@ test("72359 owns its moved app shell and composer anchors", () => {
   ].join(""));
   assert.match(composer, /function CPXComposerScope\(e\)/);
   assert.match(composer, /function CPXComposerSurface\(e\)/);
-  assert.match(composer, /CPXMC\.syncComposerSurface/);
+  assert.match(composer, /CPXMS\.syncComposerSurface/);
   assert.equal(composer.match(/Yk\.jsx\)\(CPXComposerSurface/g)?.length, 3);
   const composerWithProject = composerProject(`${composer}ol??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
   assert.match(composerWithProject, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
@@ -1166,7 +1166,7 @@ test("31251 owns and applies its moved app shell, composer, command, and startup
     "A=(0,Yk.jsx)(Gy,{...p,className:C,",
   ].join(""));
   assert.match(bubble, /function CPXComposerScope\(e\)/);
-  assert.match(bubble, /CPXMC\.syncComposerSurface/);
+  assert.match(bubble, /CPXMS\.syncComposerSurface/);
   const composer = composerProject(`${bubble}sl??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Wc,Qo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
   assert.match(composer, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   assert.match(composer, /CPXOpenFile=CPXSP\.bindOpenFile/);
@@ -1215,7 +1215,7 @@ test("31925 owns its moved composer surface anchors", () => {
   ].join(""));
 
   assert.match(transformed, /function CPXComposerScope\(e\)/);
-  assert.match(transformed, /CPXMC\.syncComposerSurface/);
+  assert.match(transformed, /CPXMS\.syncComposerSurface/);
   const project = composerProject(`${transformed}al??(0,bW.jsx)(qk,{className:P,utilityBarVariant:ne,hasDropTargetPortal:Hc,Zo=(e,t=Ir)=>{let n=e.fsPath||e.path;`);
   assert.match(project, /bW\.jsx\)\(CPXComposerScope,\{native:qk,project:Y==null\?T:null,newChat:Y==null,className:P/);
   assert.match(project, /CPXOpenFile=CPXSP\.bindOpenFile\(\(e,t=\{\}\)=>Il\(/);
@@ -1605,8 +1605,8 @@ test("hook builders stay within the compact glue budget", () => {
 test("composer surface hook owns its message-composer adapter dependency", () => {
   const hook = composerSurfaceElementHook("jsx", "React");
 
-  assert.match(hook, /var CPXMC=window\.CodexPlusHost\.adapters\.messageComposer/);
-  assert.match(hook, /CPXMC\.syncComposerSurface/);
+  assert.match(hook, /var CPXMS=window\.CodexPlusHost\.adapters\.messageComposer/);
+  assert.match(hook, /CPXMS\.syncComposerSurface/);
 });
 
 test("project selector shortcut replacements stay within the compact behavior budget", () => {
