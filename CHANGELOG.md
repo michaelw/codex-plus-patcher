@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.31.0...v0.32.0) (2026-08-09)
+
+
+### Features
+
+* support ChatGPT 26.803.41515 ([#148](https://github.com/michaelw/codex-plus-patcher/issues/148)) ([c204bfb](https://github.com/michaelw/codex-plus-patcher/commit/c204bfb2c3a0c2308c33a010b3d6dfb0c324559e))
+
+
+### Bug Fixes
+
+* harden ChatGPT composer regression coverage ([#147](https://github.com/michaelw/codex-plus-patcher/issues/147)) ([b58e8a6](https://github.com/michaelw/codex-plus-patcher/commit/b58e8a6349252d4d831b2694bfe4d5fec432110a))
+* match composer code controls to submit button ([#144](https://github.com/michaelw/codex-plus-patcher/issues/144)) ([b89d353](https://github.com/michaelw/codex-plus-patcher/commit/b89d353023df3a37850c61877ca3bdf8ac8c6eef))
+* restore New Chat composer color and radius ([#146](https://github.com/michaelw/codex-plus-patcher/issues/146)) ([6d273da](https://github.com/michaelw/codex-plus-patcher/commit/6d273dac3ef8b68d76a2d18883e5bf8f4befa8e8))
+
 ## [0.31.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.30.0...v0.31.0) (2026-08-07)
 
 
