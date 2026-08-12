@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.33.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.32.0...v0.33.0) (2026-08-12)
+
+
+### Features
+
+* support ChatGPT 26.803.81509 ([#151](https://github.com/michaelw/codex-plus-patcher/issues/151)) ([a7f8b8c](https://github.com/michaelw/codex-plus-patcher/commit/a7f8b8cfb9364d931002883541e8f1a1737d6cb8))
+
+
+### Bug Fixes
+
+* skip incompatible release intake channels ([#149](https://github.com/michaelw/codex-plus-patcher/issues/149)) ([29fceaa](https://github.com/michaelw/codex-plus-patcher/commit/29fceaa38fe3bec07ccff0d295fb0394f1f152d2))
+
 ## [0.32.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.31.0...v0.32.0) (2026-08-09)
 
 
