@@ -232,8 +232,9 @@ function releaseApiUrl({ repo, tag }) {
   return `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`;
 }
 
-function releasesApiUrl({ repo, limit }) {
-  return `https://api.github.com/repos/${repo}/releases?per_page=${encodeURIComponent(String(limit))}`;
+function releasesApiUrl({ repo, limit, page = 1 }) {
+  const base = `https://api.github.com/repos/${repo}/releases?per_page=${encodeURIComponent(String(limit))}`;
+  return page === 1 ? base : `${base}&page=${encodeURIComponent(String(page))}`;
 }
 
 function releaseVersionFromTag(tagName) {
@@ -454,11 +455,25 @@ async function intakeRelease(args, operations = {}) {
 }
 
 async function intakeNewestReleases(args, operations = {}) {
-  const releases = await fetchJson(releasesApiUrl({ repo: args.repo, limit: args.newest }), operations);
-  if (!Array.isArray(releases)) throw new Error("GitHub releases response was not an array");
-  const selected = releases.slice(0, args.newest);
+  const selected = [];
+  let page = 1;
+  while (selected.length < args.newest) {
+    const releases = await fetchJson(releasesApiUrl({ repo: args.repo, limit: args.newest, page }), operations);
+    if (!Array.isArray(releases)) throw new Error("GitHub releases response was not an array");
+    for (const release of releases) {
+      try {
+        selectAsset(release, { arch: operations.arch || process.arch });
+        selected.push(release);
+      } catch {
+        // Other release channels can share this repository without shipping a host macOS asset.
+      }
+      if (selected.length === args.newest) break;
+    }
+    if (releases.length < args.newest) break;
+    page += 1;
+  }
   if (selected.length < args.newest) {
-    throw new Error(`Requested ${args.newest} releases, but only found ${selected.length}`);
+    throw new Error(`Requested ${args.newest} host macOS releases, but only found ${selected.length}`);
   }
 
   const results = [];
