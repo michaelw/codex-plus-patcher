@@ -1037,6 +1037,17 @@ test("isolated Aharness audit allows its explicit interaction waits to outlive t
   assert.match(isolatedProbe, /cdp\.evaluate\([\s\S]*?auditPlugins: \["aharnessRuns"\][\s\S]*?\{ timeoutMs: 600000 \}/);
 });
 
+test("Aharness audit accepts a visible native header after a hidden stale header", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf('if (shouldProbe("aharnessRuns"))');
+  const end = source.indexOf('if (shouldProbe("audit"))', start);
+  const aharnessAudit = source.slice(start, end);
+
+  assert.match(aharnessAudit, /querySelectorAll\("header, \[data-testid\*='header'\], \[class\*='header'\]"\)/);
+  assert.match(aharnessAudit, /normalHeaders\.some\(visible\)/);
+  assert.doesNotMatch(aharnessAudit, /const normalHeader = document\.querySelector/);
+});
+
 test("broad plugin audit allows its finite probes to outlive the default DevTools request timeout", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("const live = await withAuditProgress");
@@ -1187,7 +1198,7 @@ test("project selector shortcut verifier fails with fuzzy DOM details diagnostic
   assert.deepEqual(sent.filter((call) => call.method === "Input.dispatchKeyEvent").map((call) => call.params.key), ["Escape", "Escape", ".", ".", "Escape", "Escape"]);
 });
 
-test("sidebar blur command palette verifier uses trusted Enter key activation", async () => {
+test("sidebar blur command palette verifier activates the exact live result with trusted keyboard input", async () => {
   const sent = [];
   const evaluations = [
     undefined,

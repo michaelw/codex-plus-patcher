@@ -5518,8 +5518,8 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (rowText.includes("examples/color-funnel.fsm.ts") || rowText.includes("Color funnel")) {
         throw new Error(`Aharness run row repeated the FSM label or target path: ${rowText}`);
       }
-      const normalHeader = document.querySelector("header, [data-testid*='header'], [class*='header']");
-      if (normalHeader && !visible(normalHeader)) throw new Error("Normal Codex header became hidden during aharness route");
+      const normalHeaders = Array.from(document.querySelectorAll("header, [data-testid*='header'], [class*='header']"));
+      if (normalHeaders.length > 0 && !normalHeaders.some(visible)) throw new Error("Normal Codex header became hidden during aharness route");
       const actionDock = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock]");
       if (!actionDock) throw new Error("Aharness bottom action dock did not render");
       if (document.querySelector("[data-ah-cancel]") || normalize(document.body.textContent || "").includes("Cancel run")) {
@@ -6462,26 +6462,28 @@ async function runAudit(args, {
     }
     if (live.pluginResults?.sidebarNameBlur?.ok) {
       const artifactDir = visualArtifactDir ||= defaultAuditArtifactDir({ version: applyResult?.codexVersion || "unknown" });
+      if (args.visualContract === true) {
+        const deadline = Date.now() + 5000;
+        do {
+          const ready = await cdp.evaluate(`(() => {
+            const text = document.body?.innerText || "";
+            return (
+              !text.includes("Loading chats…") &&
+              !text.includes("Loading chats...") &&
+              !text.includes("Loading tasks…") &&
+              !text.includes("Loading tasks...")
+            );
+          })()`);
+          if (ready) break;
+          await delay(250);
+        } while (Date.now() < deadline);
+      }
       const commandPalette = await withAuditCheckProgress(
         progress,
         "Verifying sidebar blur command palette action",
         "Sidebar blur command palette action passed",
         () => verifySidebarBlurCommandPalette(cdp, {
           beforeActivate: args.visualContract === true ? async () => {
-            const deadline = Date.now() + 5000;
-            do {
-              const ready = await cdp.evaluate(`(() => {
-                const text = document.body?.innerText || "";
-                return (
-                  !text.includes("Loading chats…") &&
-                  !text.includes("Loading chats...") &&
-                  !text.includes("Loading tasks…") &&
-                  !text.includes("Loading tasks...")
-                );
-              })()`);
-              if (ready) break;
-              await delay(250);
-            } while (Date.now() < deadline);
             preparedCommandContract = {
               screenshot: await capturePng(cdp, path.join(artifactDir, "sidebar-command.png")),
               readback: await visualReadback(cdp),
