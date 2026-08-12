@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.803.41515-6321");
-  assert.equal(chatgptPatchSets.length, 27);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.803.81509-6415");
+  assert.equal(chatgptPatchSets.length, 28);
 
   for (const identity of [
+    ["26.803.81509", "6415", "01a9c7b0fb822a8bcee829849194b757ce2ea5cf40d1ea05750c504f92314d79"],
     ["26.803.41515", "6321", "5f6e773aafd542d3cf09e10b5dca6cabd301d0a155f4b8ce870e3915fc3da25e"],
     ["26.730.61639", "6234", "3fea92820c0fb7a69473e7a8308a8e5b8e91524289a84181a33533ec6cb51d45"],
     ["26.730.61309", "6223", "9de942a9a058fca20b78d171032e0fe65ccb1063868f175ff7eb4e159efc2c38"],
@@ -356,6 +357,47 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   const patchSet = selectPatch(patchSets, identity);
   assert.equal(patchSet, codexPatchSets[0]);
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
+});
+
+test("81509 maps its exact split assets and current runtime dependencies", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.803.81509-6415");
+  const transforms = collectFileTransforms(patchSet);
+  const transformedPaths = new Set(transforms.map(([filePath]) => filePath));
+
+  for (const filePath of [
+    ".vite/build/main-u0CfdGw7.js",
+    ".vite/build/src-Cz_uUmVl.js",
+    "webview/assets/app-initial-Bd3Z1bES.js",
+    "webview/assets/general-settings-h4wYKRAT.js",
+    "webview/assets/local-conversation-page-CS01etV9.js",
+    "webview/assets/terminal-panel-CIxVdzcf.js",
+    "webview/assets/mermaid-diagram-C675Qy-T.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.803.41515"), true);
+  assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-fSOWPzYj.js");
+  assert.equal(patchSet.runtimeConfig.terminalUnicodeVersion, "11");
+  assert.equal(transforms.length, 30);
+});
+
+test("81509 binds its moved Review and composer seams through shared adapters", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.803.81509-6415");
+  const byName = (name) => collectFileTransforms(patchSet).find(([, transform]) => transform.name === name)?.[1];
+  const review = byName("patchThreadSidePanelTabs")([
+    "function S4o(e){let t=(0,E4o.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,H$.jsx)(OZa,{children:(0,H$.jsx)(yKo,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), { patchSetId: patchSet.id });
+  const composer = byName("patchComposerBubbleColors")([
+    "function ugo(e){let t=(0,TX.c)(19),{children:n,className:r,utilityBarVariant:i,inert:a,isDragActive:o,layout:s,radiusVariant:c,surfaceOverflow:l,surfaceVariant:u,onDragEnter:d,onDragLeave:f,onDragOver:p,onDrop:m}=e,",
+    "(w=(0,EX.jsx)($f.div,{inert:a,className:S,\"data-composer-drag-active\":C,\"data-composer-layout\":_,\"data-composer-radius-variant\":v,\"data-composer-surface-overflow\":y,\"data-composer-surface-variant\":b,\"data-composer-utility-bar-variant\":h,onMouseDown:Tgo,onDragEnter:d,onDragOver:p,onDragLeave:f,onDrop:m,children:n}),t[2]=n,t[3]=a,t[4]=_,t[5]=d,t[6]=f,t[7]=p,t[8]=m,t[9]=v,t[10]=y,t[11]=b,t[12]=S,t[13]=C,t[14]=h,t[15]=w)",
+  ].join(""), { patchSetId: patchSet.id });
+
+  assert.match(review, /renderBodyFromHost\(e,\[H\$,gKo,/);
+  assert.match(review, /mainReviewContent:\(0,H\$\.jsx\)\(yKo,/);
+  assert.match(review, /,_B,oWo\]\)/);
+  assert.match(composer, /var CPXMS=window\.CodexPlusHost\.adapters\.messageComposer/);
+  assert.doesNotMatch(composer, /var CPXMC=/);
+  assert.match(composer, /EX\.jsx\)\(CPXComposerSurface,\{native:\$f\.div/);
 });
 
 test("Unicode 11 terminal wiring covers every ChatGPT patch set and excludes Codex", () => {
