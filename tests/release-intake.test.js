@@ -403,6 +403,63 @@ test("release intake can intake the newest N releases", async () => {
   });
 });
 
+test("release intake newest mode skips releases without a host macOS asset", async () => {
+  await withTempDir(async (tmpDir) => {
+    const linuxRelease = {
+      tag_name: "codex-app-linux-preview-26.803.81509",
+      assets: [
+        { name: "chatgpt_26.803.81509_arm64.deb" },
+        { name: "SHA256SUMS-linux.txt" },
+      ],
+    };
+    const firstRelease = createRelease({ tag: "codex-app-26.803.81509" });
+    const secondRelease = createRelease({ tag: "codex-app-26.803.61601" });
+    const firstZip = Buffer.from("first-mac-zip");
+    const secondZip = Buffer.from("second-mac-zip");
+    const identities = [
+      { asarSha256: "first-source-sha", bundleVersion: "6415", version: "26.803.81509" },
+      { asarSha256: "second-source-sha", bundleVersion: "6396", version: "26.803.61601" },
+    ];
+
+    const results = await intakeNewestReleases(
+      {
+        asset: null,
+        force: false,
+        json: false,
+        newest: 2,
+        repo: "Wangnov/codex-app-mirror",
+        sourcesDir: tmpDir,
+        tag: "latest",
+      },
+      {
+        extractZip: (_zip, destination) => {
+          fs.mkdirSync(path.join(destination, "ChatGPT.app"), { recursive: true });
+        },
+        fetchImpl: createFetch({
+          "https://api.github.com/repos/Wangnov/codex-app-mirror/releases?per_page=2": response(
+            JSON.stringify([linuxRelease, firstRelease]),
+          ),
+          "https://api.github.com/repos/Wangnov/codex-app-mirror/releases?per_page=2&page=2": response(
+            JSON.stringify([secondRelease]),
+          ),
+          "https://example.test/26.803.81509/SHA256SUMS-macos.txt": response(
+            checksumLine(firstZip, "26.803.81509"),
+          ),
+          "https://example.test/26.803.81509/Codex.zip": response(firstZip),
+          "https://example.test/26.803.61601/SHA256SUMS-macos.txt": response(
+            checksumLine(secondZip, "26.803.61601"),
+          ),
+          "https://example.test/26.803.61601/Codex.zip": response(secondZip),
+        }),
+        getAppIdentity: () => ({ ...identities.shift(), sourceFamily: "chatgpt" }),
+        patchSets: [],
+      },
+    );
+
+    assert.deepEqual(results.map((result) => result.version), ["26.803.81509", "26.803.61601"]);
+  });
+});
+
 test("release intake newest mode skips existing source apps", async () => {
   await withTempDir(async (tmpDir) => {
     const firstRelease = createRelease({ tag: "codex-app-26.623.70822" });
