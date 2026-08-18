@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.2](https://github.com/michaelw/codex-plus-patcher/compare/v0.34.1...v0.34.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* restore nested review diffs and comments ([#157](https://github.com/michaelw/codex-plus-patcher/issues/157)) ([89781a9](https://github.com/michaelw/codex-plus-patcher/commit/89781a9fa260a92f03ce83764d23a0b42d3cc026))
+
 ## [0.34.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.34.0...v0.34.1) (2026-08-18)
 
 
