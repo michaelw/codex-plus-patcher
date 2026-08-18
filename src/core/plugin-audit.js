@@ -2619,6 +2619,23 @@ async function captureNewChatComposerProof(cdp, {
     const rect = target?.getBoundingClientRect?.();
     return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
   })(${JSON.stringify(kind)}, ${JSON.stringify(label)})`);
+  const waitForStablePoint = async (kind, label = "") => {
+    const deadline = Date.now() + Math.min(timeoutMs, 10000);
+    let previous = null;
+    let stableSamples = 0;
+    while (Date.now() < deadline) {
+      const point = await pointFor(kind, label);
+      if (point && previous && Math.abs(point.x - previous.x) <= 0.5 && Math.abs(point.y - previous.y) <= 0.5) {
+        stableSamples += 1;
+        if (stableSamples >= 2) return point;
+      } else {
+        stableSamples = 0;
+      }
+      previous = point;
+      await wait(100);
+    }
+    return null;
+  };
   const readState = () => cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
@@ -2736,8 +2753,7 @@ async function captureNewChatComposerProof(cdp, {
   const requiresCodeToolbar = capabilities.composerCodeLanguageControl?.status === "required";
   const validCodeToolbar = (status) => !requiresCodeToolbar || (
     status.codeToolbarMounted &&
-    status.codeToolbarBackground === status.submitBackground &&
-    status.codeControlBackground === status.submitBackground &&
+    status.codeToolbarBackground === status.codeControlBackground &&
     status.codeControlBackground !== status.background &&
     status.codeControlContrast != null && status.codeControlContrast >= 4.5
   );
@@ -2811,12 +2827,7 @@ async function captureNewChatComposerProof(cdp, {
     const projectSelectorTrigger = await pointFor("project-selector-trigger");
     if (projectSelectorTrigger) {
       await click(projectSelectorTrigger);
-      const projectOptionDeadline = Date.now() + Math.min(timeoutMs, 10000);
-      let projectOption = null;
-      while (!projectOption && Date.now() < projectOptionDeadline) {
-        projectOption = await pointFor("project-option", target.label);
-        if (!projectOption) await wait(100);
-      }
+      const projectOption = await waitForStablePoint("project-option", target.label);
       if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
       await click(projectOption);
     } else {
@@ -3342,8 +3353,7 @@ async function verifyComposerVerbatimContrast(cdp, {
         await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 });
         const stateOk = [initial, hover, focused, open, selected, reopened].every((state) =>
           state.toolbarMounted && state.controlMounted && state.submitMounted &&
-          state.toolbarBackground === state.submitBackground &&
-          state.controlBackground === state.submitBackground &&
+          state.toolbarBackground === state.controlBackground &&
           state.controlBackground !== state.surfaceBackground &&
           state.contrast != null && state.contrast >= 4.5);
         const menuStatesOk = [open, reopened].every((state) =>
@@ -3362,9 +3372,14 @@ async function verifyComposerVerbatimContrast(cdp, {
       window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.setVars?.();
     })(${JSON.stringify(originalState)})`);
   }
+  const adaptiveColorsOk = themes.every((theme) => {
+    const themeCases = cases.filter((entry) => entry.theme === theme);
+    return new Set(themeCases.map((entry) => entry.initial.controlBackground)).size === colors.length;
+  });
   const contract = {
-    ok: cases.length === 6 && cases.every((entry) => entry.ok),
+    ok: cases.length === 6 && cases.every((entry) => entry.ok) && adaptiveColorsOk,
     supported: true,
+    adaptiveColorsOk,
     summary: cases.map((entry) => ({
       theme: entry.theme,
       colorName: entry.colorName,
@@ -3473,7 +3488,7 @@ async function captureVisualContract(cdp, {
     fsImpl,
   }) : null;
   if (composerVerbatim?.screenshots) Object.assign(screenshots, composerVerbatim.screenshots);
-  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control does not match the submit button background: ${JSON.stringify(composerVerbatim.summary || composerVerbatim)}`);
+  if (composerVerbatim?.ok === false) throw new Error(`Composer verbatim language control does not adapt to the composer background: ${JSON.stringify(composerVerbatim.summary || composerVerbatim)}`);
   const newChatComposer = isChatGpt ? await captureNewChat(cdp, {
     artifactDir,
     codexVersion: result?.applyResult?.codexVersion,
