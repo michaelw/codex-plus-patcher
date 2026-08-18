@@ -1114,6 +1114,8 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /const projectSelectorTrigger = await pointFor\("project-selector-trigger"\)/);
   assert.match(source, /if \(projectSelectorTrigger\)/);
   assert.match(source, /await click\(projectSelectorTrigger\)/);
+  assert.match(source, /const waitForStablePoint = async/);
+  assert.match(source, /await waitForStablePoint\("project-option", target\.label\)/);
   assert.match(source, /pointFor\("project-new-chat", target\.label\)/);
   assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);
   assert.doesNotMatch(source, /const labels =/);
@@ -3829,7 +3831,10 @@ test("visual contract uses preflighted capability evidence for the fenced-code l
   assert.match(verifier, /state\.menuContrast != null && state\.menuContrast >= 4\.5/);
   assert.match(verifier, /for \(let attempt = 0; attempt < 3 && !reopened\?\.menuMounted; attempt \+= 1\)/);
   assert.match(verifier, /selected\.selectedText !== initial\.selectedText/);
-  assert.match(verifier, /state\.toolbarBackground === state\.submitBackground/);
+  assert.match(verifier, /state\.toolbarBackground === state\.controlBackground/);
+  assert.match(verifier, /const adaptiveColorsOk = themes\.every/);
+  assert.match(verifier, /new Set\(themeCases\.map\(\(entry\) => entry\.initial\.controlBackground\)\)\.size === colors\.length/);
+  assert.doesNotMatch(verifier, /state\.toolbarBackground === state\.submitBackground/);
   assert.match(source, /composerVerbatim\?\.screenshots/);
 });
 

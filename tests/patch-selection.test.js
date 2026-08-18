@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.803.81509-6415");
-  assert.equal(chatgptPatchSets.length, 28);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.810.52044-6662");
+  assert.equal(chatgptPatchSets.length, 29);
 
   for (const identity of [
+    ["26.810.52044", "6662", "6e7e8791b8bf69a586ff994721fff518af391d9efdc66cd2e620dd2a4aedc90f"],
     ["26.803.81509", "6415", "01a9c7b0fb822a8bcee829849194b757ce2ea5cf40d1ea05750c504f92314d79"],
     ["26.803.41515", "6321", "5f6e773aafd542d3cf09e10b5dca6cabd301d0a155f4b8ce870e3915fc3da25e"],
     ["26.730.61639", "6234", "3fea92820c0fb7a69473e7a8308a8e5b8e91524289a84181a33533ec6cb51d45"],
@@ -357,6 +358,27 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   const patchSet = selectPatch(patchSets, identity);
   assert.equal(patchSet, codexPatchSets[0]);
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
+});
+
+test("52044 maps its exact split assets and owns its transform variant", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.810.52044-6662");
+  assert.ok(patchSet);
+  const transforms = collectFileTransforms(patchSet);
+  const transformedPaths = new Set(transforms.map(([filePath]) => filePath));
+
+  for (const filePath of [
+    ".vite/build/main-BIHCWhv-.js",
+    ".vite/build/src-DhHWkTcG.js",
+    "webview/assets/app-initial-BqZ9AFkF.js",
+    "webview/assets/general-settings-BrN6qKUp.js",
+    "webview/assets/local-conversation-page-DSaHQbBd.js",
+    "webview/assets/terminal-panel-C4Xa8296.js",
+    "webview/assets/mermaid-diagram-DnM2D9ht.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.810.52044"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.803.81509-6415", "chatgpt-26.810.52044"), false);
+  assert.equal(transforms.length, 30);
 });
 
 test("81509 maps its exact split assets and current runtime dependencies", () => {
@@ -5264,6 +5286,48 @@ test("41515 project selector trigger binds the live React namespace", () => {
   });
 
   assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,Hys\)\}/);
+});
+
+test("52044 project selector trigger binds the live React namespace", () => {
+  const source = [
+    "function JPs(e){let t=(0,QPs.c)(92),",
+    "function zPs(e){let t=(0,BPs.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,o1.jsx)(oQ.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,s1.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,s1.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:HPs(s.projects,k,ZPs)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),",
+    "ne=s==null?null:(0,c1.jsx)(GPs,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:YPs,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,c1.jsx)(zPs,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,c1.jsxs)(c1.Fragment,{children:[I,ne]}),status:P,footerItems:te,emptyMessage:re})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=IPs,K=",
+  ].join("");
+
+  const transformed = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.810.52044-6662",
+  });
+
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,\$Ps\)\}/);
+});
+
+test("52044 thread header renders the reusable accessory host without rewriting compiler cache", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.810.52044-6662");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = [
+    "function n5r(e){let t=(0,C5r.c)(72),",
+    "v=_!==`custom-titlebar`,y,b,x,S,C,w,T,E,D,O,k;if(t[0]!==c||t[1]!==d||t[2]!==f||t[12]!==s||t[13]!==v){",
+    "let e=f.filter(c5r),a=f.filter(s5r),u=f.filter(o5r),_=e.length>0,",
+    "t[12]=s,t[13]=v,t[14]=y,",
+  ].join("");
+
+  const transformed = transform(source, { patchSetId: patchSet.id });
+
+  assert.match(transformed, /function n5r\(e\)\{let t=\(0,C5r\.c\)\(72\),/);
+  assert.match(transformed, /function CPXThreadHeaderAccessories\(e\)/);
+  assert.match(transformed, /u=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(f\.filter\(o5r\),CPXThreadHeaderAccessories\(\{context:CPXH\.context\.active\(\),deps:\{jsx:fF\.jsx,jsxs:fF\.jsxs,useSyncExternalStore:e5r\.useSyncExternalStore\}\}\)\)/);
+  assert.doesNotMatch(transformed, /CPXHV|t\[72\]/);
 });
 
 test("61309 owns its moved local task row project color anchors", () => {
