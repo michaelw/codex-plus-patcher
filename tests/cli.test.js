@@ -1316,6 +1316,7 @@ test("review panel verifier returns sanitized success details", async () => {
         reviewToolbarFailureVisible: false,
         nestedRepoVisible: true,
         strictNestedBranchPreload: true,
+        strictNestedComments: true,
         nestedBranchPickerCount: 2,
         nestedBranchPickerPreloadBeforeOpen: true,
         nestedBranchPickerPreloadComplete: true,
@@ -1328,6 +1329,8 @@ test("review panel verifier returns sanitized success details", async () => {
         rawNestedDiffFallbackCount: 0,
         reviewDiffCardCount: 3,
         nestedDiffCardCount: 2,
+        nestedInteractiveDiffCount: 2,
+        nestedUndefinedDiffCount: 0,
         nestedDiffDisclosureExpanded: true,
         nestedDiffDisclosureCollapsed: true,
         reviewTabCount: 1,
@@ -1342,6 +1345,8 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.deepEqual(result.nestedBranchPickerDetails.map((detail) => detail.branchLoadState), ["loaded", "loaded"]);
   assert.equal(result.rawNestedDiffFallbackCount, 0);
   assert.equal(result.reviewDiffCardCount, 3);
+  assert.equal(result.nestedInteractiveDiffCount, 2);
+  assert.equal(result.nestedUndefinedDiffCount, 0);
   assert.equal(result.nestedDiffDisclosureExpanded, true);
   assert.equal(result.nestedDiffDisclosureCollapsed, true);
   assert.equal(result.message, undefined);
@@ -1400,6 +1405,7 @@ test("review panel verifier rejects Branch proof and nested toolbar failures", a
     nativeReviewSourceVisible: true,
     nestedRepoVisible: true,
     strictNestedBranchPreload: true,
+    strictNestedComments: true,
     nestedBranchPickerCount: 2,
     nestedBranchPickerPreloadBeforeOpen: true,
     nestedBranchPickerPreloadComplete: true,
@@ -1408,14 +1414,20 @@ test("review panel verifier rejects Branch proof and nested toolbar failures", a
     rawNestedDiffFallbackCount: 0,
     reviewDiffCardCount: 3,
     nestedDiffCardCount: 2,
+    nestedInteractiveDiffCount: 2,
+    nestedUndefinedDiffCount: 0,
     nestedDiffDisclosureExpanded: true,
     nestedDiffDisclosureCollapsed: true,
   };
   const branch = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: false, reviewToolbarFailureVisible: false }) });
   const toolbarFailure = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: true }) });
+  const commentsDisabled = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: false, nestedInteractiveDiffCount: 0 }) });
+  const undefinedText = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: false, nestedUndefinedDiffCount: 1 }) });
 
   assert.equal(branch.ok, false);
   assert.equal(toolbarFailure.ok, false);
+  assert.equal(commentsDisabled.ok, false);
+  assert.equal(undefinedText.ok, false);
 });
 
 test("Review panel audit retries only a cold nested branch preload", () => {
@@ -1443,6 +1455,8 @@ test("Review panel audit retries only a cold nested branch preload", () => {
     reviewDiffCardCount: 7,
     reviewLoadingPlaceholderCount: 0,
     nestedDiffCardCount: 2,
+    nestedInteractiveDiffCount: 2,
+    nestedUndefinedDiffCount: 0,
     nestedDiffDisclosureExpanded: true,
     nestedDiffDisclosureCollapsed: true,
   };

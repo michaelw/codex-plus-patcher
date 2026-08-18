@@ -28,7 +28,7 @@
       Dropdown,
       DropdownMenu,
       BranchPickerDropdownContent,
-      ,
+      useReviewCommentProps,
       parseDiff,
       DiffCard,
     ] = hostDeps;
@@ -54,6 +54,7 @@
       Dropdown,
       DropdownMenu,
       BranchPickerDropdownContent,
+      useReviewCommentProps,
       parseDiff,
       DiffCard,
     };

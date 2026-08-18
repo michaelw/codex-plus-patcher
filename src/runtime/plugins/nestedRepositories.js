@@ -170,7 +170,7 @@
     });
   }
 
-  function RepoDiffBody({ cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading }, deps) {
+  function RepoDiffBody({ cwd, hostConfig, conversationId, commentProps, diffMode, diffText, statusText, error, isLoading }, deps) {
     const { jsx, createElement, parseDiff, DiffCard, pathValue } = deps;
     if (error != null) return PlainDiff({ text: `Unable to load diff: ${statusText}` }, deps);
     if (isLoading || diffText == null) return ReviewDiagnostic({ message: statusText }, deps);
@@ -185,10 +185,7 @@
       return PlainDiff({ text: `Unable to parse diff: ${message}\n\n${diffText}` }, deps);
     }
     if (parsed == null || parsed.length === 0) return ReviewDiagnostic({ message: statusText }, deps);
-    parsed = parsed.map((diff) => ({
-      ...diff,
-      metadata: { ...diff.metadata, isPartial: false },
-    }));
+    const repoCwd = pathValue(cwd) ?? cwd;
     return jsx("div", {
       className: "mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2",
       children: parsed.map((diff, index) =>
@@ -197,9 +194,10 @@
           DiffCard,
           deps,
           props: {
+            ...commentProps,
             containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
             conversationId: conversationId ?? undefined,
-            cwd: pathValue(cwd) ?? cwd,
+            cwd: repoCwd,
             diff,
             diffViewWrap: true,
             expandScope: "review",
@@ -213,6 +211,7 @@
             showHunkActions: false,
             stickyHeader: false,
             viewType: diffMode ?? "unified",
+            workspaceRoot: repoCwd,
           },
         }),
       ),
@@ -440,7 +439,7 @@
     });
   }
 
-  function RepoPatchGroup({ repo, hostConfig, hostId, conversationId, diffMode, baseBranch, setBaseBranch, collapsed, setCollapsed, deps }) {
+  function RepoPatchGroup({ repo, hostConfig, hostId, conversationId, commentProps, diffMode, baseBranch, setBaseBranch, collapsed, setCollapsed, deps }) {
     const { jsx, jsxs, React, gitRequest, pathValue } = deps;
     const [diffText, setDiffText] = React.useState(null);
     const [loading, setLoading] = React.useState(false);
@@ -517,20 +516,25 @@
             jsx(BranchPicker, { repo, hostConfig, baseBranch, setBaseBranch, currentBranch, deps }),
           ],
         }),
-        collapsed ? null : RepoDiffBody({ cwd: repo.cwd, hostConfig, conversationId, diffMode, diffText, statusText, error, isLoading: loading }, deps),
+        collapsed ? null : RepoDiffBody({ cwd: repo.cwd, hostConfig, conversationId, commentProps, diffMode, diffText, statusText, error, isLoading: loading }, deps),
       ],
     });
   }
 
   function ReviewMux(props, deps) {
     deps = reviewDeps(deps);
-    const { jsx, jsxs, React, useAtom, hostConfigAtom, gitRequest, pathValue } = deps;
+    const { jsx, jsxs, React, useAtom, hostConfigAtom, gitRequest, pathValue, useReviewCommentProps } = deps;
     const context = window.CodexPlusHost.adapters.context.active();
     const cwd = context?.cwd || null;
     const hostId = context?.hostId || null;
     const hostConfig = typeof useAtom === "function" && hostConfigAtom != null ? atomValue(useAtom(hostConfigAtom)) : null;
     const conversationId = context?.threadId || context?.routeId || null;
     const isVirtual = Boolean(context?.routeId?.startsWith("cpx-"));
+    const reviewCommentState =
+      typeof useReviewCommentProps === "function"
+        ? useReviewCommentProps({ conversationId: conversationId || "codex-plus-review", enablePullRequestComments: !isVirtual })
+        : null;
+    const commentProps = reviewCommentState?.commentProps ?? {};
     const [targets, setTargets] = React.useState(null);
     const [collapsed, setCollapsedState] = React.useState(() => new Map());
     const [baseBranches, setBaseBranches] = React.useState(() => new Map());
@@ -624,6 +628,7 @@
               hostConfig,
               hostId,
               conversationId,
+              commentProps,
               diffMode: props.diffMode,
               baseBranch: baseBranches.get(keyFor(repo)) ?? "",
               setBaseBranch: (branch) => setBaseBranch(repo, branch),
