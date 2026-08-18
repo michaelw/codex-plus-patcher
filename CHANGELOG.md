@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/michaelw/codex-plus-patcher/compare/v0.34.0...v0.34.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* make regression home assertion portable ([#155](https://github.com/michaelw/codex-plus-patcher/issues/155)) ([9194bdd](https://github.com/michaelw/codex-plus-patcher/commit/9194bddd5196505b95b4ad3239f22777bdc1adf9))
+
 ## [0.34.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.33.0...v0.34.0) (2026-08-18)
 
 
