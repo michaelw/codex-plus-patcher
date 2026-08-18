@@ -612,6 +612,8 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /Approve for me/);
   assert.match(defaultExpression, /data-codex-plus-rich-content/);
   assert.match(defaultExpression, /composerControlContrast/);
+  assert.match(defaultExpression, /caretContrast/);
+  assert.match(defaultExpression, /Composer text caret is unreadable/);
   assert.match(defaultExpression, /occludingDescendants/);
   assert.match(defaultExpression, /codeToolbarBackground/);
   assert.match(defaultExpression, /codeToolbarMatchesSubmit/);
@@ -1075,6 +1077,7 @@ test("project color audit proves New Chat project changes and the neutral no-pro
   assert.match(projectAudit, /dispatchPointerClick\(projectlessChatRow\)/);
   assert.match(projectAudit, /requiresProjectComposerTransitions/);
   assert.match(projectAudit, /versionAtLeast\(26, 715\)/);
+  assert.match(projectAudit, /const projectNewChatTargets = requiresProjectComposerTransitions \?/);
   assert.match(projectAudit, /requiresNoProjectNewChatProof/);
   assert.match(projectAudit, /26, 707, 51957/);
   assert.match(projectAudit, /new-chat-navigation-unavailable/);
@@ -1918,6 +1921,7 @@ test("app shell wait rejects the React error boundary", async () => {
 
 test("runAudit fails when probes leave the app shell in the error boundary", async () => {
   let shellChecks = 0;
+  let launchOptions = null;
   class FakeCdpSession {
     connect() { return Promise.resolve(); }
     send() { return Promise.resolve(); }
@@ -1939,6 +1943,7 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
       target: "/repo/work/Codex Plus.app",
       sourceHome: "/repo/source-home",
       devHome: "/repo/dev-home",
+      launchDevHome: "/tmp/cpx-r/test-home",
       electronUserDataPath: "/repo/electron-user-data",
       remoteDebuggingPort: 9234,
       apply: true,
@@ -1957,7 +1962,10 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
         syncDevHome() { return Promise.resolve({ copied: [] }); },
         buildAuditFixture() { return Promise.resolve({ mode: "fixture", files: [] }); },
         seedAuditFixtureBrowserState() { return Promise.resolve({}); },
-        launchDevApp() { return Promise.resolve({ pid: 123, command: "Codex", args: [] }); },
+        launchDevApp(options) {
+          launchOptions = options;
+          return Promise.resolve({ pid: 123, command: "Codex", args: [] });
+        },
         waitForRendererTarget() {
           return Promise.resolve({ url: "app://-/index.html", webSocketDebuggerUrl: "ws://127.0.0.1:9234/devtools/page/1" });
         },
@@ -1982,6 +1990,7 @@ test("runAudit fails when probes leave the app shell in the error boundary", asy
   );
 
   assert.equal(shellChecks, 2);
+  assert.equal(launchOptions.devHome, "/tmp/cpx-r/test-home");
   assert.equal(result.ok, false);
   assert.match(result.failures[0].message, /error boundary/);
 });

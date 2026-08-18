@@ -17,6 +17,7 @@ const {
   listSourceApps,
   parseArgs,
   pathsForSource,
+  prepareLaunchDevHome,
   runRegressionSources,
   selectAffectedSources,
   terminateActiveSource,
@@ -739,6 +740,19 @@ test("regression sources builds isolated paths for each version", () => {
   });
 });
 
+test("regression sources shortens long CODEX_HOME socket paths without moving fixture data", async () => {
+  await withTempDir(async (tmpDir) => {
+    const devHome = path.join(tmpDir, "a".repeat(120), "codex-home");
+    const aliasRoot = path.join(path.parse(tmpDir).root, "tmp", `cpx-r-${path.basename(tmpDir)}`);
+    const launchDevHome = prepareLaunchDevHome(devHome, { aliasRoot });
+
+    assert.notEqual(launchDevHome, devHome);
+    assert.equal(fs.realpathSync(launchDevHome), fs.realpathSync(devHome));
+    assert.ok(Buffer.byteLength(path.join(launchDevHome, "ipc", "ipc.sock")) <= 103);
+    fs.rmSync(aliasRoot, { recursive: true, force: true });
+  });
+});
+
 test("regression sources runs newest-first and stops after the first failure", async () => {
   await withTempDir(async (tmpDir) => {
     const sourcesDir = path.join(tmpDir, "work", "sources");
@@ -795,6 +809,7 @@ test("regression sources runs newest-first and stops after the first failure", a
     assert.equal(calls.length, 2);
     assert.equal(calls[0].target, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "Codex Plus.app"));
     assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "codex-home"));
+    assert.equal(fs.realpathSync(calls[0].launchDevHome), fs.realpathSync(calls[0].devHome));
     assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "electron-user-data"));
     assert.equal(calls[0].remoteDebuggingPort, 9410);
     assert.equal(calls[1].remoteDebuggingPort, 9411);

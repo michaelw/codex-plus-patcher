@@ -175,7 +175,7 @@
     if (error != null) return PlainDiff({ text: `Unable to load diff: ${statusText}` }, deps);
     if (isLoading || diffText == null) return ReviewDiagnostic({ message: statusText }, deps);
     if (typeof parseDiff !== "function" || typeof DiffCard !== "function") {
-      throw new Error("Review adapter did not supply parseDiff and DiffCard");
+      return PlainDiff({ text: diffText }, deps);
     }
     let parsed;
     try {
