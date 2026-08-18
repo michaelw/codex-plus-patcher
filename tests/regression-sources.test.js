@@ -809,7 +809,11 @@ test("regression sources runs newest-first and stops after the first failure", a
     assert.equal(calls.length, 2);
     assert.equal(calls[0].target, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "Codex Plus.app"));
     assert.equal(calls[0].devHome, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "codex-home"));
-    assert.equal(fs.realpathSync(calls[0].launchDevHome), fs.realpathSync(calls[0].devHome));
+    assert.equal(
+      calls[0].launchDevHome === calls[0].devHome ||
+        fs.realpathSync(calls[0].launchDevHome) === fs.realpathSync(calls[0].devHome),
+      true,
+    );
     assert.equal(calls[0].electronUserDataPath, path.join(tmpDir, "work", "regression", "sources", "26.623.70822", "electron-user-data"));
     assert.equal(calls[0].remoteDebuggingPort, 9410);
     assert.equal(calls[1].remoteDebuggingPort, 9411);
