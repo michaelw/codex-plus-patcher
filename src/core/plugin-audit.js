@@ -916,6 +916,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       return true;
     };
     const strictNestedBranchPreload = versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.623.81905");
+    const strictNestedComments = versionAtLeast(window.CodexPlus?.config?.codexVersion, "26.810.52044");
     const visibleElements = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible);
     const exactVisibleText = (text) => visibleElements("button, [role='tab'], [role='button'], div, span, p")
       .some((element) => normalize(element.textContent) === text);
@@ -1016,6 +1017,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
       reviewToolbarFailureVisible: containsVisibleText("Review toolbar failed to render"),
       nestedRepoVisible: containsVisibleText("alpha-module") || containsVisibleText("beta-module"),
       strictNestedBranchPreload,
+      strictNestedComments,
       nestedBranchPickerCount: nestedBranchPickers().length,
       nestedBranchPickerPreloadBeforeOpen: Boolean(extra.nestedBranchPickerPreloadBeforeOpen),
       nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
@@ -1359,24 +1361,44 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     const toggle = card && Array.from(card.querySelectorAll("button, [role='button']"))
       .find((element) => String(element.getAttribute("aria-label") || "").includes("Toggle file diff"));
     if (!card || !toggle) {
-      resolve({ nestedDiffCardCount: cards.length, nestedDiffDisclosureExpanded: false, nestedDiffDisclosureCollapsed: false });
+      resolve({
+        nestedDiffCardCount: cards.length,
+        nestedInteractiveDiffCount: 0,
+        nestedUndefinedDiffCount: 0,
+        nestedDiffDisclosureExpanded: false,
+        nestedDiffDisclosureCollapsed: false,
+      });
       return;
     }
+    const renderedDiffState = () => {
+      const rendered = cards
+        .map((candidate) => candidate.querySelector("diffs-container")?.shadowRoot)
+        .filter(Boolean);
+      return {
+        interactive: rendered.filter((root) => root.querySelector("pre[data-interactive-lines][data-interactive-line-numbers]")).length,
+        undefinedText: rendered.filter((root) => /undefined/i.test(root.textContent || "")).length,
+      };
+    };
     const initialHeight = card.getBoundingClientRect().height;
     const initialExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+    const initialRendered = renderedDiffState();
     toggle.click();
     setTimeout(() => {
       const toggledHeight = card.getBoundingClientRect().height;
       const toggledExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+      const toggledRendered = renderedDiffState();
       toggle.click();
       setTimeout(() => {
         const restoredHeight = card.getBoundingClientRect().height;
         const restoredExpanded = toggle.getAttribute("data-app-action-review-file-expanded") === "true";
+        const restoredRendered = renderedDiffState();
         const cycled = toggledExpanded !== initialExpanded && restoredExpanded === initialExpanded;
         const expandedHeight = Math.max(initialHeight, toggledHeight);
         const collapsedHeight = Math.min(initialHeight, toggledHeight);
         resolve({
           nestedDiffCardCount: cards.length,
+          nestedInteractiveDiffCount: Math.max(initialRendered.interactive, toggledRendered.interactive, restoredRendered.interactive),
+          nestedUndefinedDiffCount: Math.max(initialRendered.undefinedText, toggledRendered.undefinedText, restoredRendered.undefinedText),
           nestedDiffDisclosureExpanded: cycled && expandedHeight > collapsedHeight + 20,
           nestedDiffDisclosureCollapsed: cycled && expandedHeight > collapsedHeight + 20 && Math.abs(restoredHeight - initialHeight) < 5,
         });
@@ -1406,6 +1428,8 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     finalStatus.reviewDiffCardCount >= 2 &&
     (finalStatus.reviewDiffCardCount >= 3 || finalStatus.mainDiffDisclosureExpanded) &&
     finalStatus.nestedDiffCardCount >= 2 &&
+    (!finalStatus.strictNestedComments || finalStatus.nestedInteractiveDiffCount >= 1) &&
+    finalStatus.nestedUndefinedDiffCount === 0 &&
     finalStatus.nestedDiffDisclosureExpanded &&
     finalStatus.nestedDiffDisclosureCollapsed,
   );

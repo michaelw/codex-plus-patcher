@@ -6756,8 +6756,94 @@ test("nested review diff cards use the native controlled disclosure contract", (
   assert.match(plugin, /function ControlledDiffCard/);
   assert.match(plugin, /open,\s*onOpenChange: setOpen/);
   assert.match(plugin, /"data-codex-plus-repo-patch-group": repo\.path \?\? repo\.id/);
-  assert.match(plugin, /metadata: \{ \.\.\.diff\.metadata, isPartial: false \}/);
+  assert.doesNotMatch(plugin, /isPartial:\s*false/);
+  assert.match(plugin, /\.\.\.commentProps/);
+  assert.match(plugin, /workspaceRoot: repoCwd/);
   assert.doesNotMatch(plugin, /defaultOpen/);
+});
+
+test("nested review preserves partial diffs and forwards isolated comment props", () => {
+  const pluginPath = path.join(__dirname, "../src/runtime/plugins/nestedRepositories.js");
+  const pluginSource = fs.readFileSync(pluginPath, "utf8").replace(
+    /\}\)\(\);\s*$/,
+    "window.__repoDiffBody = RepoDiffBody;\n})();",
+  );
+  const window = {
+    CodexPlus: {
+      definePlugin(plugin) { return plugin; },
+      registerPlugin() {},
+    },
+  };
+  vm.runInNewContext(pluginSource, { window, AbortController, DOMException, setTimeout, clearTimeout });
+
+  const diff = {
+    additions: 1,
+    deletions: 0,
+    metadata: {
+      additionLines: [],
+      deletionLines: [],
+      hunks: [{ additionStart: 51, additionCount: 1, deletionStart: 51, deletionCount: 0 }],
+      isPartial: true,
+      name: "internal/app/quote/workflow_test.go",
+      newPath: "internal/app/quote/workflow_test.go",
+      oldPath: "internal/app/quote/workflow_test.go",
+      type: "modified",
+    },
+  };
+  const onCommentsChange = () => {};
+  const deps = {
+    jsx(type, props) { return { type, props }; },
+    createElement(type, props) { return typeof type === "function" ? type(props) : { type, props }; },
+    parseDiff() { return [diff]; },
+    DiffCard(props) { return { type: "captured-diff-card", props }; },
+    pathValue(value) { return value; },
+    React: { useState(initial) { return [initial, () => {}]; } },
+  };
+  const rendered = window.__repoDiffBody(
+    {
+      cwd: "/repo/code/quote-core",
+      hostConfig: { id: "local" },
+      conversationId: "conversation-1",
+      commentProps: { enableComments: true, comments: [], onCommentsChange },
+      diffMode: "unified",
+      diffText: "partial diff",
+      statusText: "Loaded",
+      error: null,
+      isLoading: false,
+    },
+    deps,
+  );
+  const card = rendered.props.children[0];
+
+  assert.equal(card.type, "captured-diff-card");
+  assert.equal(card.props.diff, diff);
+  assert.equal(card.props.diff.metadata.isPartial, true);
+  assert.equal(card.props.enableComments, true);
+  assert.equal(card.props.onCommentsChange, onCommentsChange);
+  assert.equal(card.props.cwd, "/repo/code/quote-core");
+  assert.equal(card.props.workspaceRoot, "/repo/code/quote-core");
+});
+
+test("52044 review host exposes the native comment contract to nested diff cards", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.810.52044-6662");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function $us(e){let t=(0,ads.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,xQ.jsx)(LOa,{children:(0,xQ.jsx)(R9o,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(
+    transformed,
+    /renderBodyFromHost\(e,\[xQ,A9o,null,null,null,null,null,null,null,null,null,R9o,null,null,null,null,null,null,uNo,eB,y5o\]\)/,
+  );
+  assert.match(transformed, /mainReviewContent:\(0,xQ\.jsx\)\(R9o,/);
+
+  const adapter = fs.readFileSync(path.join(__dirname, "../src/runtime/host/review.js"), "utf8");
+  assert.equal(adapter.match(/useReviewCommentProps,/g)?.length, 2);
 });
 
 test("current project headers receive project color row attributes on the clickable row", () => {

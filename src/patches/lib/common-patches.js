@@ -967,7 +967,7 @@ function patchThreadSidePanelTabs(text, context = {}) {
     let patched = replaceOnce(
       text,
       "function $us(e){let t=(0,ads.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
-      `${reviewHook("[xQ,A9o,null,null,null,null,null,null,null,null,null,R9o,null,null,null,null,null,null,null,eB,y5o]")}function $us(e){let t=(0,ads.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
+      `${reviewHook("[xQ,A9o,null,null,null,null,null,null,null,null,null,R9o,null,null,null,null,null,null,uNo,eB,y5o]")}function $us(e){let t=(0,ads.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`,
       "52044 review host hook insertion anchor",
     );
     return replaceOnce(
