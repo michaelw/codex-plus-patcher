@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const childProcess = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -416,6 +417,42 @@ function pathsForSource(regressionDir, source) {
   };
 }
 
+function prepareLaunchDevHome(devHome, {
+  aliasRoot = path.join(path.parse(os.tmpdir()).root, "tmp", "cpx-r"),
+  fsImpl = fs,
+} = {}) {
+  const resolvedDevHome = path.resolve(devHome);
+  const socketPath = path.join(resolvedDevHome, "ipc", "ipc.sock");
+  if (Buffer.byteLength(socketPath) <= 103) return resolvedDevHome;
+
+  fsImpl.mkdirSync(resolvedDevHome, { recursive: true });
+  fsImpl.mkdirSync(aliasRoot, { recursive: true });
+  const alias = path.join(
+    aliasRoot,
+    crypto.createHash("sha256").update(resolvedDevHome).digest("hex").slice(0, 12),
+  );
+  let existing = null;
+  try {
+    existing = fsImpl.lstatSync(alias);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (existing) {
+    const existingTarget = existing.isSymbolicLink()
+      ? path.resolve(path.dirname(alias), fsImpl.readlinkSync(alias))
+      : null;
+    if (existingTarget !== resolvedDevHome) {
+      throw new Error(`Refusing to replace regression CODEX_HOME alias: ${alias}`);
+    }
+  } else {
+    fsImpl.symlinkSync(resolvedDevHome, alias, "dir");
+  }
+  if (Buffer.byteLength(path.join(alias, "ipc", "ipc.sock")) > 103) {
+    throw new Error(`Regression CODEX_HOME alias is still too long for a macOS Unix socket: ${alias}`);
+  }
+  return alias;
+}
+
 function cleanRegressionDir(target, regressionDir, { fsImpl = fs } = {}) {
   const resolvedRegressionDir = path.resolve(regressionDir);
   const resolvedTarget = path.resolve(target);
@@ -503,12 +540,14 @@ async function runSourceRegression(source, { args, regressionDir, operations = {
     };
   }
 
+  const launchDevHome = prepareLaunchDevHome(paths.devHome, { fsImpl: operations.fs || fs });
   const runAuditImpl = operations.runAudit || runAudit;
   const findFreePortImpl = operations.findFreePort || findFreePort;
   const remoteDebuggingPort = await findFreePortImpl(args.remoteDebuggingPort + index - 1);
   const auditArgs = {
     apply: true,
     devHome: paths.devHome,
+    launchDevHome,
     devInstanceId: `reg-${source.version.replaceAll(".", "")}`,
     electronUserDataPath: paths.electronUserDataPath,
     includeNativeOpenProbes: args.includeNativeOpenProbes,
@@ -1092,6 +1131,7 @@ module.exports = {
   newestSources,
   parseArgs,
   pathsForSource,
+  prepareLaunchDevHome,
   prefixProgress,
   runRegressionSources,
   runSourceRegression,

@@ -4217,6 +4217,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (!surface) return { editorMounted: Boolean(editor), surfaceMounted: false, checks: [] };
       const surfaceStyle = getComputedStyle(surface);
       const surfaceBackground = surfaceStyle.backgroundColor;
+      const editorStyle = editor ? getComputedStyle(editor) : null;
+      const caretColor = editorStyle?.caretColor || null;
+      const editorColor = editorStyle?.color || null;
       const surfaceRect = surface.getBoundingClientRect();
       const occludingDescendants = Array.from(surface.querySelectorAll("*"))
         .map((element) => {
@@ -4290,6 +4293,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         editorMounted: Boolean(editor),
         surfaceMounted: true,
         surfaceBackground,
+        caretColor,
+        editorColor,
+        caretMatchesEditor: !editor || caretColor === editorColor,
+        caretContrast: caretColor ? contrast(caretColor, surfaceBackground) : null,
         policyLabels,
         liveControlCount: actualControls.length,
         codeToolbarBackground,
@@ -4811,7 +4818,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           { codexVersion: window.CodexPlus?.config?.codexVersion || null, initialNoProjectComposer },
         );
       }
-      const projectNewChatTargets = visibleElements("button[aria-label^='Start new chat in ']")
+      const projectNewChatTargets = requiresProjectComposerTransitions ? visibleElements("button[aria-label^='Start new chat in ']")
         .map((button) => {
           const label = button.getAttribute("aria-label").replace(/^Start new chat in\s*/, "").trim();
           const projectRow = Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
@@ -4824,7 +4831,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         .filter((target, index, targets) => target.projectAccent &&
           target.projectAccent !== selectedProjectAccent &&
           targets.findIndex((candidate) => candidate.projectAccent === target.projectAccent) === index)
-        .slice(0, 2);
+        .slice(0, 2) : [];
       const projectComposerTransitions = [];
       for (const target of projectNewChatTargets) {
         const button = visibleElements("button[aria-label^='Start new chat in ']")
@@ -5036,6 +5043,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         }
         if (!status.codeToolbarMatchesSubmit) {
           throw new Error(`Composer code toolbar does not match the submit button background: ${JSON.stringify(status)}`);
+        }
+        if (status.editorMounted && (!status.caretMatchesEditor || status.caretContrast == null || status.caretContrast < 4.5)) {
+          throw new Error(`Composer text caret is unreadable: ${JSON.stringify(status)}`);
         }
         const unreadable = status.checks.find((check) =>
           Number(check.opacity) < 0.99 ||
@@ -6101,7 +6111,7 @@ async function runAudit(args, {
     if (preflight.launch) {
       const launchOptions = {
         targetApp: args.target,
-        devHome: args.devHome,
+        devHome: args.launchDevHome || args.devHome,
         electronUserDataPath: args.electronUserDataPath,
         remoteDebuggingPort: port,
         devInstanceId: args.devInstanceId,
