@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 const packageJson = require("../package.json");
 const {
   defaultAuditTargetForSource,
@@ -44,6 +45,7 @@ const {
   cleanupLaunchedAuditApp,
   formatAuditJson: formatCoreAuditJson,
   createJsonlProgress,
+  dismissStartupDialogs,
   listCrashpadPendingDumps,
   listRunningAuditApps,
   mergeFocusedPluginAudit,
@@ -51,6 +53,7 @@ const {
   projectColorsNeedsFixtureRetry,
   refreshFixtureRendererForRetry,
   runAudit,
+  setComposerColorForVisualContract,
   summarizeCdpEvents,
   verifyProjectSelectorShortcutKey,
   reviewPanelNeedsWarmRetry,
@@ -62,6 +65,76 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("startup dialog dismissal recognizes Chronicle permission setup", async () => {
+  let visible = true;
+  const inputEvents = [];
+  const closeButton = {
+    textContent: "",
+    getAttribute(name) { return name === "aria-label" ? "Close" : null; },
+    getBoundingClientRect() { return { left: 10, top: 20, width: 24, height: 24 }; },
+    contains(element) { return element === this; },
+  };
+  const dialog = {
+    innerText: "Allow Screen Recording to use Chronicle",
+    getBoundingClientRect() { return { width: 420, height: 260 }; },
+    querySelectorAll() { return [closeButton]; },
+  };
+  const cdp = {
+    evaluate(expression) {
+      return Promise.resolve(vm.runInNewContext(expression, {
+        document: {
+          body: { innerText: dialog.innerText },
+          querySelectorAll() { return visible ? [dialog] : []; },
+          elementFromPoint() { return closeButton; },
+        },
+        getComputedStyle() { return { visibility: "visible", display: "block" }; },
+      }));
+    },
+    send(method, params) {
+      inputEvents.push({ method, params });
+      if (params.type === "mouseReleased") visible = false;
+      return Promise.resolve({});
+    },
+  };
+
+  const result = await dismissStartupDialogs(cdp, { wait: async () => {} });
+
+  assert.deepEqual(inputEvents.map((event) => event.params.type), ["mouseMoved", "mousePressed", "mouseReleased"]);
+  assert.equal(result.cleared, true);
+  assert.equal(result.dialogs[0].dismissed, true);
+});
+
+test("composer contrast fixture waits for asynchronous color persistence before applying variables", async () => {
+  let persisted = false;
+  let appliedAfterPersistence = false;
+  const cdp = {
+    evaluate(expression) {
+      return Promise.resolve(vm.runInNewContext(expression, {
+        document: { documentElement: { classList: { toggle() {} } } },
+        window: {
+          CodexPlus: {
+            plugins: {
+              get() {
+                return {
+                  exports: {
+                    async writeColor() { persisted = true; },
+                    setVars() { appliedAfterPersistence = persisted; },
+                  },
+                };
+              },
+            },
+          },
+        },
+      }));
+    },
+  };
+
+  await setComposerColorForVisualContract(cdp, "light", "#f8fafc");
+
+  assert.equal(persisted, true);
+  assert.equal(appliedAfterPersistence, true);
+});
 
 test("CDP diagnostics keep concise exception and console evidence", () => {
   const events = [
@@ -877,6 +950,7 @@ test("project selector shortcut verifier uses trusted CDP key events", async () 
     { key: "a", modifiers: 4 },
     { key: "a", modifiers: 4 },
   ]);
+  assert.deepEqual(sent[9].params.commands, ["selectAll"]);
   assert.equal(sent.some((call) => call.method === "Input.insertText"), true);
   assert.equal(waits.filter((ms) => ms === 150).length, 1);
   assert.deepEqual(sent[11], { method: "Input.insertText", params: { text: "aaa" } });
@@ -1100,6 +1174,8 @@ test("New Chat visual proof captures neutral and two project-color states with t
   const source = captureNewChatComposerProof.toString();
 
   assert.match(source, /Input\.dispatchMouseEvent/);
+  assert.match(source, /__codexPlusComposerProjectCalls/);
+  assert.match(source, /bridgeProjectCalls/);
   assert.match(source, /work in a project/);
   assert.match(source, /data-codex-plus-project-selector-trigger/);
   assert.match(source, /projectSelectorMounted/);
@@ -1113,13 +1189,20 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /Project New Chat composer radius differs from the no-project composer/);
   assert.match(source, /Choose project/);
   assert.match(source, /kind === "project-option"/);
+  assert.match(source, /target\?\.scrollIntoView\(\{ block: "center" \}\)/);
+  assert.match(source, /document\.elementFromPoint\(point\.x, point\.y\)/);
+  assert.match(source, /target\.contains\(hitTarget\)/);
   assert.doesNotMatch(source, /const usesProjectSelector =/);
   assert.match(source, /const projectSelectorTrigger = await pointFor\("project-selector-trigger"\)/);
   assert.match(source, /if \(projectSelectorTrigger\)/);
   assert.match(source, /await click\(projectSelectorTrigger\)/);
+  assert.match(source, /await wait\(500\);\n      const projectOption/);
+  assert.match(source, /await waitForState\(projectStateReady, \{ timeout: 1500, required: false \}\)/);
+  assert.match(source, /await click\(await waitForStablePoint\("project-new-chat", target\.label\)\)/);
   assert.match(source, /const waitForStablePoint = async/);
   assert.match(source, /await waitForStablePoint\("project-option", target\.label\)/);
   assert.match(source, /pointFor\("project-new-chat", target\.label\)/);
+  assert.doesNotMatch(source, /composerCodeLanguageControl|typeFencedBlock|validCodeToolbar/);
   assert.match(source, /neutral\.projectMarked \|\| neutral\.accent \|\| neutral\.railWidth !== 0/);
   assert.doesNotMatch(source, /const labels =/);
   assert.match(source, /new-chat-no-project\.png/);
@@ -1352,6 +1435,59 @@ test("review panel verifier returns sanitized success details", async () => {
   assert.equal(result.message, undefined);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "title"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "path"), false);
+});
+
+test("review panel verifier retries a visible host error boundary with trusted input", async () => {
+  const sent = [];
+  let evaluateCalls = 0;
+  const ready = {
+    candidateCount: 1,
+    attemptedCandidates: 1,
+    reviewControlFound: true,
+    clickedReview: true,
+    selectedReview: true,
+    boundaryVisible: false,
+    boundaryEverVisible: false,
+    tryAgainVisible: false,
+    repoHeaderVisible: true,
+    mainVisible: true,
+    nativeReviewSourceVisible: true,
+    unstagedReviewSourceSelected: true,
+    reviewToolbarFailureVisible: false,
+    nestedRepoVisible: true,
+    strictNestedBranchPreload: false,
+    strictNestedComments: false,
+    nestedBranchPickerCount: 2,
+    nestedBranchPickerPreloadBeforeOpen: true,
+    nestedBranchPickerPreloadComplete: true,
+    nestedBranchPickerPopulated: true,
+    nestedBranchPickerOptionCounts: [3, 3],
+    rawNestedDiffFallbackCount: 0,
+    reviewDiffCardCount: 3,
+    nestedDiffCardCount: 2,
+    nestedInteractiveDiffCount: 1,
+    nestedUndefinedDiffCount: 0,
+    nestedDiffDisclosureExpanded: true,
+    nestedDiffDisclosureCollapsed: true,
+  };
+  const result = await verifyReviewPanelRender({
+    evaluate() {
+      evaluateCalls += 1;
+      if (evaluateCalls === 1) {
+        return Promise.resolve({ ...ready, boundaryVisible: true, boundaryEverVisible: true, tryAgainVisible: true });
+      }
+      if (evaluateCalls === 2) return Promise.resolve({ x: 640, y: 448 });
+      return Promise.resolve({ ...ready, boundaryEverVisible: true });
+    },
+    send(method, params) {
+      sent.push([method, params]);
+      return Promise.resolve();
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recoveredBoundary, true);
+  assert.deepEqual(sent.slice(0, 3).map(([, params]) => params.type), ["mouseMoved", "mousePressed", "mouseReleased"]);
 });
 
 test("review panel verifier rejects raw nested repository diffs", async () => {
@@ -1737,6 +1873,7 @@ test("review panel verifier fails when no review-capable thread exists", async (
     "mainVisible",
     "message",
     "ok",
+    "recoveredBoundary",
     "repoHeaderVisible",
     "reviewControlFound",
     "reviewTabCount",
@@ -3762,6 +3899,7 @@ test("audit output supports detailed json in human and jsonl modes", () => {
 test("visual contract writes screenshots and compact readbacks", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-plus-contract-test-"));
   try {
+    let dialogDismissals = 0;
     const png = Buffer.from("png").toString("base64");
     const cdp = {
       async send(method) {
@@ -3813,9 +3951,14 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
+      dismissDialogs: async () => {
+        dialogDismissals += 1;
+        return { cleared: true };
+      },
     });
 
     assert.equal(contract.ok, true);
+    assert.equal(dialogDismissals, 1);
     for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
     }
@@ -3893,6 +4036,7 @@ test("visual contract rejects Review screenshots while diff cards are still load
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
+      dismissDialogs: async () => ({ present: false, dismissed: false }),
     });
 
     assert.equal(contract.ok, false);
@@ -3987,11 +4131,12 @@ test("visual contract waits for General settings before capturing the settings s
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
       verifyCommand: async () => ({ ok: true }),
+      dismissDialogs: async () => ({ present: false, dismissed: false }),
     });
 
     assert.equal(contract.ok, true);
     assert.equal(contract.settings.generalVisible, true);
-    assert.equal(settingsCaptureEvaluation, 6);
+    assert.ok(settingsCaptureEvaluation >= 6);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

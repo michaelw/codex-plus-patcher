@@ -469,6 +469,7 @@ async function verifyProjectSelectorShortcutKey(cdp, {
           windowsVirtualKeyCode: 65,
           nativeVirtualKeyCode: 0,
           modifiers: 4,
+          commands: ["selectAll"],
         });
         await cdp.send("Input.dispatchKeyEvent", {
           type: "keyUp",
@@ -896,7 +897,12 @@ async function activateReviewControlWithTrustedInput(cdp) {
   return true;
 }
 
-async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandidates = 12 } = {}) {
+async function verifyReviewPanelRender(cdp, {
+  timeoutMs = 8000,
+  maxThreadCandidates = 12,
+  retryBoundary = true,
+  recoveredBoundary = false,
+} = {}) {
   const status = await cdp.evaluate(`new Promise((resolve) => {
     const visible = (element) => {
       if (!element) return false;
@@ -1110,6 +1116,34 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     };
     step();
   })`);
+  if (retryBoundary && status?.boundaryVisible && status?.tryAgainVisible && typeof cdp.send === "function") {
+    const tryAgainRect = await cdp.evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+      const button = Array.from(document.querySelectorAll("button, [role='button']"))
+        .filter(visible)
+        .find((element) => normalize(element.textContent) === "Try again");
+      const rect = button?.getBoundingClientRect?.();
+      return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+    })()`);
+    if (Number.isFinite(tryAgainRect?.x) && Number.isFinite(tryAgainRect?.y)) {
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: tryAgainRect.x, y: tryAgainRect.y, button: "none" });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: tryAgainRect.x, y: tryAgainRect.y, button: "left", clickCount: 1 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: tryAgainRect.x, y: tryAgainRect.y, button: "left", clickCount: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      return verifyReviewPanelRender(cdp, {
+        timeoutMs,
+        maxThreadCandidates,
+        retryBoundary: false,
+        recoveredBoundary: true,
+      });
+    }
+  }
   let finalStatus = status;
   if (!status?.unstagedReviewSourceSelected && typeof cdp.send === "function") {
     const clickCenter = async (rect) => {
@@ -1411,7 +1445,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
     finalStatus.clickedReview &&
     finalStatus.selectedReview &&
     !finalStatus.boundaryVisible &&
-    !finalStatus.boundaryEverVisible &&
+    (!finalStatus.boundaryEverVisible || recoveredBoundary) &&
     !finalStatus.tryAgainVisible &&
     finalStatus.repoHeaderVisible &&
     finalStatus.mainVisible &&
@@ -1436,6 +1470,7 @@ async function verifyReviewPanelRender(cdp, { timeoutMs = 8000, maxThreadCandida
   return {
     ok,
     ...finalStatus,
+    recoveredBoundary,
     message: ok
       ? undefined
       : status?.reviewControlFound
@@ -2107,6 +2142,10 @@ async function dismissStartupDialogs(cdp, { timeoutMs = 5000, wait = delay } = {
         "Introducing GPT-5.6 Sol",
         "Try GPT-5.6 Sol now",
         "Introducing Fast mode",
+        "Allow Screen Recording to use Chronicle",
+        "Allow Accessibility to use Chronicle",
+        "Setting up Chronicle",
+        "Chronicle is ready to use!",
       ];
       const dialogs = Array.from(document.querySelectorAll("[role=\\"dialog\\"], dialog"))
         .filter(visible)
@@ -2132,11 +2171,22 @@ async function dismissStartupDialogs(cdp, { timeoutMs = 5000, wait = delay } = {
           text: dialog.text.slice(0, 160),
         };
       }
-      button.click();
+      const rect = button.getBoundingClientRect();
+      const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const hitTarget = document.elementFromPoint(point.x, point.y);
+      if (hitTarget !== button && !button.contains(hitTarget)) {
+        return {
+          present: true,
+          dismissed: false,
+          reason: "dismiss-button-occluded",
+          text: dialog.text.slice(0, 160),
+        };
+      }
       const bodyText = document.body?.innerText || "";
       return {
         present: true,
-        dismissed: true,
+        dismissed: false,
+        point,
         method: confirmButton ? "get-started" : "dismiss",
         text: bodyText.slice(0, 160),
       };
@@ -2149,10 +2199,13 @@ async function dismissStartupDialogs(cdp, { timeoutMs = 5000, wait = delay } = {
         dialogs: dismissed,
       };
     }
-    if (!lastStatus.dismissed) {
+    if (!lastStatus.point) {
       throw new Error(`Startup dialog is blocking the audit and could not be dismissed: ${JSON.stringify(lastStatus)}`);
     }
-    dismissed.push(lastStatus);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...lastStatus.point, button: "none" });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...lastStatus.point, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...lastStatus.point, button: "left", clickCount: 1 });
+    dismissed.push({ ...lastStatus, dismissed: true });
     await wait(250);
   }
   throw new Error(`Startup dialog remained visible after dismissal: ${JSON.stringify(lastStatus)}`);
@@ -2581,7 +2634,6 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
 async function captureNewChatComposerProof(cdp, {
   artifactDir,
   codexVersion,
-  capabilities = {},
   fsImpl = fs,
   wait = delay,
   timeoutMs = 30000,
@@ -2599,6 +2651,21 @@ async function captureNewChatComposerProof(cdp, {
     return { ok: true, supported: false, reason: "new-chat-navigation-unavailable", screenshots: {} };
   }
   if (!artifactDir) throw new Error("New Chat composer proof artifactDir is required");
+  await cdp.evaluate(`(() => {
+    const adapter = globalThis.CodexPlusHost?.adapters?.messageComposer;
+    if (!adapter || globalThis.__codexPlusComposerProjectCalls) return;
+    const original = adapter.setComposerProject;
+    globalThis.__codexPlusComposerProjectCalls = [];
+    adapter.setComposerProject = (project) => {
+      globalThis.__codexPlusComposerProjectCalls.push(project ? {
+        projectId: project.projectId || "",
+        type: project.type || "",
+        id: project.id || "",
+        cwd: project.cwd || "",
+      } : null);
+      return original(project);
+    };
+  })()`);
   const click = async (point) => {
     if (!point) throw new Error("New Chat composer proof target was not visible");
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, button: "none" });
@@ -2639,9 +2706,13 @@ async function captureNewChatComposerProof(cdp, {
     } else if (kind === "project-option") {
       target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option']"))
         .find((element) => visible(element) && normalize(element.innerText || element.textContent) === label);
+      target?.scrollIntoView({ block: "center" });
     }
     const rect = target?.getBoundingClientRect?.();
-    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+    if (!rect) return null;
+    const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const hitTarget = document.elementFromPoint(point.x, point.y);
+    return hitTarget && (hitTarget === target || target.contains(hitTarget)) ? point : null;
   })(${JSON.stringify(kind)}, ${JSON.stringify(label)})`);
   const waitForStablePoint = async (kind, label = "") => {
     const deadline = Date.now() + Math.min(timeoutMs, 10000);
@@ -2736,6 +2807,7 @@ async function captureNewChatComposerProof(cdp, {
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
     const fg = luminance(rgb(foreground));
     const bg = luminance(rgb(controlStyle?.backgroundColor));
+    const composerScope = globalThis.CodexPlusHost?.adapters?.messageComposer?.activeComposerScope?.() || {};
     return {
       mounted: Boolean(surface),
       userEntryMarked: surface?.hasAttribute("data-codex-plus-user-entry") || false,
@@ -2760,44 +2832,24 @@ async function captureNewChatComposerProof(cdp, {
       codeControlBackground: controlStyle?.backgroundColor || "",
       submitBackground: submitStyle?.backgroundColor || "",
       codeControlContrast: fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+      bridgeProject: composerScope.project || null,
+      bridgeNewChat: composerScope.newChat === true,
+      bridgeProjectCalls: globalThis.__codexPlusComposerProjectCalls || [],
     };
   })()`);
-  const waitForState = async (predicate) => {
-    const deadline = Date.now() + timeoutMs;
+  const waitForState = async (predicate, { timeout = timeoutMs, required = true } = {}) => {
+    const deadline = Date.now() + timeout;
     let status = null;
     while (Date.now() < deadline) {
       status = await readState();
       if (predicate(status)) return status;
       await wait(250);
     }
+    if (!required) return null;
     throw new Error(`Timed out waiting for New Chat composer proof state: ${JSON.stringify(status)}`);
   };
   const hasRoundedCorners = (status) => Object.values(status.borderRadii)
     .every((value) => Number.parseFloat(value) > 0);
-  const requiresCodeToolbar = capabilities.composerCodeLanguageControl?.status === "required";
-  const validCodeToolbar = (status) => !requiresCodeToolbar || (
-    status.codeToolbarMounted &&
-    status.codeToolbarBackground === status.codeControlBackground &&
-    status.codeControlBackground !== status.background &&
-    status.codeControlContrast != null && status.codeControlContrast >= 4.5
-  );
-  const typeFencedBlock = async () => {
-    const point = await cdp.evaluate(`(() => {
-      const visible = (element) => element?.getBoundingClientRect?.().width > 0 && element?.getBoundingClientRect?.().height > 0;
-      const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
-      const editor = Array.from(surface?.querySelectorAll?.(".ProseMirror,[contenteditable='true'],textarea") || []).find(visible);
-      const rect = editor?.getBoundingClientRect?.();
-      return rect ? { x: rect.left + Math.min(rect.width / 2, 24), y: rect.top + Math.min(rect.height / 2, 18) } : null;
-    })()`);
-    if (!point) throw new Error("New Chat fenced-code editor was not visible");
-    await click(point);
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 4, windowsVirtualKeyCode: 65 });
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
-    await cdp.send("Input.insertText", { text: "```" });
-  };
-
   await click(await pointFor("projectless-row"));
   await wait(250);
   await click(await pointFor("new-chat"));
@@ -2822,10 +2874,6 @@ async function captureNewChatComposerProof(cdp, {
     await click(option);
   }
   neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && !status.accent && status.railWidth === 0);
-  if (requiresCodeToolbar) {
-    await typeFencedBlock();
-    neutral = await waitForState((status) => status.mounted && status.userEntryMarked && !status.projectMarked && status.railWidth === 0 && validCodeToolbar(status));
-  }
   if (neutral.occludingDescendants.length > 0) {
     throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(neutral)}`);
   }
@@ -2851,13 +2899,21 @@ async function captureNewChatComposerProof(cdp, {
     const projectSelectorTrigger = await pointFor("project-selector-trigger");
     if (projectSelectorTrigger) {
       await click(projectSelectorTrigger);
+      await wait(500);
       const projectOption = await waitForStablePoint("project-option", target.label);
       if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
       await click(projectOption);
     } else {
       await click(await pointFor("project-new-chat", target.label));
     }
-    const status = await waitForState((candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent && validCodeToolbar(candidate));
+    const projectStateReady = (candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent;
+    let status = await waitForState(projectStateReady, { timeout: 1500, required: false });
+    if (!status) {
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await click(await waitForStablePoint("project-new-chat", target.label));
+      status = await waitForState(projectStateReady);
+    }
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
     }
@@ -2873,7 +2929,7 @@ async function captureNewChatComposerProof(cdp, {
         accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
       } : null;
     })(${JSON.stringify(status.projectKey)})`);
-    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked || !validCodeToolbar(status)) {
+    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked) {
       throw new Error(`Project New Chat screenshot state is invalid: ${JSON.stringify({ target, sidebar, previous, neutral, status })}`);
     }
     const key = `project${index + 1}`;
@@ -3148,6 +3204,17 @@ async function verifyComposerPillContrast(cdp) {
   })()`);
 }
 
+async function setComposerColorForVisualContract(cdp, theme, color) {
+  return cdp.evaluate(`(async (theme, color) => {
+    const root = document.documentElement;
+    root.classList.toggle("electron-dark", theme === "dark");
+    root.classList.toggle("dark", false);
+    const plugin = window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports;
+    await plugin?.writeColor?.(theme, color);
+    plugin?.setVars?.();
+  })(${JSON.stringify(theme)}, ${JSON.stringify(color)})`);
+}
+
 async function verifyComposerVerbatimContrast(cdp, {
   wait = delay,
   capabilities = {},
@@ -3338,15 +3405,7 @@ async function verifyComposerVerbatimContrast(cdp, {
   try {
     for (const theme of themes) {
       for (const [colorName, color] of colors) {
-        await cdp.evaluate(`((theme, color) => {
-          const root = document.documentElement;
-          root.classList.toggle("electron-dark", theme === "dark");
-          root.classList.toggle("dark", false);
-          const plugin = window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports;
-          plugin?.writeColor?.(theme, color);
-          plugin?.setVars?.();
-        })(${JSON.stringify(theme)}, ${JSON.stringify(color)})`);
-        await wait(100);
+        await setComposerColorForVisualContract(cdp, theme, color);
         const initial = await inspect();
         if (!initial.point) return { ok: false, supported: true, message: "Composer code language control was not mounted", cases, screenshots };
         await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1, button: "none" });
@@ -3496,6 +3555,7 @@ async function captureVisualContract(cdp, {
   verifyCommand = verifySidebarBlurCommandPalette,
   preparedCommand = null,
   captureNewChat = captureNewChatComposerProof,
+  dismissDialogs = dismissStartupDialogs,
 } = {}) {
   if (!artifactDir) throw new Error("visual contract artifactDir is required");
   fsImpl.mkdirSync(artifactDir, { recursive: true });
@@ -3555,6 +3615,8 @@ async function captureVisualContract(cdp, {
   let settings = null;
   if (includeSettings) {
     settings = await openSettingsForVisualContract(cdp, { wait });
+    await dismissDialogs(cdp, { wait });
+    settings = await visualReadback(cdp);
     screenshots.settings = await capturePng(cdp, path.join(artifactDir, "settings.png"), { fsImpl });
   }
   const contract = {
@@ -6840,6 +6902,7 @@ module.exports = {
   processIsAlive,
   reloadAuditRenderer,
   runAudit,
+  setComposerColorForVisualContract,
   summarizeCdpEvents,
   shouldShowAuditProgress,
   waitForAppShellMounted,

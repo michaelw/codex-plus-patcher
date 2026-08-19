@@ -14,6 +14,58 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+test("message composer adapter bridges opt-in scope across detached host roots", () => {
+  const window = {
+    CodexPlusHost: { adapters: {} },
+    CodexPlus: { ui: { composer: {}, message: {} } },
+  };
+  vm.runInNewContext(runtimeFile("host/messageComposer.js"), { window, globalThis: window, Map, Set }, {
+    filename: "host/messageComposer.js",
+  });
+  const adapter = window.CodexPlusHost.adapters.messageComposer;
+  const versions = [];
+  const unsubscribe = adapter.subscribeComposerScope(() => versions.push(adapter.composerScopeSnapshot()));
+  const owner = {};
+  const release = adapter.bindComposerScope(owner, { project: { projectId: "fixture-project" }, newChat: true });
+
+  assert.deepEqual(plain(adapter.activeComposerScope()), {
+    project: { projectId: "fixture-project" },
+    newChat: true,
+  });
+  assert.deepEqual(versions, [1]);
+
+  adapter.setComposerProject({ projectId: "controlled-project" });
+  assert.deepEqual(plain(adapter.activeComposerScope()), {
+    project: { projectId: "controlled-project" },
+    newChat: true,
+  });
+  adapter.setComposerProject(null);
+  assert.deepEqual(plain(adapter.activeComposerScope()), { project: null, newChat: true });
+  assert.deepEqual(versions, [1, 2, 3]);
+
+  adapter.setComposerProject({ projectId: "remounted-project" });
+
+  release();
+  assert.deepEqual(plain(adapter.activeComposerScope()), {});
+  const remountedOwner = {};
+  const releaseRemounted = adapter.bindComposerScope(remountedOwner, { project: null, newChat: true });
+  assert.deepEqual(plain(adapter.activeComposerScope()), {
+    project: { projectId: "remounted-project" },
+    newChat: true,
+  });
+  releaseRemounted();
+
+  const threadOwner = {};
+  const releaseThread = adapter.bindComposerScope(threadOwner, { project: null, newChat: false });
+  assert.deepEqual(plain(adapter.activeComposerScope()), { project: null, newChat: false });
+  releaseThread();
+  const cleanNewChatOwner = {};
+  adapter.bindComposerScope(cleanNewChatOwner, { newChat: true });
+  assert.deepEqual(plain(adapter.activeComposerScope()), { newChat: true });
+  assert.equal(versions.length, 10);
+  unsubscribe();
+});
+
 function createElement(tag, className = "") {
   const node = {
     tag,

@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.810.52044-6662");
-  assert.equal(chatgptPatchSets.length, 32);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.814.41407-6720");
+  assert.equal(chatgptPatchSets.length, 33);
 
   for (const identity of [
+    ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
     ["26.810.52044", "6662", "6e7e8791b8bf69a586ff994721fff518af391d9efdc66cd2e620dd2a4aedc90f"],
     ["26.810.50856", "6644", "ae30da9d245d98f65613bdc0f0ba9165e9b4cb3dbebe3dd05e9daa6d09b3c875"],
     ["26.810.41047", "6570", "111f2d7b464d7468d70324c15fc8ff6d57e7f3425c9467f47369c28c0d85bfec"],
@@ -361,6 +362,71 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   const patchSet = selectPatch(patchSets, identity);
   assert.equal(patchSet, codexPatchSets[0]);
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
+});
+
+test("41407 maps its exact split assets and owns its transform variant", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.814.41407-6720");
+  assert.ok(patchSet);
+  const transforms = collectFileTransforms(patchSet);
+  const transformedPaths = new Set(transforms.map(([filePath]) => filePath));
+
+  for (const filePath of [
+    ".vite/build/main-DkjTIhil.js",
+    ".vite/build/src-DY9Aq019.js",
+    "webview/assets/app-initial-BCLYDefw.js",
+    "webview/assets/general-settings-yzMrcfmm.js",
+    "webview/assets/local-conversation-page-S6TXyQph.js",
+    "webview/assets/terminal-panel-CE69OTMx.js",
+    "webview/assets/mermaid-diagram-BEYbIIGM.js",
+  ]) assert.equal(transformedPaths.has(filePath), true, filePath);
+
+  assert.equal(patchSetOwnsTransformVariant(patchSet.id, "chatgpt-26.814.41407"), true);
+  assert.equal(patchSetOwnsTransformVariant("chatgpt-26.810.52044-6662", "chatgpt-26.814.41407"), false);
+  assert.equal(transforms.length, 30);
+});
+
+test("41407 home project selector exposes its marker on the DOM-facing trigger", () => {
+  const source = [
+    'F=(0,nac.jsx)(Jic,{"aria-label":n,"data-composer-navigation-target":r,',
+    "v=dac(r,g,I6c)",
+    "T=(0,v6.jsx)(mac,{groups:y,selectedProjectIds:i,getProjectDetails:F6c,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,v6.jsx)(cac,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "let fe=de,pe=h&&y===`home`&&k.length===0&&!A;",
+    'i=(0,b6.jsx)(iac,{"aria-label":we,disabled:_,foreground:xe,isBrowserEnvironment:P,isRemoteProject:e,menuOpen:ue,onClearProject:n,onCloseAutoFocus:ne,onOpenChange:fe,projectIcon:r,shortcut:f,subtleHover:w,tooltipContent:Ce,tooltipOpenWhen:Pe,value:be,children:Ke})',
+    "triggerButton:Je,contentWidth:`workspace`",
+    "K=e=>{lg(b,bCt,{});let t=k.find(t=>t.projectId===e);if(t!=null){if(c!=null){c(t.projectId);return}cG(b,t)}}",
+    "ae=()=>{if(lg(b,bCt,{}),c!=null){c(null);return}cG(b,null)}",
+  ].join("");
+
+  const transformed = patchHomeProjectDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.814.41407-6720",
+  });
+
+  assert.match(transformed, /Jic,\{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-composer-navigation-target":r/);
+  assert.match(transformed, /CPXP\.setProjects\(r\)/);
+  assert.match(transformed, /CPXP\.fuzzyFilter\(r,g\)/);
+  assert.match(transformed, /groups:y\.map\(e=>\(\{\.\.\.e,__codexPlusQuery:g\}\)\)/);
+  assert.match(transformed, /onSearchKeyDown:e=>CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(transformed, /setComposerProject\(t\)/);
+  assert.match(transformed, /setComposerProject\(null\)/);
+  assert.doesNotMatch(transformed, /\.c\([^)]*[+]1\)/);
+});
+
+test("41407 composer colors follow the selected project id", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.814.41407-6720");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "z=Y(Kb),B=Y(aP),V=!C||B?.type===`local`?B:null,",
+    "(0,i6.jsx)(BAc,{className:D,utilityBarVariant:R,hasDropTargetPortal:W!=null,",
+    "Za=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /z=Y\(Kb\),B=Y\(aP\),V=z\?\?\(B\?\.type===`local`\?B:null\)/);
+  assert.match(transformed, /CPXComposerScope,\{native:BAc,project:b,newChat:F\.value\.kind===`new`,bridge:!0/);
 });
 
 test("52044 maps its exact split assets and owns its transform variant", () => {
@@ -1704,6 +1770,8 @@ test("composer surface hook owns its message-composer adapter dependency", () =>
   const hook = composerSurfaceElementHook("jsx", "React");
 
   assert.match(hook, /var CPXMS=window\.CodexPlusHost\.adapters\.messageComposer/);
+  assert.match(hook, /CPXMS\.bindComposerScope/);
+  assert.match(hook, /CPXMS\.subscribeComposerScope/);
   assert.match(hook, /CPXMS\.syncComposerSurface/);
 });
 
@@ -2814,11 +2882,18 @@ test("project selector shortcut command focuses and opens the mounted selector t
   assert.deepEqual(plain(command.palette), { enabled: true, keywords: ["project", "selector", "new chat"] });
   assert.deepEqual(plain(command.shortcut.defaultKeybindings), [{ key: "CmdOrCtrl+." }]);
   const projects = [
-    { projectId: "a", label: "alpha-workspace", path: "/tmp/alpha-workspace" },
+    { projectId: "a", label: "alpha-workspace", path: "/tmp/alpha-workspace", repositoryData: { rootFolder: "/tmp/alpha-workspace" } },
     { projectId: "b", label: "beta-service", path: "/tmp/beta-service" },
     { projectId: "c", label: "gamma-tools", path: "/tmp/gamma-tools" },
     { projectId: "d", label: "delta-service", path: "/tmp/delta-service/archive" },
   ];
+  window.CodexPlusHost.adapters.projectSelector.setProjects(projects);
+  assert.deepEqual(plain(window.CodexPlusHost.adapters.projectSelector.projects()), [
+    { ...projects[0], id: "a", cwd: "/tmp/alpha-workspace" },
+    { ...projects[1], id: "b", cwd: "/tmp/beta-service" },
+    { ...projects[2], id: "c", cwd: "/tmp/gamma-tools" },
+    { ...projects[3], id: "d", cwd: "/tmp/delta-service/archive" },
+  ]);
   assert.deepEqual(
     window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "alpha   work").map((project) => project.projectId),
     ["a"],
@@ -3673,6 +3748,20 @@ test("41301 mounts the path accessory in its native thread-shell header action s
   assert.match(header, /useSyncExternalStore:tr\.useSyncExternalStore/);
   assert.match(header, /children:\[CPX_headerAction,c\]/);
   assert.doesNotMatch(header, /querySelector|fallback/i);
+});
+
+test("41301 review producer does not misbind its incompatible native comment hook", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.707.41301-5103");
+  const transform = collectFileTransforms(patchSet).find(([, candidate]) => candidate.name === "patchThreadSidePanelTabs")?.[1];
+  const source = [
+    "function MMe(e){let t=(0,FM.c)(14),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "s=(0,IM.jsx)(Xce,{children:(0,IM.jsx)(VOe,{diffMode:a,setTabState:r,tabState:i})}),t[1]=a,t[2]=r,t[3]=i,t[4]=s):s=t[4];",
+  ].join("");
+
+  const transformed = transform(source);
+
+  assert.doesNotMatch(transformed, /typeof fM/);
+  assert.match(transformed, /null,null,null,null,typeof wu!==`undefined`\?wu:null/);
 });
 
 test("51957 mounts the path accessory beside the native thread-shell project action", () => {
@@ -5405,6 +5494,23 @@ test("52044 thread header renders the reusable accessory host without rewriting 
   assert.doesNotMatch(transformed, /CPXHV|t\[72\]/);
 });
 
+test("41407 thread header renders the reusable accessory host without rewriting compiler cache", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.814.41407-6720");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = [
+    "function a$a(e){let t=(0,E$a.c)(72),",
+    "let e=f.filter(d$a),a=f.filter(u$a),u=f.filter(l$a),_=e.length>0,",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function a\$a\(e\)\{let t=\(0,E\$a\.c\)\(72\),/);
+  assert.match(transformed, /CPXThreadHeaderAccessories\(\{context:CPXH\.context\.active\(\),deps:\{jsx:uG\.jsx,jsxs:uG\.jsxs,useSyncExternalStore:r\$a\.useSyncExternalStore\}\}\)/);
+  assert.doesNotMatch(transformed, /CPXHV|t\[72\]/);
+});
+
 test("41047 thread header keeps the compiler cache contract and uses the reusable accessory host", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.810.41047-6570");
   const transform = collectFileTransforms(patchSet).find(
@@ -6756,7 +6862,7 @@ test("nested review diff cards use the native controlled disclosure contract", (
   assert.match(plugin, /function ControlledDiffCard/);
   assert.match(plugin, /open,\s*onOpenChange: setOpen/);
   assert.match(plugin, /"data-codex-plus-repo-patch-group": repo\.path \?\? repo\.id/);
-  assert.doesNotMatch(plugin, /isPartial:\s*false/);
+  assert.match(plugin, /hasNativeFullContentLoader \|\| !diff\.metadata\?\.isPartial/);
   assert.match(plugin, /\.\.\.commentProps/);
   assert.match(plugin, /workspaceRoot: repoCwd/);
   assert.doesNotMatch(plugin, /defaultOpen/);
@@ -6791,6 +6897,7 @@ test("nested review preserves partial diffs and forwards isolated comment props"
     },
   };
   const onCommentsChange = () => {};
+  const loadFullContent = () => {};
   const deps = {
     jsx(type, props) { return { type, props }; },
     createElement(type, props) { return typeof type === "function" ? type(props) : { type, props }; },
@@ -6804,7 +6911,7 @@ test("nested review preserves partial diffs and forwards isolated comment props"
       cwd: "/repo/code/quote-core",
       hostConfig: { id: "local" },
       conversationId: "conversation-1",
-      commentProps: { enableComments: true, comments: [], onCommentsChange },
+      commentProps: { enableComments: true, comments: [], onCommentsChange, loadFullContent },
       diffMode: "unified",
       diffText: "partial diff",
       statusText: "Loaded",
@@ -6820,8 +6927,27 @@ test("nested review preserves partial diffs and forwards isolated comment props"
   assert.equal(card.props.diff.metadata.isPartial, true);
   assert.equal(card.props.enableComments, true);
   assert.equal(card.props.onCommentsChange, onCommentsChange);
+  assert.equal(card.props.fullContentNextFallbackToDisk, true);
   assert.equal(card.props.cwd, "/repo/code/quote-core");
   assert.equal(card.props.workspaceRoot, "/repo/code/quote-core");
+
+  const withoutNativeLoader = window.__repoDiffBody(
+    {
+      cwd: "/repo/code/quote-core",
+      hostConfig: { id: "local" },
+      conversationId: "conversation-1",
+      commentProps: {},
+      diffMode: "unified",
+      diffText: "partial diff",
+      statusText: "Loaded",
+      error: null,
+      isLoading: false,
+    },
+    deps,
+  ).props.children[0];
+  assert.equal(withoutNativeLoader.props.fullContentNextFallbackToDisk, false);
+  assert.equal(withoutNativeLoader.props.diff.metadata.isPartial, false);
+  assert.equal(diff.metadata.isPartial, true);
 });
 
 test("52044 review host exposes the native comment contract to nested diff cards", () => {
@@ -6844,6 +6970,22 @@ test("52044 review host exposes the native comment contract to nested diff cards
 
   const adapter = fs.readFileSync(path.join(__dirname, "../src/runtime/host/review.js"), "utf8");
   assert.equal(adapter.match(/useReviewCommentProps,/g)?.length, 2);
+});
+
+test("41407 review host reuses the current native branch picker content", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.814.41407-6720");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function nzs(e){let t=(0,czs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,F$.jsx)(tTi,{children:(0,F$.jsx)(KDs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.doesNotMatch(transformed, /CPXBranchPickerDropdownContent|git-branch-oWWFRgLK/);
+  assert.match(transformed, /renderBodyFromHost\(e,\[F\$,fzs,null,null,null,null,null,null,null,null,null,KDs,null,null,null,null,null,bLs,Ffa,CF,ETs\]\)/);
 });
 
 test("current project headers receive project color row attributes on the clickable row", () => {
