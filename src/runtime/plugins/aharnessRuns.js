@@ -355,6 +355,10 @@
 
   function discoverProjects() {
     const projects = CodexPlus.ui.sidebar.projects();
+    for (const project of CodexPlusHost.adapters.projectSelector.projects()) {
+      if (!project.cwd || projects.some((candidate) => candidate.cwd === project.cwd)) continue;
+      projects.push(project);
+    }
     for (const row of Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row]"))) {
       const label = row.getAttribute("data-app-action-sidebar-project-label") || row.textContent?.trim()?.split(/\n/)[0] || "Project";
       const id = row.getAttribute("data-app-action-sidebar-project-id") || label;

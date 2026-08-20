@@ -186,6 +186,7 @@
     }
     if (parsed == null || parsed.length === 0) return ReviewDiagnostic({ message: statusText }, deps);
     const repoCwd = pathValue(cwd) ?? cwd;
+    const hasNativeFullContentLoader = typeof commentProps.loadFullContent === "function";
     return jsx("div", {
       className: "mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2",
       children: parsed.map((diff, index) =>
@@ -198,10 +199,12 @@
             containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
             conversationId: conversationId ?? undefined,
             cwd: repoCwd,
-            diff,
+            diff: hasNativeFullContentLoader || !diff.metadata?.isPartial
+              ? diff
+              : { ...diff, metadata: { ...diff.metadata, isPartial: false } },
             diffViewWrap: true,
             expandScope: "review",
-            fullContentNextFallbackToDisk: true,
+            fullContentNextFallbackToDisk: hasNativeFullContentLoader,
             headerVariant: "full-review",
             hostConfig,
             hunkActionsVariant: "unstaged",

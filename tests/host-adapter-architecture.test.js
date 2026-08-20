@@ -24,7 +24,9 @@ const required = [
   "projectSelector.acceptFirst",
   "projectSelector.fuzzyFilter",
   "projectSelector.fuzzyHighlight",
+  "projectSelector.projects",
   "projectSelector.setAcceptFirstHandler",
+  "projectSelector.setProjects",
   "projectSelector.trigger",
   "sidebar.projectRowProps",
   "sidebar.projects",
@@ -32,6 +34,11 @@ const required = [
   "sidebar.mergeThreadRowAttributes",
   "messageComposer.userBubbleProps",
   "messageComposer.composerSurfaceProps",
+  "messageComposer.activeComposerScope",
+  "messageComposer.bindComposerScope",
+  "messageComposer.composerScopeSnapshot",
+  "messageComposer.setComposerProject",
+  "messageComposer.subscribeComposerScope",
   "threadHeader.accessories",
   "threadHeader.notify",
   "threadHeader.snapshot",
@@ -54,9 +61,10 @@ test("required host adapter manifest is authoritative and loaded before consumer
   assert.ok(files.indexOf("api/hostAdapters.js") < files.indexOf("plugins/nestedRepositories.js"));
 });
 
-test("Aharness discovers projects through the shared sidebar interface", () => {
+test("Aharness discovers projects through shared sidebar and selector interfaces", () => {
   const plugin = source("src/runtime/plugins/aharnessRuns.js");
   assert.match(plugin, /CodexPlus\.ui\.sidebar\.projects\(\)/);
+  assert.match(plugin, /CodexPlusHost\.adapters\.projectSelector\.projects\(\)/);
 });
 
 test("plugins and public APIs do not access legacy native globals", () => {

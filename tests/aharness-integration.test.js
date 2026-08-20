@@ -798,6 +798,8 @@ test("aharness plugin registers native commands and menu item", async () => {
     context,
     { filename: "host/coreAdapters.js" },
   );
+  context.CodexPlusHost = window.CodexPlusHost;
+  context.CodexPlusHost.adapters.projectSelector = { projects() { return []; } };
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/aharnessRuns.js"), "utf8"),
     context,

@@ -2,6 +2,21 @@
   const globalObject = typeof window !== "undefined" ? window : globalThis;
   const openHandlers = new Map();
   let acceptFirstHandler = null;
+  let projectSnapshot = [];
+
+  function normalizeProject(project) {
+    const id = project?.projectId ?? project?.id;
+    const cwd = project?.repositoryData?.rootFolder ?? project?.path ?? project?.cwd;
+    return { ...project, id, cwd };
+  }
+
+  function projects() {
+    return projectSnapshot.map((project) => ({ ...project }));
+  }
+
+  function setProjects(nextProjects) {
+    projectSnapshot = Array.isArray(nextProjects) ? nextProjects.map(normalizeProject) : [];
+  }
 
   function fuzzyFilter(projects, query) {
     return globalObject.CodexPlus.ui.projectSelector.fuzzyFilter(projects, query);
@@ -78,8 +93,10 @@
     fuzzyFilter,
     fuzzyHighlight,
     open,
+    projects,
     setAcceptFirstHandler,
     setOpenHandler,
+    setProjects,
     trigger,
   };
 })();
