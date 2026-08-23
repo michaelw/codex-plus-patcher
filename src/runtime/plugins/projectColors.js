@@ -64,6 +64,7 @@
     return palette[fnv1a32(colorKey(project)) % palette.length];
   }
 
+  const projectByKey = new Map();
   const projectByPath = new Map();
   const projectByName = new Map();
 
@@ -98,6 +99,10 @@
       .map((value) => String(value).trim())));
   }
 
+  function hasExplicitProjectId(project) {
+    return project != null && typeof project !== "string" && project.projectId != null && String(project.projectId).trim() !== "";
+  }
+
   function rememberProjectName(key, project) {
     if (key === "") return;
     const existing = projectByName.get(key);
@@ -105,18 +110,34 @@
       projectByName.set(key, project);
       return;
     }
-    if (existing != null && colorKey(existing) !== colorKey(project)) projectByName.set(key, null);
+    if (existing != null && colorKey(existing) !== colorKey(project)) {
+      if (hasExplicitProjectId(existing) && !hasExplicitProjectId(project)) return;
+      if (!hasExplicitProjectId(existing) && hasExplicitProjectId(project)) {
+        projectByName.set(key, project);
+        return;
+      }
+      projectByName.set(key, null);
+    }
+  }
+
+  function rememberProjectPath(key, project) {
+    const existing = projectByPath.get(key);
+    if (existing && hasExplicitProjectId(existing) && !hasExplicitProjectId(project)) return;
+    projectByPath.set(key, project);
   }
 
   function rememberProject(project) {
     const key = colorKey(project);
     if (key.trim() === "") return project;
-    for (const pathKey of projectPathKeys(project)) projectByPath.set(pathKey, project);
+    projectByKey.set(key, project);
+    for (const pathKey of projectPathKeys(project)) rememberProjectPath(pathKey, project);
     for (const nameKey of projectNameKeys(project)) rememberProjectName(nameKey, project);
     return project;
   }
 
   function resolveProject(project) {
+    const exactProject = projectByKey.get(colorKey(project));
+    if (hasExplicitProjectId(project) && exactProject) return exactProject;
     for (const pathKey of projectPathKeys(project)) {
       const knownProject = projectByPath.get(pathKey);
       if (knownProject) return knownProject;
@@ -125,7 +146,7 @@
       const knownProject = projectByName.get(nameKey);
       if (knownProject) return knownProject;
     }
-    return null;
+    return exactProject || null;
   }
 
   function style(project) {

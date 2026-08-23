@@ -297,10 +297,12 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.814.41407-6720");
-  assert.equal(chatgptPatchSets.length, 33);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.818.21641-6849");
+  assert.equal(chatgptPatchSets.length, 35);
 
   for (const identity of [
+    ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
+    ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
     ["26.810.52044", "6662", "6e7e8791b8bf69a586ff994721fff518af391d9efdc66cd2e620dd2a4aedc90f"],
     ["26.810.50856", "6644", "ae30da9d245d98f65613bdc0f0ba9165e9b4cb3dbebe3dd05e9daa6d09b3c875"],
@@ -362,6 +364,84 @@ test("newest supported ChatGPT source identity is registered first while Codex r
   const patchSet = selectPatch(patchSets, identity);
   assert.equal(patchSet, codexPatchSets[0]);
   assert.equal(patchSet.id, "codex-26.623.141536-4753");
+});
+
+test("new cached ChatGPT sources own exact transform variants", () => {
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.21641-6849", "chatgpt-26.818.21641"),
+    true,
+  );
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.814.41957-6744", "chatgpt-26.814.41957"),
+    true,
+  );
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.814.41407-6720", "chatgpt-26.818.21641"),
+    false,
+  );
+});
+
+test("new cached ChatGPT sources map exact split assets and all transforms", () => {
+  for (const [id, paths] of [
+    ["chatgpt-26.818.21641-6849", [
+      ".vite/build/main-Cwjv9Ibf.js",
+      ".vite/build/src-PzwkD6WC.js",
+      "webview/assets/app-initial-DOX-K1rC.js",
+      "webview/assets/terminal-panel-RCzRhZkN.js",
+      "webview/assets/mermaid-diagram-z9oBms_7.js",
+    ]],
+    ["chatgpt-26.814.41957-6744", [
+      ".vite/build/main-Cw5W_AF8.js",
+      ".vite/build/src-DY9Aq019.js",
+      "webview/assets/app-initial-BnNjcVmf.js",
+      "webview/assets/terminal-panel-BvPYUOPN.js",
+      "webview/assets/mermaid-diagram-CFyU_vv-.js",
+    ]],
+  ]) {
+    const patchSet = patchSets.find((candidate) => candidate.id === id);
+    assert.ok(patchSet, id);
+    const transforms = collectFileTransforms(patchSet);
+    const transformedPaths = new Set(transforms.map(([filePath]) => filePath));
+    for (const filePath of paths) assert.equal(transformedPaths.has(filePath), true, `${id}: ${filePath}`);
+    assert.equal(transforms.length, 30, id);
+    if (id === "chatgpt-26.814.41957-6744") {
+      assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-rWpCEtWP.js");
+    }
+  }
+});
+
+test("21641 thread header accessory insertion preserves the compiler cache", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.21641-6849");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = "function N4a(e){let t=(0,t3a.c)(80),let e=f.filter(B4a),a=f.filter(z4a),u=f.filter(R4a),g=function J4a(e){let t=(0,t3a.c)(13),";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXThreadHeaderAccessories/);
+  assert.match(transformed, /u=\(\(e,t\)=>t==null\?e:\[\{actionId:`codex-plus-project-path`,align:`end`,node:t\},\.\.\.e\]\)\(f\.filter\(R4a\),CPXThreadHeaderAccessories/);
+  assert.match(transformed, /t3a\.c\)\(80\)/);
+  assert.match(transformed, /t3a\.c\)\(13\)/);
+  assert.doesNotMatch(transformed, /t3a\.c\)\(81\)|t3a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(transformed, /function J4a\(e\)\{let t=\(0,t3a\.c\)\(13\),$/);
+});
+
+test("21641 review host uses the in-bundle diff parser without a stale export import", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.21641-6849");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function oQs(e){let t=(0,fQs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,o1.jsx)(AOi,{children:(0,o1.jsx)(dHs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXBranchPickerDropdownContent,o_a,jO,Kzs/);
+  assert.doesNotMatch(transformed, /CPXParseDiff|artifact-tab-content/);
 });
 
 test("41407 maps its exact split assets and owns its transform variant", () => {
@@ -427,6 +507,21 @@ test("41407 composer colors follow the selected project id", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /z=Y\(Kb\),B=Y\(aP\),V=z\?\?\(B\?\.type===`local`\?B:null\)/);
   assert.match(transformed, /CPXComposerScope,\{native:BAc,project:b,newChat:F\.value\.kind===`new`,bridge:!0/);
+});
+
+test("21641 composer colors follow the canonical native projectless and project state", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.21641-6849");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "(0,i6.jsx)(JUc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXComposerScope,\{native:JUc,project:dn\?null:\{projectId:\$ee,cwd:un,hostId:ur\},newChat:L\.value\.kind===`new`,bridge:!0/);
 });
 
 test("52044 maps its exact split assets and owns its transform variant", () => {
@@ -7197,6 +7292,9 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     hostId: "local",
   };
   const sidebarProps = context.window.CodexPlus.ui.sidebar.projectRowProps({ project });
+  context.window.CodexPlus.ui.sidebar.projectRowProps({
+    project: { label: project.label, cwd: project.path, hostId: "local" },
+  });
   const composerProps = context.window.CodexPlus.ui.composer.surfaceProps({
     project: { cwd: project.path, hostId: "local" },
   });
@@ -7215,6 +7313,44 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   assert.equal(
     worktreeProjectProps.style["--codex-plus-project-accent"],
     sidebarProps.style["--codex-plus-project-accent"],
+  );
+
+  const parentProject = {
+    projectId: "nested-suite-parent",
+    label: "nested-suite",
+    path: "/tmp/codex-plus-audit/worktrees/c7ee/nested-suite-worktree",
+    hostId: "local",
+  };
+  const selectedWorktree = {
+    projectId: "nested-suite-worktree",
+    label: "nested-suite-worktree",
+    hostId: "local",
+  };
+  context.window.CodexPlus.ui.sidebar.projectRowProps({ project: parentProject });
+  const selectedWorktreeSidebarProps = context.window.CodexPlus.ui.sidebar.projectRowProps({ project: selectedWorktree });
+  const selectedWorktreeComposerProps = context.window.CodexPlus.ui.composer.surfaceProps({
+    project: { projectId: selectedWorktree.projectId, cwd: parentProject.path, hostId: "local" },
+  });
+  assert.equal(
+    selectedWorktreeComposerProps["data-codex-plus-project-key"],
+    selectedWorktreeSidebarProps["data-codex-plus-project-key"],
+  );
+
+  const conflictingPathProject = {
+    projectId: "beta-workspace",
+    label: "beta-workspace",
+    path: "/tmp/codex-plus-audit/worktrees/c7ee/beta-workspace",
+    hostId: "local",
+  };
+  const conflictingPathSidebarProps = context.window.CodexPlus.ui.sidebar.projectRowProps({
+    project: conflictingPathProject,
+  });
+  const conflictingSignalsComposerProps = context.window.CodexPlus.ui.composer.surfaceProps({
+    project: { label: project.label, cwd: conflictingPathProject.path, hostId: "local" },
+  });
+  assert.equal(
+    conflictingSignalsComposerProps["data-codex-plus-project-key"],
+    conflictingPathSidebarProps["data-codex-plus-project-key"],
   );
 
   const alternateWorktreeCwd = "/tmp/codex-plus-audit/worktrees/6499/alpha-workspace";
