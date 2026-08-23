@@ -298,11 +298,12 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
-  assert.equal(chatgptPatchSets.length, 37);
+  assert.equal(chatgptPatchSets.length, 38);
 
   for (const identity of [
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
+    ["26.818.32112", "6933", "128c748e313a7a630d689f9fa215724eb44fbea6e0a5d7990867370cf73d88d3"],
     ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
     ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
@@ -378,6 +379,10 @@ test("new cached ChatGPT sources own exact transform variants", () => {
     true,
   );
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.32112-6933", "chatgpt-26.818.32112"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.21641-6849", "chatgpt-26.818.21641"),
     true,
   );
@@ -406,6 +411,13 @@ test("new cached ChatGPT sources map exact split assets and all transforms", () 
       "webview/assets/app-initial-DwVrCWuo.js",
       "webview/assets/terminal-panel-Cw6EPV-4.js",
       "webview/assets/mermaid-diagram-DjIhHct_.js",
+    ]],
+    ["chatgpt-26.818.32112-6933", [
+      ".vite/build/main-B2sRTTQY.js",
+      ".vite/build/src-Bqg9CB1K.js",
+      "webview/assets/app-initial-CanCbU9v.js",
+      "webview/assets/terminal-panel-Cuapb_mk.js",
+      "webview/assets/mermaid-diagram-Cl4HGGer.js",
     ]],
     ["chatgpt-26.818.21641-6849", [
       ".vite/build/main-Cwjv9Ibf.js",
@@ -526,6 +538,65 @@ test("41509 main-process transforms bind its exact hybrid symbols", () => {
   const native = transforms.get("patchMainNativeBridge")(nativeSource, context);
   assert.match(about, /CPXAboutMetadata\.disclaimerMarkup\(\{escape:yU\.default/);
   assert.match(native, /CPXNative\.registerNativeRequest\(\{isTrustedIpcEvent:be\}\)/);
+});
+
+test("32112 exact transforms preserve compiler caches and bind current namespaces", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.32112-6933");
+  const transforms = new Map(
+    collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]),
+  );
+  const context = { patchSetId: patchSet.id };
+  const actionShell = transforms.get("patchThreadHeaderActionShell")(
+    "function q4a(e){let t=(0,h3a.c)(80),let e=f.filter(e3a),a=f.filter($4a),u=f.filter(Q4a),g=function x(e){let t=(0,h3a.c)(13),",
+    context,
+  );
+  const title = transforms.get("patchThreadTitle")([
+    "function Xa(e){let t=(0,$a.c)(63),",
+    "projectName:l,title:d,titleSuffix:f,cwd:p,canPin:m}=e,h=s!==void 0&&s,",
+    "let C=S,w=J(Me,n),E=J(cr,a),D=J(wr,a),O=J(ve,n)??n,k=E??w,A=Be(C,On(k).id),j;",
+  ].join(""), context);
+  const review = transforms.get("patchThreadSidePanelTabs")([
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function l$s(e){let t=(0,h$s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,o1.jsx)(LOi,{children:(0,o1.jsx)(mUs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), context);
+  const composer = transforms.get("patchComposerProjectColors")([
+    "let Qee=B===`home`&&!P,Bo=Sn||ne||ta===`~`&&!Qee||Je&&!Qee||P&&!Qee,$ee=an??Zt,",
+    "(0,r6.jsx)(QWc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join(""), context);
+
+  assert.match(actionShell, /h3a\.c\)\(80\)/);
+  assert.match(actionShell, /h3a\.c\)\(13\)/);
+  assert.match(actionShell, /useSyncExternalStore:G4a\.useSyncExternalStore/);
+  assert.doesNotMatch(actionShell, /h3a\.c\)\(81\)|h3a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(title, /function CPXThreadHeaderTitle\(e\).*Ja\.useSyncExternalStore/);
+  assert.match(review, /\[o1,oUs,null,null,null,null,null,null,null,null,null,mUs,null,null,null,null,null,CPXBranchPickerDropdownContent,h_a,kO,YBs\]/);
+  assert.match(composer, /project:dn\?null:\{projectId:\$ee,cwd:un,hostId:ur\}/);
+  assert.doesNotMatch(composer, /projectId:Qee/);
+});
+
+test("32112 project selector trigger binds its local React namespace", () => {
+  const source = [
+    "function cyc(e){let t=(0,fyc.c)(92),",
+    'j=(0,Zvc.jsx)(Wvc,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,',
+    "function $vc(e){let t=(0,eyc.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,o2.jsx)(G$.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,s2.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,s2.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:nyc(s.projects,k,dyc)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),",
+    "ne=s==null?null:(0,c2.jsx)(ayc,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:lyc,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,c2.jsx)($vc,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,c2.jsxs)(c2.Fragment,{children:[I,ne]}),status:P,footerItems:te,emptyMessage:re})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=Yvc,K=",
+  ].join("");
+
+  const transformed = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.818.32112-6933",
+  });
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,pyc\)\}/);
+  assert.match(transformed, /data-codex-plus-project-selector-trigger/);
 });
 
 test("41705 composer colors use the canonical projectless and active project state", () => {
