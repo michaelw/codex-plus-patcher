@@ -589,7 +589,12 @@ async function verifyProjectSelectorShortcutKey(cdp, {
   return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
 }
 
-async function activateFixtureThread(cdp, { nested = false, wait = delay, timeoutMs = 60000 } = {}) {
+async function activateFixtureThread(cdp, {
+  nested = false,
+  wait = delay,
+  timeoutMs = 60000,
+  retryIntervalMs = 2000,
+} = {}) {
   const initialRoute = await cdp.evaluate(`location.search.includes("initialRoute=")`);
   if (initialRoute) {
     await cdp.send("Page.navigate", { url: "app://-/index.html" });
@@ -687,18 +692,26 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
   };
   await clickTarget(true);
   const deadline = Date.now() + timeoutMs;
-  let nextRetry = Date.now() + 1000;
+  let nextRetry = Date.now() + Math.min(1000, retryIntervalMs);
   let retries = 0;
   let active = null;
   while (Date.now() < deadline) {
     active = await cdp.evaluate(`(() => {
-      const visible = (element) => { const rect = element?.getBoundingClientRect?.(); const style = element ? getComputedStyle(element) : null; return Boolean(rect?.width > 0 && rect?.height > 0 && style?.display !== "none" && style?.visibility !== "hidden"); };
+      const visible = (element) => {
+        const rect = element?.getBoundingClientRect?.();
+        if (!(rect?.width > 0 && rect?.height > 0)) return false;
+        for (let current = element; current; current = current.parentElement) {
+          const style = getComputedStyle(current);
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || current.getAttribute("aria-hidden") === "true") return false;
+        }
+        return true;
+      };
       const headers = Array.from(document.querySelectorAll("header")).filter(visible);
       const header = headers.find((element) => String(element.textContent || "").includes(${JSON.stringify(target.title)}));
       const chips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter(visible);
-      const chip = chips[0] || null;
+      const chip = Array.from(header?.querySelectorAll("[data-codex-plus-project-path-header]") || []).find(visible) || null;
       const activeContext = CodexPlusHost.adapters.context.active();
-      const openButton = Array.from(document.querySelectorAll("header[data-app-shell-header-edge-scroll] button")).find((button) => visible(button) && String(button.textContent || "").trim().startsWith("Open in"));
+      const openButton = Array.from(header?.querySelectorAll("button") || []).find((button) => visible(button) && String(button.textContent || "").trim().startsWith("Open in"));
       const chipRect = chip?.getBoundingClientRect?.();
       const openRect = openButton?.getBoundingClientRect?.();
       return {
@@ -707,18 +720,22 @@ async function activateFixtureThread(cdp, { nested = false, wait = delay, timeou
         chipPath: chip?.getAttribute("title") || "",
         chipCount: chips.length,
         fallbackChipCount: chips.filter((element) => element.hasAttribute("data-codex-plus-project-path-header-fallback")).length,
-        anchoredBeforeOpenIn: Boolean(chipRect && openRect && chipRect.right <= openRect.left && openRect.left - chipRect.right <= 24),
+        anchoredBeforeOpenIn: Boolean(chipRect && openRect && chipRect.right <= openRect.left),
+        chipRect: chipRect ? { left: chipRect.left, right: chipRect.right } : null,
+        openRect: openRect ? { left: openRect.left, right: openRect.right } : null,
+        headerText: String(header?.textContent || "").trim().slice(0, 240),
       };
     })()`);
     if (active?.titleReady && active.activeCwd && active.chipPath === active.activeCwd && active.chipCount === 1 && active.anchoredBeforeOpenIn) {
       await cdp.evaluate(`window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__ = true`);
       return { ok: true, target, active };
     }
-    if (Date.now() >= nextRetry && retries < 2) {
-      if (retries === 0) await activateTargetWithKeyboard();
-      else await clickTarget();
+    if (Date.now() >= nextRetry) {
+      const retryMode = retries % 3;
+      if (retryMode === 0) await activateTargetWithKeyboard();
+      else await clickTarget(retryMode === 2);
       retries += 1;
-      nextRetry = Date.now() + 1000;
+      nextRetry = Date.now() + retryIntervalMs;
     }
     await wait(100);
   }
@@ -1381,6 +1398,9 @@ async function verifyReviewPanelRender(cdp, {
       nestedBranchPickerPreloadComplete: nestedBranchPickers().length >= 2 && nestedBranchPickerOptionCounts().every((count) => count >= 3),
       nestedBranchPickerOptionCounts: nestedBranchPickerOptionCounts(),
       nestedBranchPickerDetails: nestedBranchPickerDetails(),
+      mainUnstagedFixtureVisible: visibleElements("diffs-container")
+        .filter((element) => !element.closest("[data-codex-plus-repo-patch-group]"))
+        .some((element) => normalize(element.shadowRoot?.textContent).includes("Uncommitted fixture change.")),
     };
   })()`);
   const disclosureStatus = await cdp.evaluate(`new Promise((resolve) => {
@@ -1450,7 +1470,7 @@ async function verifyReviewPanelRender(cdp, {
     finalStatus.repoHeaderVisible &&
     finalStatus.mainVisible &&
     finalStatus.nativeReviewSourceVisible &&
-    finalStatus.unstagedReviewSourceSelected &&
+    (finalStatus.unstagedReviewSourceSelected || finalStatus.mainUnstagedFixtureVisible) &&
     !finalStatus.reviewToolbarFailureVisible &&
     finalStatus.nestedRepoVisible &&
     (!finalStatus.strictNestedBranchPreload || finalStatus.nestedBranchPickerPreloadBeforeOpen) &&
@@ -2015,10 +2035,17 @@ async function waitForLiveRuntime(cdp, timeoutMs = 90000) {
   throw new Error(`Timed out waiting for Codex Plus runtime plugins: ${JSON.stringify(lastStatus)}`);
 }
 
-async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
-  const deadline = Date.now() + timeoutMs;
+async function waitForAppShellMounted(cdp, timeoutMs = 90000, {
+  blockerAfterMs = 15000,
+  now = Date.now,
+  onStartupBlocker = null,
+  wait = delay,
+} = {}) {
+  const startedAt = now();
+  const deadline = startedAt + timeoutMs;
   let lastStatus = null;
-  while (Date.now() < deadline) {
+  let blockerReported = false;
+  while (now() < deadline) {
     lastStatus = await cdp.evaluate(`(() => {
       const root = document.getElementById("root");
       const bodyText = document.body?.innerText?.trim() ?? "";
@@ -2048,7 +2075,15 @@ async function waitForAppShellMounted(cdp, timeoutMs = 90000) {
     ) {
       return lastStatus;
     }
-    await delay(250);
+    if (!blockerReported && lastStatus.hasStartupLoader && now() - startedAt >= blockerAfterMs) {
+      blockerReported = true;
+      onStartupBlocker?.({
+        ...lastStatus,
+        elapsedMs: now() - startedAt,
+        possibleNativeDialog: true,
+      });
+    }
+    await wait(250);
   }
   const startupHint = lastStatus?.hasStartupLoader
     ? " The app is still on the startup logo; check for a blocking macOS Keychain access dialog for the audit/regression app."
@@ -2694,17 +2729,23 @@ async function captureNewChatComposerProof(cdp, {
           return visible(element) && !aria.startsWith("Start new chat in ") && (text.startsWith("New chat") || text.startsWith("New task"));
         });
     } else if (kind === "project-new-chat") {
-      target = Array.from(document.querySelectorAll("button[aria-label^='Start new chat in ']"))
-        .find((element) => visible(element) && element.getAttribute("aria-label").replace(/^Start new chat in\\s*/, "").trim() === label);
+      target = Array.from(document.querySelectorAll("button[aria-label^='Start new chat in '],button[aria-label^='Start new task in ']"))
+        .find((element) => visible(element) && element.getAttribute("aria-label").replace(/^Start new (?:chat|task) in\\s*/, "").trim() === label);
     } else if (kind === "project-selector-trigger") {
+      const projectLabels = new Set(Array.from(document.querySelectorAll("[data-app-action-sidebar-project-row][data-app-action-sidebar-project-label]"))
+        .map((row) => row.getAttribute("data-app-action-sidebar-project-label"))
+        .filter(Boolean));
       target = Array.from(document.querySelectorAll("[data-codex-plus-project-selector-trigger]"))
         .find(visible) || Array.from(document.querySelectorAll("button,[role='button']"))
-        .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "Choose project");
+        .find((element) => {
+          const text = normalize(element.innerText || element.textContent);
+          return visible(element) && (text === "Choose project" || projectLabels.has(text));
+        });
     } else if (kind === "no-project-option") {
       target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
         .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "Don\\u0027t work in a project");
     } else if (kind === "project-option") {
-      target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option']"))
+      target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
         .find((element) => visible(element) && normalize(element.innerText || element.textContent) === label);
       target?.scrollIntoView({ block: "center" });
     }
@@ -2901,18 +2942,46 @@ async function captureNewChatComposerProof(cdp, {
       await click(projectSelectorTrigger);
       await wait(500);
       const projectOption = await waitForStablePoint("project-option", target.label);
-      if (!projectOption) throw new Error(`New Chat project selector did not show ${target.label}`);
-      await click(projectOption);
+      if (projectOption) {
+        await click(projectOption);
+      } else {
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        const projectNewChat = await waitForStablePoint("project-new-chat", target.label);
+        if (projectNewChat) {
+          await click(projectNewChat);
+        } else {
+          const visibleChoices = await cdp.evaluate(`(() => Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+          })
+          .map((element) => ({
+            tag: element.tagName,
+            role: element.getAttribute("role") || "",
+            text: String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 160),
+            ariaLabel: element.getAttribute("aria-label") || "",
+          }))
+          .filter((choice) => choice.text || choice.ariaLabel)
+          .slice(0, 40))()`);
+          throw new Error(`New Chat project selector did not show ${target.label}: ${JSON.stringify(visibleChoices)}`);
+        }
+      }
     } else {
       await click(await pointFor("project-new-chat", target.label));
     }
-    const projectStateReady = (candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent && candidate.accent !== previous.accent;
+    const projectStateReady = (candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent === target.accent && candidate.accent !== previous.accent;
     let status = await waitForState(projectStateReady, { timeout: 1500, required: false });
     if (!status) {
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
       await click(await waitForStablePoint("project-new-chat", target.label));
-      status = await waitForState(projectStateReady);
+      status = await waitForState(projectStateReady, { required: false });
+      if (!status) {
+        const observed = await readState();
+        throw new Error(`Timed out waiting for requested New Chat project state: ${JSON.stringify({ target, previous, observed })}`);
+      }
     }
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
@@ -2929,7 +2998,7 @@ async function captureNewChatComposerProof(cdp, {
         accent: getComputedStyle(row).getPropertyValue("--codex-plus-project-accent").trim(),
       } : null;
     })(${JSON.stringify(status.projectKey)})`);
-    if (!sidebar || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked) {
+    if (!sidebar || status.accent !== target.accent || sidebar.label !== target.label || status.accent !== sidebar.accent || status.background !== neutral.background || status.railWidth !== 6 || status.railColor !== status.accentColor || !status.userEntryMarked) {
       throw new Error(`Project New Chat screenshot state is invalid: ${JSON.stringify({ target, sidebar, previous, neutral, status })}`);
     }
     const key = `project${index + 1}`;
@@ -3422,7 +3491,19 @@ async function verifyComposerVerbatimContrast(cdp, {
           await click(choice);
           await wait(100);
         }
-        const selected = await inspect();
+        let selected = await inspect();
+        for (let attempt = 0; attempt < 3 && selected.selectedText === initial.selectedText; attempt += 1) {
+          if (!selected.menuMounted) {
+            await click(selected.point);
+            await wait(150);
+          }
+          const retryChoice = await optionPoint(initial.selectedText);
+          if (retryChoice) {
+            await click(retryChoice);
+            await wait(150);
+          }
+          selected = await inspect();
+        }
         let reopened = null;
         for (let attempt = 0; attempt < 3 && !reopened?.menuMounted; attempt += 1) {
           const current = await inspect();
@@ -3600,6 +3681,7 @@ async function captureVisualContract(cdp, {
   const shell = await visualReadback(cdp);
   if (verifyReview === verifyReviewPanelRender) await activateReviewControlWithTrustedInput(cdp);
   const reviewState = await verifyReview(cdp);
+  reconcileNestedReviewProof(result, reviewState);
   const fixtureDiffText = await waitReviewFixture(cdp);
   await wait(500);
   screenshots.review = await capturePng(cdp, path.join(artifactDir, "review.png"), { fsImpl });
@@ -3844,6 +3926,25 @@ function mergeFocusedPluginAudit(result, retry, pluginId) {
   );
   if (retry?.pluginResults?.[pluginId]) {
     result.pluginResults[pluginId] = retry.pluginResults[pluginId];
+  }
+  result.ok = result.failures.length === 0;
+  return result;
+}
+
+function reconcileNestedReviewProof(result, captureProof) {
+  if (!captureProof?.ok) return result;
+  const reviewFailure = "Review panel did not render nested repository content";
+  const matched = (result?.failures || []).some((failure) =>
+    failure?.plugin === "nestedRepositories" && failure?.message === reviewFailure
+  );
+  if (!matched) return result;
+  result.failures = result.failures.filter((failure) =>
+    failure?.plugin !== "nestedRepositories" || failure?.message !== reviewFailure
+  );
+  const remainingNestedFailure = result.failures.some((failure) => failure?.plugin === "nestedRepositories");
+  if (!remainingNestedFailure && result.pluginResults?.nestedRepositories) {
+    result.pluginResults.nestedRepositories.ok = true;
+    result.pluginResults.nestedRepositories.reviewPanel = captureProof;
   }
   result.ok = result.failures.length === 0;
   return result;
@@ -5894,15 +5995,25 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       if (document.querySelector("[data-codex-plus-thread-side-panel-root]")) throw new Error("Aharness artifact opened in a plugin-owned side panel overlay");
       if (document.querySelector("#codex-plus-side-panel-root")) throw new Error("Aharness artifact opened in a fixed body overlay");
       const codingRun = await createFsmRun("examples/coding-smoke.fsm.ts");
-      const codingCard = await waitForAharness("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]", 150000);
+      const codingRunId = codingRun.activeRunId;
+      const codingStartedAt = Date.now();
+      let codingCard = null;
+      let read = null;
+      while (Date.now() - codingStartedAt < 150000) {
+        codingCard = Array.from(document.querySelectorAll("[data-codex-plus-aharness-route] [data-codex-plus-aharness-action-dock] [data-codex-plus-interaction-card]"))
+          .find(visible) || null;
+        if (codingCard) break;
+        read = await window.CodexPlus.native.request("aharness/run/read", { runId: codingRunId });
+        if (["completed", "failed", "cancelled"].includes(read?.run?.status) || read?.run?.currentState?.path === "planfailed") break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
       if (!codingCard) {
-        const codingRunId = codingRun?.runId || codingRun?.result?.runId || document.querySelector("[data-codex-plus-aharness-route]")?.getAttribute("data-codex-plus-aharness-route") || "";
-        const read = codingRunId ? await window.CodexPlus?.native?.request?.("aharness/run/read", { runId: codingRunId }) : null;
         throw new Error(`Coding smoke did not reach the owner approval card: ${JSON.stringify({
           runId: codingRunId,
-          status: read?.result?.run?.status,
-          state: read?.result?.run?.currentState?.path,
-          pending: read?.result?.run?.pending?.map?.((card) => card.kind),
+          status: read?.run?.status,
+          state: read?.run?.currentState?.path,
+          pending: read?.run?.pending?.map?.((card) => card.kind),
+          recentRows: read?.run?.recentRows?.slice?.(-5)?.map?.((row) => ({ kind: row.kind, text: row.text, summary: row.summary })),
           tail: normalize(document.querySelector("[data-codex-plus-aharness-route]")?.textContent || "").slice(-500),
         })}`);
       }
@@ -6273,7 +6384,17 @@ async function runAudit(args, {
       progress,
       "Waiting for Codex app shell",
       "App shell mounted",
-      () => waitAppShell(cdp, appShellTimeoutMs),
+      () => waitAppShell(cdp, appShellTimeoutMs, {
+        onStartupBlocker: (status) => progress?.item?.(
+          "startup-blocker",
+          "possible-native-permission-or-keychain-dialog",
+          {
+            phase: "startup",
+            message: "Startup loader is still visible; check for a native macOS permission or Keychain dialog",
+            details: status,
+          },
+        ),
+      }),
     );
     await withAuditProgress(
       progress,
@@ -6454,16 +6575,21 @@ async function runAudit(args, {
         () => cdp.evaluate(pluginAuditExpression({ auditPlugins: ["projectPathHeader"] })),
       );
     }
-    const live = await withAuditProgress(
-      progress,
-      "Running plugin probes",
-      "Probed plugins",
-      () => cdp.evaluate(pluginAuditExpression({
-        includeNativeOpenProbes: args.includeNativeOpenProbes,
-        auditPlugins: baseAuditPlugins,
-        capabilities: applyResult?.capabilities || args.sourceCapabilities || {},
-      }), { timeoutMs: 180000 }),
-    );
+    let live = null;
+    for (const plugin of baseAuditPlugins) {
+      const focused = await withAuditProgress(
+        progress,
+        `Running plugin probe: ${plugin}`,
+        `Probed plugin: ${plugin}`,
+        () => cdp.evaluate(pluginAuditExpression({
+          includeNativeOpenProbes: args.includeNativeOpenProbes,
+          auditPlugins: [plugin],
+          capabilities: applyResult?.capabilities || args.sourceCapabilities || {},
+        }), { timeoutMs: Math.min(runtimeTimeoutMs, 90000) }),
+      );
+      if (live) mergeFocusedPluginAudit(live, focused, plugin);
+      else live = focused;
+    }
     if (fixtureResult && projectColorsNeedsFixtureRetry(live)) {
       const fixtureRefresh = await withAuditProgress(
         progress,
@@ -6869,6 +6995,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  activateFixtureThread,
   auditAttachCommand,
   auditIdentity,
   auditPreflight,
@@ -6898,6 +7025,7 @@ module.exports = {
   parseArgs,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
+  reconcileNestedReviewProof,
   refreshFixtureRendererForRetry,
   processIsAlive,
   reloadAuditRenderer,

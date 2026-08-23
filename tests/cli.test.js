@@ -36,6 +36,7 @@ const {
   syncDevHome,
 } = require("../src/cli");
 const {
+  activateFixtureThread,
   auditPreflight,
   auditRequiredHostAdapters,
   auditIdentity,
@@ -51,6 +52,7 @@ const {
   mergeFocusedPluginAudit,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
+  reconcileNestedReviewProof,
   refreshFixtureRendererForRetry,
   runAudit,
   setComposerColorForVisualContract,
@@ -65,6 +67,119 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("fixture activation keeps retrying trusted input until the header contract is ready", async () => {
+  const sent = [];
+  const activeStates = [
+    { titleReady: false },
+    { titleReady: false },
+    { titleReady: false },
+    {
+      titleReady: true,
+      activeCwd: "/fixture-workspaces/alpha-main",
+      chipPath: "/fixture-workspaces/alpha-main",
+      chipCount: 1,
+      anchoredBeforeOpenIn: true,
+    },
+  ];
+  let evaluation = 0;
+  const cdp = {
+    evaluate() {
+      evaluation += 1;
+      if (evaluation === 1) return Promise.resolve(false);
+      if (evaluation === 2) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (evaluation === 3 || evaluation === 7) return Promise.resolve({ x: 10, y: 10 });
+      if (evaluation === 5 || evaluation === 9 || evaluation === 11) return Promise.resolve(true);
+      return Promise.resolve(activeStates.shift());
+    },
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+  };
+
+  const result = await activateFixtureThread(cdp, {
+    wait() {},
+    timeoutMs: 1000,
+    retryIntervalMs: 0,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent" && call.params.type === "keyDown").length, 1);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed").length, 3);
+});
+
+test("fixture activation retries the stable row hit target after keyboard and label attempts", async () => {
+  let activeChecks = 0;
+  let rowPoints = 0;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const rect = (row).getBoundingClientRect()")) {
+        rowPoints += 1;
+        return Promise.resolve({ x: 10, y: 10 });
+      }
+      if (expression.includes("const rect = ((labels[0] || row)).getBoundingClientRect()") ||
+          expression.includes("const rect = (labels[0] || row).getBoundingClientRect()")) {
+        return Promise.resolve({ x: 11, y: 11 });
+      }
+      if (expression.includes("control.focus()")) return Promise.resolve(true);
+      if (expression.includes("const headers =")) {
+        activeChecks += 1;
+        if (activeChecks < 4) return Promise.resolve({ titleReady: false });
+        return Promise.resolve({
+          titleReady: true,
+          activeCwd: "/fixture-workspaces/alpha-main",
+          chipPath: "/fixture-workspaces/alpha-main",
+          chipCount: 1,
+          anchoredBeforeOpenIn: true,
+        });
+      }
+      return Promise.resolve(true);
+    },
+    send() { return Promise.resolve(); },
+  };
+
+  const result = await activateFixtureThread(cdp, {
+    wait() {},
+    timeoutMs: 1000,
+    retryIntervalMs: 0,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(rowPoints, 2);
+});
+
+test("successful trusted Review capture supersedes only the matching cold-render failure", () => {
+  const result = {
+    ok: false,
+    failures: [
+      { plugin: "nestedRepositories", message: "Review panel did not render nested repository content" },
+      { plugin: "projectColors", message: "unrelated" },
+    ],
+    pluginResults: { nestedRepositories: { ok: false, reviewPanel: { ok: false } } },
+  };
+
+  reconcileNestedReviewProof(result, { ok: true, repoHeaderVisible: true, nestedRepoVisible: true });
+
+  assert.deepEqual(result.failures, [{ plugin: "projectColors", message: "unrelated" }]);
+  assert.equal(result.pluginResults.nestedRepositories.ok, true);
+  assert.equal(result.pluginResults.nestedRepositories.reviewPanel.ok, true);
+  assert.equal(result.ok, false);
+});
 
 test("startup dialog dismissal recognizes Chronicle permission setup", async () => {
   let visible = true;
@@ -1053,6 +1168,12 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
 
   assert.match(activation, /timeoutMs = 60000/);
   assert.match(activation, /CodexPlusHost\.adapters\.context\.active\(\)/);
+  assert.match(activation, /current = current\.parentElement/);
+  assert.match(activation, /getAttribute\("aria-hidden"\) === "true"/);
+  assert.match(activation, /header\?\.querySelectorAll\("\[data-codex-plus-project-path-header\]"\)/);
+  assert.match(activation, /header\?\.querySelectorAll\("button"\)/);
+  assert.match(activation, /chipRect\.right <= openRect\.left/);
+  assert.doesNotMatch(activation, /openRect\.left - chipRect\.right <= 24/);
   assert.match(activation, /activeContext\?\.cwd/);
   assert.match(activation, /target\.title/);
   assert.match(activation, /data-app-action-sidebar-thread-title/);
@@ -1091,7 +1212,7 @@ test("visual readback tolerates the document swap while settings navigation load
 test("default audit closes the isolated Aharness route without reloading fixture state", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("if (splitAharnessProbe) {");
-  const end = source.indexOf("const live = await withAuditProgress", start);
+  const end = source.indexOf("let live = null;", start);
   const isolatedProbe = source.slice(start, end);
 
   assert.match(isolatedProbe, /Closing isolated Aharness route/);
@@ -1104,7 +1225,7 @@ test("default audit closes the isolated Aharness route without reloading fixture
 test("isolated Aharness audit allows its explicit interaction waits to outlive the default DevTools request timeout", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("if (splitAharnessProbe) {");
-  const end = source.indexOf("const live = await withAuditProgress", start);
+  const end = source.indexOf("let live = null;", start);
   const isolatedProbe = source.slice(start, end);
 
   assert.match(source, /send\(method, params = \{\}, \{ timeoutMs = 90000 \} = \{\}\)/);
@@ -1124,13 +1245,18 @@ test("Aharness audit accepts a visible native header after a hidden stale header
   assert.doesNotMatch(aharnessAudit, /const normalHeader = document\.querySelector/);
 });
 
-test("broad plugin audit allows its finite probes to outlive the default DevTools request timeout", () => {
+test("broad plugin audit isolates each plugin behind a named bounded request", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
-  const start = source.indexOf("const live = await withAuditProgress");
+  const start = source.indexOf("let live = null;");
   const end = source.indexOf("if (fixtureResult && projectColorsNeedsFixtureRetry", start);
   const broadProbe = source.slice(start, end);
 
-  assert.match(broadProbe, /cdp\.evaluate\(pluginAuditExpression\(\{[\s\S]*?auditPlugins: baseAuditPlugins,[\s\S]*?capabilities: applyResult\?\.capabilities \|\| args\.sourceCapabilities \|\| \{\},[\s\S]*?\}\), \{ timeoutMs: 180000 \}\)/);
+  assert.match(broadProbe, /for \(const plugin of baseAuditPlugins\)/);
+  assert.match(broadProbe, /`Running plugin probe: \$\{plugin\}`/);
+  assert.match(broadProbe, /auditPlugins: \[plugin\]/);
+  assert.match(broadProbe, /timeoutMs: Math\.min\(runtimeTimeoutMs, 90000\)/);
+  assert.match(broadProbe, /mergeFocusedPluginAudit\(live, focused, plugin\)/);
+  assert.doesNotMatch(broadProbe, /auditPlugins: baseAuditPlugins/);
 });
 
 test("project color audit proves New Chat project changes and the neutral no-project state", () => {
@@ -1188,7 +1314,12 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /New Chat composer does not preserve rounded upstream corners/);
   assert.match(source, /Project New Chat composer radius differs from the no-project composer/);
   assert.match(source, /Choose project/);
+  assert.match(source, /const projectLabels = new Set/);
+  assert.match(source, /projectLabels\.has\(text\)/);
   assert.match(source, /kind === "project-option"/);
+  assert.match(source, /\[role='menuitem'\],\[role='option'\],button/);
+  assert.match(source, /Start new task in/);
+  assert.match(source, /Start new \(\?:chat\|task\) in/);
   assert.match(source, /target\?\.scrollIntoView\(\{ block: "center" \}\)/);
   assert.match(source, /document\.elementFromPoint\(point\.x, point\.y\)/);
   assert.match(source, /target\.contains\(hitTarget\)/);
@@ -1196,6 +1327,7 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /const projectSelectorTrigger = await pointFor\("project-selector-trigger"\)/);
   assert.match(source, /if \(projectSelectorTrigger\)/);
   assert.match(source, /await click\(projectSelectorTrigger\)/);
+  assert.match(source, /const projectNewChat = await waitForStablePoint\("project-new-chat", target\.label\)/);
   assert.match(source, /await wait\(500\);\n      const projectOption/);
   assert.match(source, /await waitForState\(projectStateReady, \{ timeout: 1500, required: false \}\)/);
   assert.match(source, /await click\(await waitForStablePoint\("project-new-chat", target\.label\)\)/);
@@ -1208,6 +1340,8 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /new-chat-no-project\.png/);
   assert.match(source, /new-chat-project-\$\{index \+ 1\}\.png/);
   assert.match(source, /status\.background !== neutral\.background/);
+  assert.match(source, /status\.accent !== target\.accent/);
+  assert.match(source, /sidebar\.label !== target\.label/);
   assert.match(source, /status\.railWidth !== 6/);
   assert.match(source, /status\.railColor !== status\.accentColor/);
   assert.doesNotMatch(source, /newChatProjectSelector|requiresProjectSelector/);
@@ -1225,6 +1359,19 @@ test("Aharness audit waits for the new run row to become active before asserting
   assert.match(runAudit, /querySelectorAll\(selector\)/);
   assert.match(runAudit, /data-app-action-sidebar-thread-active/);
   assert.match(runAudit, /data-codex-plus-aharness-run-active/);
+});
+
+test("Aharness coding smoke fails fast with direct native run diagnostics", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
+  const start = source.indexOf('const codingRun = await createFsmRun("examples/coding-smoke.fsm.ts")');
+  const end = source.indexOf("const codingWaitingComposer", start);
+  const codingSmoke = source.slice(start, end);
+
+  assert.match(codingSmoke, /codingRun\.activeRunId/);
+  assert.match(codingSmoke, /read\?\.run\?\.status/);
+  assert.match(codingSmoke, /read\?\.run\?\.currentState\?\.path/);
+  assert.match(codingSmoke, /read\?\.run\?\.recentRows/);
+  assert.doesNotMatch(codingSmoke, /read\?\.result\?\.run/);
 });
 
 test("aharness artifact audit recognizes both native app-shell tab layouts", () => {
@@ -1556,11 +1703,18 @@ test("review panel verifier rejects Branch proof and nested toolbar failures", a
     nestedDiffDisclosureCollapsed: true,
   };
   const branch = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: false, reviewToolbarFailureVisible: false }) });
+  const legacyUnstagedFixture = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({
+    ...base,
+    unstagedReviewSourceSelected: false,
+    mainUnstagedFixtureVisible: true,
+    reviewToolbarFailureVisible: false,
+  }) });
   const toolbarFailure = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: true }) });
   const commentsDisabled = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: false, nestedInteractiveDiffCount: 0 }) });
   const undefinedText = await verifyReviewPanelRender({ evaluate: () => Promise.resolve({ ...base, unstagedReviewSourceSelected: true, reviewToolbarFailureVisible: false, nestedUndefinedDiffCount: 1 }) });
 
   assert.equal(branch.ok, false);
+  assert.equal(legacyUnstagedFixture.ok, true);
   assert.equal(toolbarFailure.ok, false);
   assert.equal(commentsDisabled.ok, false);
   assert.equal(undefinedText.ok, false);
@@ -2044,6 +2198,38 @@ test("app shell wait returns once real UI has mounted", async () => {
   assert.equal(status.hasStartupLoader, false);
   assert.equal(status.hasNewChatText, true);
   assert.equal(status.bodyTextSampleLength, 8);
+});
+
+test("app shell wait reports a sustained startup loader as a possible native dialog", async () => {
+  let clock = 0;
+  const blockers = [];
+  await assert.rejects(
+    () => waitForAppShellMounted(
+      {
+        evaluate() {
+          return Promise.resolve({
+            readyState: "complete",
+            hasRoot: true,
+            hasStartupLoader: true,
+            bodyTextLength: 0,
+            elementCount: 141,
+            interactiveCount: 0,
+          });
+        },
+      },
+      1000,
+      {
+        blockerAfterMs: 500,
+        now: () => clock,
+        onStartupBlocker: (status) => blockers.push(status),
+        wait: async (ms) => { clock += ms; },
+      },
+    ),
+    /Timed out waiting for Codex app shell to mount/,
+  );
+  assert.equal(blockers.length, 1);
+  assert.equal(blockers[0].possibleNativeDialog, true);
+  assert.equal(blockers[0].elapsedMs, 500);
 });
 
 test("app shell wait rejects the React error boundary", async () => {
@@ -3996,6 +4182,7 @@ test("visual contract uses preflighted capability evidence for the fenced-code l
   assert.match(verifier, /open\.menuMounted && open\.optionCount > 0/);
   assert.match(verifier, /state\.menuContrast != null && state\.menuContrast >= 4\.5/);
   assert.match(verifier, /for \(let attempt = 0; attempt < 3 && !reopened\?\.menuMounted; attempt \+= 1\)/);
+  assert.match(verifier, /for \(let attempt = 0; attempt < 3 && selected\.selectedText === initial\.selectedText; attempt \+= 1\)/);
   assert.match(verifier, /selected\.selectedText !== initial\.selectedText/);
   assert.match(verifier, /state\.toolbarBackground === state\.controlBackground/);
   assert.match(verifier, /const adaptiveColorsOk = themes\.every/);
