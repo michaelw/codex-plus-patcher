@@ -298,13 +298,14 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
-  assert.equal(chatgptPatchSets.length, 39);
+  assert.equal(chatgptPatchSets.length, 40);
 
   for (const identity of [
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
     ["26.818.32112", "6933", "128c748e313a7a630d689f9fa215724eb44fbea6e0a5d7990867370cf73d88d3"],
     ["26.818.31338", "6892", "7db5508d4acd2c324cc572cd6f8d6d07900d185831bd6d54005a573e7186de54"],
+    ["26.818.22352", "6872", "530f670f3859f2f82c3dd7e188537b369820b2ff1fe6a2207eec16abdb7d1d42"],
     ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
     ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
@@ -372,6 +373,10 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 
 test("new cached ChatGPT sources own exact transform variants", () => {
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.22352-6872", "chatgpt-26.818.22352"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.41705-6971", "chatgpt-26.818.41705"),
     true,
   );
@@ -403,6 +408,13 @@ test("new cached ChatGPT sources own exact transform variants", () => {
 
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.818.22352-6872", [
+      ".vite/build/main-Cwjv9Ibf.js",
+      ".vite/build/src-PzwkD6WC.js",
+      "webview/assets/app-initial-2HRzhJVF.js",
+      "webview/assets/terminal-panel-CV8etR3A.js",
+      "webview/assets/mermaid-diagram-BVXt4GQ2.js",
+    ]],
     ["chatgpt-26.818.41705-6971", [
       ".vite/build/main-dcf3zoVL.js",
       ".vite/build/src-CLzQUgbV.js",
@@ -628,6 +640,86 @@ test("31338 exact transforms preserve split composer and header compiler caches"
   assert.match(composerScope, /CPXComposerScope,\{native:rnl,project:N,newChat:!1,bridge:!0/);
   assert.match(composerScope, /bindOpenFile\(\(e,t=\{\}\)=>IN\(/);
   assert.match(review, /\[s1,aUs,null,null,null,null,null,null,null,null,null,pUs,null,null,null,null,null,CPXBranchPickerDropdownContent,l_a,EO,JBs\]/);
+});
+
+test("22352 exact transforms bind current review, composer, and header symbols", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.22352-6872");
+  const transforms = new Map(
+    collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]),
+  );
+  const context = { patchSetId: patchSet.id };
+  const actionShell = transforms.get("patchThreadHeaderActionShell")(
+    "function B4a(e){let t=(0,c3a.c)(80),let e=f.filter(q4a),a=f.filter(K4a),u=f.filter(G4a),g=function x(e){let t=(0,c3a.c)(13),",
+    context,
+  );
+  const composerSurface = transforms.get("patchComposerBubbleColors")([
+    "function WWc(e){let t=(0,GWc.c)(55),",
+    "v=(0,KWc.jsx)(t8s,{className:n,inert:r,isDragActive:a,",
+    "k=(0,KWc.jsx)(rV,{...f,className:S,inert:C,isDragActive:w,",
+    "xt=(0,a6.jsxs)(`div`,{className:ct,\"data-codex-composer-root\":``,\"data-composer-placement\":K.kind,children:[o,ut,bt]}),",
+  ].join(""), context);
+  const composerScope = transforms.get("patchComposerProjectColors")([
+    "(0,i6.jsx)(WWc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "yt=(0,a6.jsx)(Xtl,{aboveComposerHeaderContent:ht,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join(""), context);
+  const review = transforms.get("patchThreadSidePanelTabs")([
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function t$s(e){let t=(0,s$s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,s1.jsx)(FOi,{children:(0,s1.jsx)(oUs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), context);
+
+  assert.match(actionShell, /c3a\.c\)\(80\)/);
+  assert.match(actionShell, /c3a\.c\)\(13\)/);
+  assert.match(actionShell, /useSyncExternalStore:R4a\.useSyncExternalStore/);
+  assert.doesNotMatch(actionShell, /c3a\.c\)\(81\)|c3a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(composerSurface, /GWc\.c\)\(55\)/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:t8s/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:rV/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:`div`,className:ct/);
+  assert.doesNotMatch(composerSurface, /GWc\.c\)\(56\)|t\[55\]=/);
+  assert.match(composerScope, /CPXComposerScope,\{native:Xtl,project:N,newChat:!1,bridge:!0/);
+  assert.match(composerScope, /bindOpenFile\(\(e,t=\{\}\)=>LN\(/);
+  assert.match(review, /\[s1,rUs,null,null,null,null,null,null,null,null,null,oUs,null,null,null,null,null,CPXBranchPickerDropdownContent,m_a,MO,VBs\]/);
+});
+
+test("22352 project selectors retain keyboard, bridge, highlight, and React contracts", () => {
+  const localSource = [
+    "function eyc(e){let t=(0,iyc.c)(92),",
+    'j=(0,Uvc.jsx)(Ivc,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,',
+    "function Gvc(e){let t=(0,Kvc.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,s2.jsx)(K$.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,c2.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,c2.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:Jvc(s.projects,k,ryc)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),",
+    "ne=s==null?null:(0,l2.jsx)(Zvc,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:tyc,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,l2.jsx)(Gvc,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,l2.jsxs)(l2.Fragment,{children:[I,ne]}),status:P,footerItems:te,emptyMessage:re})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=Vvc,K=",
+  ].join("");
+  const homeSource = [
+    "v=Jvc(r,g,Mal)",
+    "T=(0,y6.jsx)(Zvc,{groups:y,selectedProjectIds:i,getProjectDetails:jal,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,y6.jsx)(Gvc,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "let fe=de,pe=h&&y===`home`&&k.length===0&&!A;",
+    "K=e=>{qh(b,nDt,{});let t=k.find(t=>t.projectId===e);if(t!=null){if(c!=null){c(t.projectId);return}TW(b,t)}}",
+    "ae=()=>{if(qh(b,nDt,{}),c!=null){c(null);return}TW(b,null)}",
+    'i=(0,x6.jsx)(Vvc,{"aria-label":we,disabled:_,foreground:xe,isBrowserEnvironment:P,isRemoteProject:e,menuOpen:ue,onClearProject:n,onCloseAutoFocus:ne,onOpenChange:fe,projectIcon:r,shortcut:f,subtleHover:w,tooltipContent:Ce,tooltipOpenWhen:Pe,value:be,children:Ke})',
+    "triggerButton:Je,contentWidth:`workspace`",
+  ].join("");
+
+  const context = { patchSetId: "chatgpt-26.818.22352-6872" };
+  const local = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(localSource, context);
+  const home = patchHomeProjectDropdownProjectSelectorShortcut(homeSource, context);
+  assert.match(local, /CPXP\.trigger\(e,t,ayc\)/);
+  assert.match(local, /CPXP\.acceptFirst/);
+  assert.match(local, /data-codex-plus-project-selector-trigger/);
+  assert.match(home, /CPXP\.setProjects\(r\)/);
+  assert.match(home, /CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(home, /setComposerProject\(t\)/);
+  assert.match(home, /setComposerProject\(null\)/);
+  assert.match(home, /triggerButton:CPXPST\(Je,y\)/);
 });
 
 test("32112 project selector trigger binds its local React namespace", () => {
