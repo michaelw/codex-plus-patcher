@@ -298,10 +298,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
-  assert.equal(chatgptPatchSets.length, 36);
+  assert.equal(chatgptPatchSets.length, 37);
 
   for (const identity of [
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
+    ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
     ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
     ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
@@ -373,6 +374,10 @@ test("new cached ChatGPT sources own exact transform variants", () => {
     true,
   );
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.41509-6962", "chatgpt-26.818.41509"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.21641-6849", "chatgpt-26.818.21641"),
     true,
   );
@@ -394,6 +399,13 @@ test("new cached ChatGPT sources map exact split assets and all transforms", () 
       "webview/assets/app-initial-CZAAElKi.js",
       "webview/assets/terminal-panel-Dq45jddq.js",
       "webview/assets/mermaid-diagram-niAh3u5r.js",
+    ]],
+    ["chatgpt-26.818.41509-6962", [
+      ".vite/build/main-u1nlBt5g.js",
+      ".vite/build/src-CLzQUgbV.js",
+      "webview/assets/app-initial-DwVrCWuo.js",
+      "webview/assets/terminal-panel-Cw6EPV-4.js",
+      "webview/assets/mermaid-diagram-DjIhHct_.js",
     ]],
     ["chatgpt-26.818.21641-6849", [
       ".vite/build/main-Cwjv9Ibf.js",
@@ -487,6 +499,33 @@ test("41705 review host binds current in-bundle rich-diff dependencies", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /CPXBranchPickerDropdownContent,Pva,SO,_Hs/);
   assert.doesNotMatch(transformed, /CPXParseDiff|artifact-tab-content/);
+});
+
+test("41509 main-process transforms bind its exact hybrid symbols", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.41509-6962");
+  const transforms = new Map(
+    collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]),
+  );
+  const aboutSource = [
+    "let i=l.app.getName(),o=l.app.getVersion(),s=UDe(o),",
+    "_=f.formatMessage({messageId:LDe,defaultMessage:RDe}),v=WDe(o),y=[...a.o()?[`Powered by Codex & OWL`]:[],g,...v].join(`\n`),",
+    "qDe({appDisplayName:i,buildInfoLabel:_,buildInfoText:y,iconDataUrl:p.htmlIconDataUrl,isDark:x,okLabel:h,title:m})",
+    "function qDe({appDisplayName:e,buildInfoLabel:t,buildInfoText:n,iconDataUrl:r,isDark:i,okLabel:a,title:o}){let s=r==null?``:",
+    "    .build-info {\n      width: 100%;\n      margin: 0;\n      line-height: 1.45;",
+    "      color: var(--muted-text);\n      white-space: pre-wrap;",
+    "    .app-name,\n    .build-info,\n    .copyright {",
+    '      <div class="app-name" id="app-name">${(0,yU.default)(e)}</div>\n      <pre class="build-info" aria-label="${(0,yU.default)(t)}">${(0,yU.default)(n)}</pre>',
+  ].join("");
+  const nativeSource = [
+    "async function kMe(){s.i(),r.n(q9);",
+    "lre({chunkedMessageSender:ce,isTrustedIpcEvent:be}),kDe({buildFlavor:c,getContextForWebContents:V.getContextForWebContents,isTrustedIpcEvent:be}),l.ipcMain.on",
+  ].join("");
+
+  const context = { patchSetId: patchSet.id };
+  const about = transforms.get("patchAboutDialog")(aboutSource, context);
+  const native = transforms.get("patchMainNativeBridge")(nativeSource, context);
+  assert.match(about, /CPXAboutMetadata\.disclaimerMarkup\(\{escape:yU\.default/);
+  assert.match(native, /CPXNative\.registerNativeRequest\(\{isTrustedIpcEvent:be\}\)/);
 });
 
 test("41705 composer colors use the canonical projectless and active project state", () => {
