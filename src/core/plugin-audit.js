@@ -708,6 +708,7 @@ async function activateFixtureThread(cdp, {
       };
       const headers = Array.from(document.querySelectorAll("header")).filter(visible);
       const header = headers.find((element) => String(element.textContent || "").includes(${JSON.stringify(target.title)}));
+      const bodyText = document.body?.innerText?.trim() ?? "";
       const chips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter(visible);
       const chip = Array.from(header?.querySelectorAll("[data-codex-plus-project-path-header]") || []).find(visible) || null;
       const activeContext = CodexPlusHost.adapters.context.active();
@@ -716,6 +717,7 @@ async function activateFixtureThread(cdp, {
       const openRect = openButton?.getBoundingClientRect?.();
       return {
         titleReady: Boolean(header),
+        errorBoundaryText: /^Oops, an error has occurred\b/.test(bodyText) ? bodyText.slice(0, 500) : "",
         activeCwd: activeContext?.cwd || "",
         chipPath: chip?.getAttribute("title") || "",
         chipCount: chips.length,
@@ -726,6 +728,14 @@ async function activateFixtureThread(cdp, {
         headerText: String(header?.textContent || "").trim().slice(0, 240),
       };
     })()`);
+    if (active?.errorBoundaryText) {
+      return {
+        ok: false,
+        target,
+        active,
+        message: `Fixture-thread activation rendered an error boundary: ${active.errorBoundaryText}`,
+      };
+    }
     if (active?.titleReady && active.activeCwd && active.chipPath === active.activeCwd && active.chipCount === 1 && active.anchoredBeforeOpenIn) {
       await cdp.evaluate(`window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__ = true`);
       return { ok: true, target, active };

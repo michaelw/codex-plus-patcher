@@ -163,6 +163,35 @@ test("fixture activation retries the stable row hit target after keyboard and la
   assert.equal(rowPoints, 2);
 });
 
+test("fixture activation fails immediately when opening the thread renders an error boundary", async () => {
+  let activeChecks = 0;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const rect = (row).getBoundingClientRect()")) return Promise.resolve({ x: 10, y: 10 });
+      if (expression.includes("const headers =")) {
+        activeChecks += 1;
+        return Promise.resolve({ titleReady: false, errorBoundaryText: "Oops, an error has occurred TypeError: broken host hook" });
+      }
+      return Promise.resolve(false);
+    },
+    send() { return Promise.resolve(); },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, false);
+  assert.equal(activeChecks, 1);
+  assert.match(result.message, /rendered an error boundary.*broken host hook/);
+});
+
 test("successful trusted Review capture supersedes only the matching cold-render failure", () => {
   const result = {
     ok: false,
