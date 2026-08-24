@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.818.21641-6849");
-  assert.equal(chatgptPatchSets.length, 35);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
+  assert.equal(chatgptPatchSets.length, 36);
 
   for (const identity of [
+    ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
     ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
@@ -368,6 +369,10 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 
 test("new cached ChatGPT sources own exact transform variants", () => {
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.41705-6971", "chatgpt-26.818.41705"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.21641-6849", "chatgpt-26.818.21641"),
     true,
   );
@@ -383,6 +388,13 @@ test("new cached ChatGPT sources own exact transform variants", () => {
 
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.818.41705-6971", [
+      ".vite/build/main-dcf3zoVL.js",
+      ".vite/build/src-CLzQUgbV.js",
+      "webview/assets/app-initial-CZAAElKi.js",
+      "webview/assets/terminal-panel-Dq45jddq.js",
+      "webview/assets/mermaid-diagram-niAh3u5r.js",
+    ]],
     ["chatgpt-26.818.21641-6849", [
       ".vite/build/main-Cwjv9Ibf.js",
       ".vite/build/src-PzwkD6WC.js",
@@ -425,6 +437,118 @@ test("21641 thread header accessory insertion preserves the compiler cache", () 
   assert.match(transformed, /t3a\.c\)\(13\)/);
   assert.doesNotMatch(transformed, /t3a\.c\)\(81\)|t3a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
   assert.match(transformed, /function J4a\(e\)\{let t=\(0,t3a\.c\)\(13\),$/);
+});
+
+test("41705 thread header accessory insertion preserves both compiler caches", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.41705-6971");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = "function p6a(e){let t=(0,F6a.c)(80),let e=f.filter(b6a),a=f.filter(y6a),u=f.filter(v6a),g=function O6a(e){let t=(0,F6a.c)(13),";
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXThreadHeaderAccessories/);
+  assert.match(transformed, /F6a\.c\)\(80\)/);
+  assert.match(transformed, /F6a\.c\)\(13\)/);
+  assert.doesNotMatch(transformed, /F6a\.c\)\(81\)|F6a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(transformed, /function O6a\(e\)\{let t=\(0,F6a\.c\)\(13\),$/);
+});
+
+test("41705 thread title binds the local React namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.41705-6971");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadTitle",
+  )?.[1];
+  const source = [
+    "function Qa(e){let t=(0,to.c)(66),",
+    "projectName:l,title:u,titleSuffix:d,cwd:p,canPin:m}=e,h=s!==void 0&&s,",
+    "let C=S,w=Y(T,n),E=Y(Tr,a),D=Y(dr,a),O=Y(Jn,n)??n,k=E??w,A=Ve(C,jn(k).id),j;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXThreadHeaderTitle\(e\).*Xa\.useSyncExternalStore/);
+  assert.doesNotMatch(transformed, /Ja\.useSyncExternalStore/);
+});
+
+test("41705 review host binds current in-bundle rich-diff dependencies", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.41705-6971");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function j1s(e){let t=(0,L1s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,u1.jsx)(oAi,{children:(0,u1.jsx)(IWs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXBranchPickerDropdownContent,Pva,SO,_Hs/);
+  assert.doesNotMatch(transformed, /CPXParseDiff|artifact-tab-content/);
+});
+
+test("41705 composer colors use the canonical projectless and active project state", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.41705-6971");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "(0,r6.jsx)(QGc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXComposerScope,\{native:QGc,project:dn\?null:\{projectId:Qee,cwd:un,hostId:ur\},newChat:L\.value\.kind===`new`,bridge:!0/);
+  assert.match(transformed, /bindOpenFile/);
+});
+
+test("41705 home project selector retains search, keyboard, bridge, and trigger contracts", () => {
+  const source = [
+    "v=kkc(r,g,Bol)",
+    "T=(0,v6.jsx)(Mkc,{groups:y,selectedProjectIds:i,getProjectDetails:zol,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,v6.jsx)(Ekc,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "let fe=de,pe=h&&y===`home`&&k.length===0&&!A;",
+    "K=e=>{Xh(b,rDt,{});let t=k.find(t=>t.projectId===e);if(t!=null){if(c!=null){c(t.projectId);return}jW(b,t)}}",
+    "ae=()=>{if(Xh(b,rDt,{}),c!=null){c(null);return}jW(b,null)}",
+    'i=(0,b6.jsx)(Skc,{"aria-label":we,disabled:_,foreground:xe,isBrowserEnvironment:P,isRemoteProject:e,menuOpen:ue,onClearProject:n,onCloseAutoFocus:ne,onOpenChange:fe,projectIcon:r,shortcut:f,subtleHover:w,tooltipContent:Ce,tooltipOpenWhen:Pe,value:be,children:Ke})',
+    "triggerButton:Je,contentWidth:`workspace`",
+  ].join("");
+
+  const transformed = patchHomeProjectDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.818.41705-6971",
+  });
+  assert.match(transformed, /CPXP\.setProjects\(r\)/);
+  assert.match(transformed, /CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(transformed, /CPXP\.setOpenHandler\(y/);
+  assert.match(transformed, /setComposerProject\(t\)/);
+  assert.match(transformed, /setComposerProject\(null\)/);
+  assert.match(transformed, /triggerButton:CPXPST\(Je,y\)/);
+});
+
+test("41705 project selector trigger binds the local React namespace", () => {
+  const source = [
+    "function Fkc(e){let t=(0,zkc.c)(92),",
+    'j=(0,wkc.jsx)(_kc,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,',
+    "function Ekc(e){let t=(0,Dkc.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,H2.jsx)(Y$.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,U2.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,U2.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:kkc(s.projects,k,Rkc)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),",
+    "ne=s==null?null:(0,W2.jsx)(Mkc,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:Ikc,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,W2.jsx)(Ekc,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,W2.jsxs)(W2.Fragment,{children:[I,ne]}),status:P,footerItems:te,emptyMessage:re})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=Skc,K=",
+  ].join("");
+
+  const transformed = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(source, {
+    patchSetId: "chatgpt-26.818.41705-6971",
+  });
+
+  assert.match(transformed, /function CPXPST\(e,t\)\{return CPXP\.trigger\(e,t,Bkc\)\}/);
 });
 
 test("21641 review host uses the in-bundle diff parser without a stale export import", () => {
