@@ -2756,7 +2756,10 @@ async function captureNewChatComposerProof(cdp, {
         .find((element) => visible(element) && normalize(element.innerText || element.textContent) === "Don\\u0027t work in a project");
     } else if (kind === "project-option") {
       target = Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
-        .find((element) => visible(element) && normalize(element.innerText || element.textContent) === label);
+        .find((element) => visible(element) &&
+          normalize(element.innerText || element.textContent) === label &&
+          element.closest("[role='listbox'],[role='menu']") &&
+          !element.closest("[data-app-action-sidebar-project-row]"));
       target?.scrollIntoView({ block: "center" });
     }
     const rect = target?.getBoundingClientRect?.();
