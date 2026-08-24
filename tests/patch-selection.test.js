@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
-  assert.equal(chatgptPatchSets.length, 40);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.818.61809-7019");
+  assert.equal(chatgptPatchSets.length, 41);
 
   for (const identity of [
+    ["26.818.61809", "7019", "76bbcdc2a4a2d77cfe03904a6537d0a655f9892f27a8925e3a6c7b613801d4cf"],
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
     ["26.818.32112", "6933", "128c748e313a7a630d689f9fa215724eb44fbea6e0a5d7990867370cf73d88d3"],
@@ -373,6 +374,10 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 
 test("new cached ChatGPT sources own exact transform variants", () => {
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.61809-7019", "chatgpt-26.818.61809"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.22352-6872", "chatgpt-26.818.22352"),
     true,
   );
@@ -408,6 +413,13 @@ test("new cached ChatGPT sources own exact transform variants", () => {
 
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.818.61809-7019", [
+      ".vite/build/main-Io6iABGI.js",
+      ".vite/build/src-DlBR1tzg.js",
+      "webview/assets/app-initial-q5My48Y-.js",
+      "webview/assets/terminal-panel-C_DOXWRs.js",
+      "webview/assets/mermaid-diagram-TeK_Z1gW.js",
+    ]],
     ["chatgpt-26.818.22352-6872", [
       ".vite/build/main-Cwjv9Ibf.js",
       ".vite/build/src-PzwkD6WC.js",
@@ -681,6 +693,94 @@ test("22352 exact transforms bind current review, composer, and header symbols",
   assert.match(composerScope, /CPXComposerScope,\{native:Xtl,project:N,newChat:!1,bridge:!0/);
   assert.match(composerScope, /bindOpenFile\(\(e,t=\{\}\)=>LN\(/);
   assert.match(review, /\[s1,rUs,null,null,null,null,null,null,null,null,null,oUs,null,null,null,null,null,CPXBranchPickerDropdownContent,m_a,MO,VBs\]/);
+});
+
+test("61809 exact transforms preserve compiler caches and bind current host dependencies", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.61809-7019");
+  const transforms = new Map(
+    collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]),
+  );
+  const context = { patchSetId: patchSet.id };
+  const actionShell = transforms.get("patchThreadHeaderActionShell")(
+    "function h6a(e){let t=(0,L6a.c)(80),let e=f.filter(S6a),a=f.filter(x6a),u=f.filter(b6a),g=function x(e){let t=(0,L6a.c)(13),",
+    context,
+  );
+  const composerSurface = transforms.get("patchComposerBubbleColors")([
+    "function p_a(e){let t=(0,oV.c)(20),{children:n,className:r,animateRadius:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,",
+    'D=(0,sV.jsx)(Tf.div,{className:T,inert:o,"data-composer-drag-active":E,',
+    'jt=(0,i6.jsxs)(`div`,{className:ht,"data-codex-composer-root":``,"data-composer-placement":K.kind,children:[o,_t,At]}),',
+  ].join(""), context);
+  const composerScope = transforms.get("patchComposerProjectColors")([
+    "(0,r6.jsx)(eKc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "kt=(0,i6.jsx)(orl,{aboveComposerHeaderContent:wt,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join(""), context);
+  const review = transforms.get("patchThreadSidePanelTabs")([
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function N1s(e){let t=(0,z1s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,u1.jsx)(cAi,{children:(0,u1.jsx)(RWs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), context);
+
+  assert.match(actionShell, /L6a\.c\)\(80\)/);
+  assert.match(actionShell, /L6a\.c\)\(13\)/);
+  assert.match(actionShell, /useSyncExternalStore:p6a\.useSyncExternalStore/);
+  assert.doesNotMatch(actionShell, /L6a\.c\)\(81\)|L6a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(composerSurface, /oV\.c\)\(20\)/);
+  assert.match(composerSurface, /k_a\.createContext/);
+  assert.doesNotMatch(composerSurface, /m_a\.createContext/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:Tf\.div/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:`div`,className:ht/);
+  assert.doesNotMatch(composerSurface, /oV\.c\)\(21\)|t\[20\]=|t\[153\]=/);
+  assert.match(composerScope, /project:dn\?null:\{projectId:\$ee,cwd:un,hostId:ur\}/);
+  assert.match(composerScope, /CPXComposerScope,\{native:orl,project:N,newChat:!1,bridge:!0/);
+  assert.match(composerScope, /bindOpenFile\(\(e,t=\{\}\)=>VN\(/);
+  assert.match(review, /\[u1,FWs,null,null,null,null,null,null,null,null,null,RWs,null,null,null,null,null,CPXBranchPickerDropdownContent,Iva,SO,yHs\]/);
+  assert.doesNotMatch(review, /CPXBranchPickerDropdownContent,Pva,SO,_Hs/);
+});
+
+test("61809 project selectors retain search, keyboard, bridge, trigger, and cache contracts", () => {
+  const localSource = [
+    "function Lkc(e){let t=(0,Vkc.c)(92),",
+    'j=(0,Ekc.jsx)(ykc,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,',
+    "function Okc(e){let t=(0,kkc.c)(24),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,",
+    "p=(0,H2.jsx)(Y$.Input,{className:`mb-1`,placeholder:f,value:s,onValueChange:l})",
+    "children:(0,U2.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,U2.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})",
+    "o=s==null?void 0:jkc(s.projects,k,Bkc)",
+    "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),",
+    "ne=s==null?null:(0,W2.jsx)(Pkc,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:Rkc,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})",
+    "U=(0,W2.jsx)(Okc,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,projectItems:(0,W2.jsxs)(W2.Fragment,{children:[I,ne]}),status:P,footerItems:te,emptyMessage:re})",
+    "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)",
+    "triggerButton:m,onOpenChange:N,children:U",
+    "B=wkc,K=",
+  ].join("");
+  const homeSource = [
+    "v=jkc(r,g,Hol)",
+    "T=(0,v6.jsx)(Pkc,{groups:y,selectedProjectIds:i,getProjectDetails:Vol,getProjectTooltipText:C,onSelectProject:w})",
+    "D=(0,v6.jsx)(Okc,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,projectItems:T,emptyMessage:p,footerItems:E,children:n})",
+    "let fe=de,pe=h&&y===`home`&&k.length===0&&!A;",
+    "t[40]!==P||t[41]!==_||t[42]!==ne||t[43]!==xe||t[44]!==Ce||t[45]!==Pe||t[46]!==we||t[47]!==be||t[48]!==f||t[49]!==e||t[50]!==n||t[51]!==r||t[52]!==w?(i=(0,b6.jsx)(wkc,{",
+    "t[83]!==P||t[84]!==_||t[85]!==Ke||t[86]!==fe||t[87]!==ne||t[88]!==xe||t[89]!==Ce||t[90]!==Pe||t[91]!==we||t[92]!==be||t[93]!==ue||t[94]!==f||t[95]!==e||t[96]!==n||t[97]!==r||t[98]!==w?(i=(0,b6.jsx)(wkc,{",
+    "K=e=>{Jh(b,sDt,{});let t=k.find(t=>t.projectId===e);if(t!=null){if(c!=null){c(t.projectId);return}jW(b,t)}}",
+    "ae=()=>{if(Jh(b,sDt,{}),c!=null){c(null);return}jW(b,null)}",
+    "triggerButton:Je,contentWidth:`workspace`",
+  ].join("");
+  const context = { patchSetId: "chatgpt-26.818.61809-7019" };
+  const local = patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(localSource, context);
+  const home = patchHomeProjectDropdownProjectSelectorShortcut(homeSource, context);
+
+  assert.match(local, /CPXP\.trigger\(e,t,Hkc\)/);
+  assert.match(local, /CPXP\.acceptFirst/);
+  assert.match(local, /data-codex-plus-project-selector-trigger/);
+  assert.match(local, /Vkc\.c\)\(92\)/);
+  assert.doesNotMatch(local, /Vkc\.c\)\(93\)|t\[92\]=/);
+  assert.match(home, /CPXP\.setProjects\(r\)/);
+  assert.match(home, /CPXP\.acceptFirst\(e,y,t=>w\(t\),g\)/);
+  assert.match(home, /CPXP\.setOpenHandler\(y/);
+  assert.match(home, /setComposerProject\(t\)/);
+  assert.match(home, /setComposerProject\(null\)/);
+  assert.equal(home.match(/\(0,b6\.jsx\)\(CPXwkc,/g)?.length, 2);
+  assert.match(home, /triggerButton:CPXPST\(Je,y\)/);
+  assert.doesNotMatch(home, /t\[121\]=|asl\.c\)\(122\)/);
 });
 
 test("22352 project selectors retain keyboard, bridge, highlight, and React contracts", () => {
