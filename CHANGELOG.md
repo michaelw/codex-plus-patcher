@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.36.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.35.0...v0.36.0) (2026-08-24)
+
+
+### Features
+
+* support ChatGPT 26.818.22352 ([#166](https://github.com/michaelw/codex-plus-patcher/issues/166)) ([0797390](https://github.com/michaelw/codex-plus-patcher/commit/07973904414a757100c5e3bdab235c0fb9c2747d))
+* support ChatGPT 26.818.31338 ([#165](https://github.com/michaelw/codex-plus-patcher/issues/165)) ([074c82f](https://github.com/michaelw/codex-plus-patcher/commit/074c82f503e13b458de4dd0b96e9d2b6ed2f4784))
+* support ChatGPT 26.818.32112 ([#164](https://github.com/michaelw/codex-plus-patcher/issues/164)) ([2f3d49a](https://github.com/michaelw/codex-plus-patcher/commit/2f3d49aba8136aa8c393a53da70ef6fc1e21da2a))
+* support ChatGPT 26.818.41509 ([#163](https://github.com/michaelw/codex-plus-patcher/issues/163)) ([28fa4dd](https://github.com/michaelw/codex-plus-patcher/commit/28fa4dde18d81026d76f6b862a899f4b676f8b70))
+* support ChatGPT 26.818.41705 ([#162](https://github.com/michaelw/codex-plus-patcher/issues/162)) ([28c442b](https://github.com/michaelw/codex-plus-patcher/commit/28c442b8d8ab59a2c6ea2a4d2a03b0b01d15d842))
+
 ## [0.35.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.34.2...v0.35.0) (2026-08-23)
 
 
