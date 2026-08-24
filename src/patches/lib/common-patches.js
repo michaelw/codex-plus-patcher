@@ -1153,6 +1153,12 @@ function patchWorker(text, context = {}) {
 }
 
 function patchThreadSidePanelTabs(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    const importAnchor = 'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";';
+    let patched = replaceOnce(text, importAnchor, `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`, "31338 review dependency import anchor");
+    patched = replaceOnce(patched, "function c$s(e){let t=(0,m$s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e", `${reviewHook("[s1,aUs,null,null,null,null,null,null,null,null,null,pUs,null,null,null,null,null,CPXBranchPickerDropdownContent,l_a,EO,JBs]")}function c$s(e){let t=(0,m$s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e`, "31338 review host hook insertion anchor");
+    return replaceOnce(patched, "c=(0,s1.jsx)(zOi,{children:(0,s1.jsx)(pUs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];", "c=(0,s1.jsx)(zOi,{children:(0,s1.jsx)(CPXRM,{mainReviewContent:(0,s1.jsx)(pUs,{diffMode:a,setTabState:r,tabState:i}),diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];", "31338 review body mux anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     const importAnchor = 'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";';
     let patched = replaceOnce(text, importAnchor, `${importAnchor}import{t as CPXBranchPickerDropdownContent}from"./${branchPickerDropdownContentFile}";`, "32112 review dependency import anchor");
@@ -2019,6 +2025,9 @@ function patchLocalThreadCatalogBootstrap(text) {
 }
 
 function patchAppShell(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    return replaceOnce(text, "function gKi(e){let t=(0,_Ki.c)(9),{resetError:n}=e", `${diagnosticDetailsHook()}function gKi(e){let t=(0,_Ki.c)(9),{resetError:n}=e`, "31338 app shell error fallback prop anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     return replaceOnce(text, "function CKi(e){let t=(0,wKi.c)(9),{resetError:n}=e", `${diagnosticDetailsHook()}function CKi(e){let t=(0,wKi.c)(9),{resetError:n}=e`, "32112 app shell error fallback prop anchor");
   }
@@ -2440,6 +2449,11 @@ function patchAppShell(text, context = {}) {
 }
 
 function patchErrorBoundary(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function gKi(e){let t=(0,_Ki.c)(9),{resetError:n}=e", "function gKi(e){let t=(0,_Ki.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e", "31338 webview error boundary fallback prop anchor");
+    patched = replaceOnce(patched, "children:[i,a,(0,gR.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,gR.jsx)(nX,{onClick:s,children:c})]})]", "children:[i,a,CPXDiagnosticDetails({jsx:gR.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,gR.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,gR.jsx)(nX,{onClick:s,children:c})]})]", "31338 webview error boundary detail anchor");
+    return replaceOnce(patched, "r=e??(e=>(0,gR.jsx)(gKi,{resetError:()=>e.resetError()}));", "r=e??(e=>(0,gR.jsx)(gKi,{error:e.error,componentStack:e.componentStack,resetError:()=>e.resetError()}));", "31338 webview error boundary error prop anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function CKi(e){let t=(0,wKi.c)(9),{resetError:n}=e", "function CKi(e){let t=(0,wKi.c)(9),{resetError:n,error:CPX_error,componentStack:CPX_componentStack}=e", "32112 webview error boundary fallback prop anchor");
     patched = replaceOnce(patched, "children:[i,a,(0,lR.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,lR.jsx)(GY,{onClick:s,children:c})]})]", "children:[i,a,CPXDiagnosticDetails({jsx:lR.jsx,error:CPX_error,componentStack:CPX_componentStack}),(0,lR.jsxs)(`div`,{className:`flex flex-wrap items-center justify-center gap-2`,children:[o,(0,lR.jsx)(GY,{onClick:s,children:c})]})]", "32112 webview error boundary detail anchor");
@@ -2925,6 +2939,10 @@ function patchErrorBoundary(text, context = {}) {
 }
 
 function patchAppMainProjectColors(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function TEl(e){let t=(0,EEl.c)(57),", `${projectColorHook()}function TEl(e){let t=(0,EEl.c)(57),`, "31338 project color app main helper insertion anchor");
+    return replaceOnce(patched, "A=Dp.sidebarProjectRow({collapsed:a,label:g,projectId:b})", "A={...Dp.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}", "31338 project header row color attributes anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function EEl(e){let t=(0,DEl.c)(57),", `${projectColorHook()}function EEl(e){let t=(0,DEl.c)(57),`, "32112 project color app main helper insertion anchor");
     return replaceOnce(patched, "A=Ep.sidebarProjectRow({collapsed:a,label:g,projectId:b})", "A={...Ep.sidebarProjectRow({collapsed:a,label:g,projectId:b}),...CPXPR({projectId:b,label:g})}", "32112 project header row color attributes anchor");
@@ -3375,6 +3393,9 @@ function patchAppMainProjectColors(text, context = {}) {
 }
 
 function patchAppMainSidebarBlur(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    return replaceOnce(text, "U=(0,Q8.jsx)(`span`,{className:`text-fade-truncate pe-1`,children:g})", "U=(0,Q8.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pe-1`,children:g})", "31338 project header sidebar blur label anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     return replaceOnce(text, "U=(0,Z8.jsx)(`span`,{className:`text-fade-truncate pe-1`,children:g})", "U=(0,Z8.jsx)(`span`,{\"data-codex-plus-sidebar-name\":``,className:`text-fade-truncate pe-1`,children:g})", "32112 project header sidebar blur label anchor");
   }
@@ -4369,6 +4390,10 @@ function patchThreadPageHeader(text) {
 }
 
 function patchThreadHeaderActionShell(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function H4a(e){let t=(0,u3a.c)(80),", `${threadHeaderHook()}function H4a(e){let t=(0,u3a.c)(80),`, "31338 thread header action-shell helper anchor");
+    return replaceOnce(patched, "let e=f.filter(Y4a),a=f.filter(J4a),u=f.filter(q4a),g=", "let e=f.filter(Y4a),a=f.filter(J4a),u=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(f.filter(q4a),CPXThreadHeaderAccessories({context:CPXH.context.active(),deps:{jsx:MW.jsx,jsxs:MW.jsxs,useSyncExternalStore:B4a.useSyncExternalStore}})),g=", "31338 thread header native end-action anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function q4a(e){let t=(0,h3a.c)(80),", `${threadHeaderHook()}function q4a(e){let t=(0,h3a.c)(80),`, "32112 thread header action-shell helper anchor");
     return replaceOnce(patched, "let e=f.filter(e3a),a=f.filter($4a),u=f.filter(Q4a),g=", "let e=f.filter(e3a),a=f.filter($4a),u=((e,t)=>t==null?e:[{actionId:`codex-plus-project-path`,align:`end`,node:t},...e])(f.filter(Q4a),CPXThreadHeaderAccessories({context:CPXH.context.active(),deps:{jsx:DW.jsx,jsxs:DW.jsxs,useSyncExternalStore:G4a.useSyncExternalStore}})),g=", "32112 thread header native end-action anchor");
@@ -6063,6 +6088,12 @@ function patchUserMessageAttachmentsProjectColors(text, context = {}) {
 }
 
 function patchComposerBubbleColors(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function ZWc(e){let t=(0,QWc.c)(55),", `${composerSurfaceElementHook("(0,$Wc.jsx)", "W4")}function ZWc(e){let t=(0,QWc.c)(55),`, "31338 composer user bubble helper insertion anchor");
+    patched = replaceOnce(patched, "v=(0,$Wc.jsx)(c8s,{className:n,inert:r,isDragActive:a,", "v=(0,$Wc.jsx)(CPXComposerSurface,{native:c8s,className:n,inert:r,isDragActive:a,", "31338 home composer user entry marker render anchor");
+    patched = replaceOnce(patched, "k=(0,$Wc.jsx)(cV,{...f,className:S,inert:C,isDragActive:w,", "k=(0,$Wc.jsx)(CPXComposerSurface,{native:cV,...f,className:S,inert:C,isDragActive:w,", "31338 composer user entry marker render anchor");
+    return replaceOnce(patched, "Et=(0,a6.jsxs)(`div`,{className:dt,\"data-codex-composer-root\":``,\"data-composer-placement\":K.kind,children:[o,pt,Tt]})", "Et=(0,a6.jsxs)(CPXComposerSurface,{native:`div`,className:dt,\"data-codex-composer-root\":``,\"data-composer-placement\":K.kind,children:[o,pt,Tt]})", "31338 active thread composer user entry marker anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function Kha(e){let t=(0,$B.c)(20),{children:n,className:r,animateRadius:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,", `${composerSurfaceElementHook("(0,eV.jsx)", "cga")}function Kha(e){let t=(0,$B.c)(20),{children:n,className:r,animateRadius:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,`, "32112 composer user bubble helper insertion anchor");
     return replaceOnce(patched, "D=(0,eV.jsx)(Tf.div,{className:T,inert:o,\"data-composer-drag-active\":E,", "D=(0,eV.jsx)(CPXComposerSurface,{native:Tf.div,className:T,inert:o,\"data-composer-drag-active\":E,", "32112 composer user entry marker render anchor");
@@ -6700,6 +6731,11 @@ function patchComposerPrimitiveSurface(text, context) {
 }
 
 function patchComposerProjectColors(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "(0,i6.jsx)(ZWc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,", "(0,i6.jsx)(CPXComposerScope,{native:ZWc,project:dn?null:{projectId:$ee,cwd:un,hostId:ur},newChat:L.value.kind===`new`,bridge:!0,className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,", "31338 composer project surface anchor");
+    patched = replaceOnce(patched, "wt=(0,a6.jsx)(rnl,{aboveComposerHeaderContent:bt,misalignmentPolicyViolationBanner:je,safetyBufferingBanner:s,disabled:Oe,activeCollaborationMode:Be,browserConversationId:n,collaborationModes:Ve,serviceTier:$e.serviceTierForRequest,", "wt=(0,a6.jsx)(CPXComposerScope,{native:rnl,project:N,newChat:!1,bridge:!0,aboveComposerHeaderContent:bt,misalignmentPolicyViolationBanner:je,safetyBufferingBanner:s,disabled:Oe,activeCollaborationMode:Be,browserConversationId:n,collaborationModes:Ve,serviceTier:$e.serviceTierForRequest,", "31338 active thread composer project scope anchor");
+    return replaceOnce(patched, "iee=(e,t)=>{let n=e.fsPath||e.path;", "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:L})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>IN({scope:L,path:e,cwd:t.workspaceRoot??fn,hostId:t.hostId??ur,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openInSidePanel:!0})),iee=(e,t)=>{let n=e.fsPath||e.path;", "31338 composer-native file opener adapter anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "(0,r6.jsx)(QWc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,", "(0,r6.jsx)(CPXComposerScope,{native:QWc,project:dn?null:{projectId:$ee,cwd:un,hostId:ur},newChat:L.value.kind===`new`,bridge:!0,className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,", "32112 composer project surface anchor");
     return replaceOnce(patched, "iee=(e,t)=>{let n=e.fsPath||e.path;", "CPXSP=globalThis.CodexPlusHost.adapters.threadSidePanel,CPXM=CPXSP.bindMount(()=>({scope:L})),CPXOpenFile=CPXSP.bindOpenFile((e,t={})=>PN({scope:L,path:e,cwd:t.workspaceRoot??fn,hostId:t.hostId??ur,line:t.line,endLine:t.endLine,isPreview:t.isPreview,title:t.title,openInSidePanel:!0})),iee=(e,t)=>{let n=e.fsPath||e.path;", "32112 composer-native file opener adapter anchor");
@@ -7187,6 +7223,9 @@ function patchElectronMenuShortcuts(text) {
 }
 
 function patchKeyboardShortcutsSearchInput(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    return replaceOnce(text, "function z5l(e,t){return e.id===`composer.captureAppshot`?j5l(t).title:`titleIntlId`in e?V5l(H5l,e.titleIntlId)?t.formatMessage(H5l[e.titleIntlId]):P5l(t,e.id):t.formatMessage(U5l[e.electron.menuTitleIntlId])}", "function z5l(e,t){return e.id===`composer.captureAppshot`?j5l(t).title:`titleIntlId`in e?V5l(H5l,e.titleIntlId)?t.formatMessage(H5l[e.titleIntlId]):P5l(t,e.id):e.title??e.electron?.menuTitle??t.formatMessage(U5l[e.electron.menuTitleIntlId])}", "26.818.31338 generic command metadata title fallback anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     return replaceOnce(text, "function B5l(e,t){return e.id===`composer.captureAppshot`?M5l(t).title:`titleIntlId`in e?H5l(U5l,e.titleIntlId)?t.formatMessage(U5l[e.titleIntlId]):F5l(t,e.id):t.formatMessage(W5l[e.electron.menuTitleIntlId])}", "function B5l(e,t){return e.id===`composer.captureAppshot`?M5l(t).title:`titleIntlId`in e?H5l(U5l,e.titleIntlId)?t.formatMessage(U5l[e.titleIntlId]):F5l(t,e.id):e.title??e.electron?.menuTitle??t.formatMessage(W5l[e.electron.menuTitleIntlId])}", "26.818.32112 generic command metadata title fallback anchor");
   }
@@ -7312,6 +7351,11 @@ function patchKeyboardShortcutsSearchInput(text, context = {}) {
 }
 
 function patchCommandMenuRuntimeCommands(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function _7l(e){let t=(0,t9.c)(146),", "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,r9.jsx)(k1,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function _7l(e){let t=(0,t9.c)(146),", "26.818.31338 command palette plugin item anchor");
+    patched = replaceOnce(patched, "let H=V;L=[];let U=r.filter(w7l);", "let H=V;L=globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,r9.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id));let U=r.filter(w7l);", "26.818.31338 command palette plugin item mount anchor");
+    return replaceOnce(patched, "u=()=>{KM(r.id,`command_menu`),r.id!==`searchChats`&&n()}", "u=()=>{let e=globalThis.CodexPlusHost.adapters.commands;e.bindNativeDispatch(e=>(KM(e,`command_menu`),!0)),e.dispatch(r.id),r.id!==`searchChats`&&n()}", "26.818.31338 command menu stable dispatch anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function v7l(e){let t=(0,e9.c)(146),", "function CPXCommandPaletteItem({command:e,close:t}){let n=e.title??e.id,r=e.description??``;return(0,n9.jsx)(O1,{value:n,keywords:[r,e.id],title:n,onSelect:()=>{globalThis.CodexPlusHost.adapters.commands.dispatch(e.id),t()}},e.id)}function v7l(e){let t=(0,e9.c)(146),", "26.818.32112 command palette plugin item anchor");
     patched = replaceOnce(patched, "let H=V;L=[];let U=r.filter(T7l);", "let H=V;L=globalThis.CodexPlusHost.adapters.commands.metadata().map(e=>(0,n9.jsx)(CPXCommandPaletteItem,{command:e,close:n},e.id));let U=r.filter(T7l);", "26.818.32112 command palette plugin item mount anchor");
@@ -7864,6 +7908,12 @@ function patchAppCommandPaletteRuntimeCommands(text, context = {}) {
 }
 
 function patchLocalTaskRow(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    let patched = replaceOnce(text, "function BMl(e){let t=(0,YMl.c)(165),{entry:n,", `${projectColorHook()}function BMl(e){let t=(0,YMl.c)(165),{entry:n,`, "31338 local task row project color helper insertion anchor");
+    patched = replaceOnce(patched, "dataAttributes:Dp.sidebarThreadRow({active:c,hostId:t.hostId,id:n,kind:`local`,pinned:r,selected:i,title:t.label})", "dataAttributes:{...Dp.sidebarThreadRow({active:c,hostId:t.hostId,id:n,kind:`local`,pinned:r,selected:i,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}", "31338 local pending task row project color attributes anchor");
+    patched = replaceOnce(patched, "dataAttributes:Dp.sidebarThreadRow({active:c,hostId:null,id:n,kind:`remote`,pinned:r,selected:i,title:e.task.title??``})", "dataAttributes:{...Dp.sidebarThreadRow({active:c,hostId:null,id:n,kind:`remote`,pinned:r,selected:i,title:e.task.title??``}),...CPXPR({hostId:null,threadId:n,title:e.task.title??``})}", "31338 remote sidebar row project color attributes anchor");
+    return replaceOnce(patched, "dataAttributes:Dp.sidebarThreadRow({active:c,hostId:m,id:u,kind:`local`,pinned:r,selected:i,title:k})", "dataAttributes:{...Dp.sidebarThreadRow({active:c,hostId:m,id:u,kind:`local`,pinned:r,selected:i,title:k}),...CPXPR({projectId:ke,label:Oe,path:A,cwd:A,hostId:m,threadId:u,title:k,projectless:p})}", "31338 local sidebar row project color attributes anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     let patched = replaceOnce(text, "function VMl(e){let t=(0,XMl.c)(165),{entry:n,", `${projectColorHook()}function VMl(e){let t=(0,XMl.c)(165),{entry:n,`, "32112 local task row project color helper insertion anchor");
     patched = replaceOnce(patched, "dataAttributes:Ep.sidebarThreadRow({active:c,hostId:t.hostId,id:n,kind:`local`,pinned:r,selected:i,title:t.label})", "dataAttributes:{...Ep.sidebarThreadRow({active:c,hostId:t.hostId,id:n,kind:`local`,pinned:r,selected:i,title:t.label}),...CPXPR({projectId:t.projectId,label:t.label,path:t.worktreeGitRoot??t.worktreeWorkspaceRoot,cwd:t.worktreeGitRoot??t.worktreeWorkspaceRoot,hostId:t.hostId,threadId:n,title:t.label,projectKind:t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot?void 0:`chat`,projectless:!(t.projectId||t.worktreeGitRoot||t.worktreeWorkspaceRoot)})}", "32112 local pending task row project color attributes anchor");
@@ -9442,6 +9492,9 @@ function patchLocalThreadCatalogEnabled(text) {
 }
 
 function patchChatGptStartupAnnouncements(text, context) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.31338")) {
+    return replaceOnce(text, "function wll({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Pl.ChatGPT&&t!=null&&t!==Kl.Agent&&t!==Kl.Dev}", "function wll({appBrand:e,buildFlavor:t,platform:n}){return false}", "26.818.31338 ChatGPT migration announcement eligibility anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.818.32112")) {
     return replaceOnce(text, "function Tll({appBrand:e,buildFlavor:t,platform:n}){return(n===`macOS`||n===`windows`)&&e===Pl.ChatGPT&&t!=null&&t!==ql.Agent&&t!==ql.Dev}", "function Tll({appBrand:e,buildFlavor:t,platform:n}){return false}", "26.818.32112 ChatGPT migration announcement eligibility anchor");
   }

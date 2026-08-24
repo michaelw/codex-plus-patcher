@@ -298,12 +298,13 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.818.41705-6971");
-  assert.equal(chatgptPatchSets.length, 38);
+  assert.equal(chatgptPatchSets.length, 39);
 
   for (const identity of [
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
     ["26.818.32112", "6933", "128c748e313a7a630d689f9fa215724eb44fbea6e0a5d7990867370cf73d88d3"],
+    ["26.818.31338", "6892", "7db5508d4acd2c324cc572cd6f8d6d07900d185831bd6d54005a573e7186de54"],
     ["26.818.21641", "6849", "d66f8d3ba6ae0f75b8511ae098a1f93dc65e08c6174a64bfe576e52383256350"],
     ["26.814.41957", "6744", "881d21270e41ea50a6de7835a3dda3516a001354d034933bb4a97677f3e0c479"],
     ["26.814.41407", "6720", "8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0"],
@@ -383,6 +384,10 @@ test("new cached ChatGPT sources own exact transform variants", () => {
     true,
   );
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.818.31338-6892", "chatgpt-26.818.31338"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.21641-6849", "chatgpt-26.818.21641"),
     true,
   );
@@ -418,6 +423,13 @@ test("new cached ChatGPT sources map exact split assets and all transforms", () 
       "webview/assets/app-initial-CanCbU9v.js",
       "webview/assets/terminal-panel-Cuapb_mk.js",
       "webview/assets/mermaid-diagram-Cl4HGGer.js",
+    ]],
+    ["chatgpt-26.818.31338-6892", [
+      ".vite/build/main-B2sRTTQY.js",
+      ".vite/build/src-Bqg9CB1K.js",
+      "webview/assets/app-initial-B2RlNf_b.js",
+      "webview/assets/terminal-panel-CS18dXhz.js",
+      "webview/assets/mermaid-diagram-DXXXfeR-.js",
     ]],
     ["chatgpt-26.818.21641-6849", [
       ".vite/build/main-Cwjv9Ibf.js",
@@ -574,6 +586,48 @@ test("32112 exact transforms preserve compiler caches and bind current namespace
   assert.match(review, /\[o1,oUs,null,null,null,null,null,null,null,null,null,mUs,null,null,null,null,null,CPXBranchPickerDropdownContent,h_a,kO,YBs\]/);
   assert.match(composer, /project:dn\?null:\{projectId:\$ee,cwd:un,hostId:ur\}/);
   assert.doesNotMatch(composer, /projectId:Qee/);
+});
+
+test("31338 exact transforms preserve split composer and header compiler caches", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.818.31338-6892");
+  const transforms = new Map(
+    collectFileTransforms(patchSet).map(([, transform]) => [transform.name, transform]),
+  );
+  const context = { patchSetId: patchSet.id };
+  const actionShell = transforms.get("patchThreadHeaderActionShell")(
+    "function H4a(e){let t=(0,u3a.c)(80),let e=f.filter(Y4a),a=f.filter(J4a),u=f.filter(q4a),g=function x(e){let t=(0,u3a.c)(13),",
+    context,
+  );
+  const composerSurface = transforms.get("patchComposerBubbleColors")([
+    "function ZWc(e){let t=(0,QWc.c)(55),",
+    "v=(0,$Wc.jsx)(c8s,{className:n,inert:r,isDragActive:a,",
+    "k=(0,$Wc.jsx)(cV,{...f,className:S,inert:C,isDragActive:w,",
+    "Et=(0,a6.jsxs)(`div`,{className:dt,\"data-codex-composer-root\":``,\"data-composer-placement\":K.kind,children:[o,pt,Tt]}),",
+  ].join(""), context);
+  const composerScope = transforms.get("patchComposerProjectColors")([
+    "(0,i6.jsx)(ZWc,{className:k,utilityBarVariant:B,hasDropTargetPortal:K!=null,",
+    "wt=(0,a6.jsx)(rnl,{aboveComposerHeaderContent:bt,misalignmentPolicyViolationBanner:je,safetyBufferingBanner:s,disabled:Oe,activeCollaborationMode:Be,browserConversationId:n,collaborationModes:Ve,serviceTier:$e.serviceTierForRequest,",
+    "iee=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join(""), context);
+  const review = transforms.get("patchThreadSidePanelTabs")([
+    'import{a as e,i as t,n,o as r,r as i,t as a}from"./rolldown-runtime-DAXXjFlN.js";',
+    "function c$s(e){let t=(0,m$s.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,s1.jsx)(zOi,{children:(0,s1.jsx)(pUs,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join(""), context);
+
+  assert.match(actionShell, /u3a\.c\)\(80\)/);
+  assert.match(actionShell, /u3a\.c\)\(13\)/);
+  assert.match(actionShell, /useSyncExternalStore:B4a\.useSyncExternalStore/);
+  assert.doesNotMatch(actionShell, /u3a\.c\)\(81\)|u3a\.c\)\(14\)|t\[80\]=|t\[13\]=/);
+  assert.match(composerSurface, /QWc\.c\)\(55\)/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:c8s/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:cV/);
+  assert.match(composerSurface, /CPXComposerSurface,\{native:`div`,className:dt,\"data-codex-composer-root\"/);
+  assert.doesNotMatch(composerSurface, /QWc\.c\)\(56\)|t\[55\]=/);
+  assert.match(composerScope, /project:dn\?null:\{projectId:\$ee,cwd:un,hostId:ur\}/);
+  assert.match(composerScope, /CPXComposerScope,\{native:rnl,project:N,newChat:!1,bridge:!0/);
+  assert.match(composerScope, /bindOpenFile\(\(e,t=\{\}\)=>IN\(/);
+  assert.match(review, /\[s1,aUs,null,null,null,null,null,null,null,null,null,pUs,null,null,null,null,null,CPXBranchPickerDropdownContent,l_a,EO,JBs\]/);
 });
 
 test("32112 project selector trigger binds its local React namespace", () => {
