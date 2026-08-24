@@ -1274,7 +1274,7 @@ test("Aharness audit accepts a visible native header after a hidden stale header
   assert.doesNotMatch(aharnessAudit, /const normalHeader = document\.querySelector/);
 });
 
-test("broad plugin audit isolates each plugin behind a named bounded request", () => {
+test("broad plugin audit isolates each plugin behind a named bounded request with a project-color budget", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/core/plugin-audit.js"), "utf8");
   const start = source.indexOf("let live = null;");
   const end = source.indexOf("if (fixtureResult && projectColorsNeedsFixtureRetry", start);
@@ -1283,7 +1283,8 @@ test("broad plugin audit isolates each plugin behind a named bounded request", (
   assert.match(broadProbe, /for \(const plugin of baseAuditPlugins\)/);
   assert.match(broadProbe, /`Running plugin probe: \$\{plugin\}`/);
   assert.match(broadProbe, /auditPlugins: \[plugin\]/);
-  assert.match(broadProbe, /timeoutMs: Math\.min\(runtimeTimeoutMs, 90000\)/);
+  assert.match(broadProbe, /plugin === "projectColors" \? 180000 : 90000/);
+  assert.match(broadProbe, /timeoutMs: Math\.min\(runtimeTimeoutMs, pluginTimeoutMs\)/);
   assert.match(broadProbe, /mergeFocusedPluginAudit\(live, focused, plugin\)/);
   assert.doesNotMatch(broadProbe, /auditPlugins: baseAuditPlugins/);
 });
