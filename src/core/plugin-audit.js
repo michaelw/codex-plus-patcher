@@ -2782,6 +2782,40 @@ async function captureNewChatComposerProof(cdp, {
     }
     return null;
   };
+  const selectProject = async (label, { retry = false } = {}) => {
+    const projectSelectorTrigger = await pointFor("project-selector-trigger");
+    if (projectSelectorTrigger) {
+      await click(projectSelectorTrigger);
+      await wait(500);
+      const projectOption = await waitForStablePoint("project-option", label);
+      if (projectOption) {
+        await click(projectOption);
+        return;
+      }
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+    const projectNewChat = await waitForStablePoint("project-new-chat", label);
+    if (projectNewChat) {
+      await click(projectNewChat);
+      return;
+    }
+    const visibleChoices = await cdp.evaluate(`(() => Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      })
+      .map((element) => ({
+        tag: element.tagName,
+        role: element.getAttribute("role") || "",
+        text: String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 160),
+        ariaLabel: element.getAttribute("aria-label") || "",
+      }))
+      .filter((choice) => choice.text || choice.ariaLabel)
+      .slice(0, 40))()`);
+    throw new Error(`New Chat project target was not visible: ${JSON.stringify({ label, retry, visibleChoices })}`);
+  };
   const readState = () => cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
@@ -2947,46 +2981,13 @@ async function captureNewChatComposerProof(cdp, {
   }
   for (const [index, target] of targets.entries()) {
     const previous = projects.at(-1)?.status || neutral;
-    const projectSelectorTrigger = await pointFor("project-selector-trigger");
-    if (projectSelectorTrigger) {
-      await click(projectSelectorTrigger);
-      await wait(500);
-      const projectOption = await waitForStablePoint("project-option", target.label);
-      if (projectOption) {
-        await click(projectOption);
-      } else {
-        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-        const projectNewChat = await waitForStablePoint("project-new-chat", target.label);
-        if (projectNewChat) {
-          await click(projectNewChat);
-        } else {
-          const visibleChoices = await cdp.evaluate(`(() => Array.from(document.querySelectorAll("[role='menuitem'],[role='option'],button"))
-          .filter((element) => {
-            const rect = element.getBoundingClientRect();
-            const style = getComputedStyle(element);
-            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-          })
-          .map((element) => ({
-            tag: element.tagName,
-            role: element.getAttribute("role") || "",
-            text: String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 160),
-            ariaLabel: element.getAttribute("aria-label") || "",
-          }))
-          .filter((choice) => choice.text || choice.ariaLabel)
-          .slice(0, 40))()`);
-          throw new Error(`New Chat project selector did not show ${target.label}: ${JSON.stringify(visibleChoices)}`);
-        }
-      }
-    } else {
-      await click(await pointFor("project-new-chat", target.label));
-    }
+    await selectProject(target.label);
     const projectStateReady = (candidate) => candidate.mounted && candidate.projectMarked && candidate.projectKey && candidate.accent === target.accent && candidate.accent !== previous.accent;
     let status = await waitForState(projectStateReady, { timeout: 1500, required: false });
     if (!status) {
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-      await click(await waitForStablePoint("project-new-chat", target.label));
+      await selectProject(target.label, { retry: true });
       status = await waitForState(projectStateReady, { required: false });
       if (!status) {
         const observed = await readState();
@@ -4858,6 +4859,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
 
     if (shouldProbe("projectColors")) try {
       const details = checkCommon("projectColors");
+      const chatGptFamily = window.CodexPlus?.config?.sourceFamily === "chatgpt";
       const sampleProject = {
         projectId: "alpha-workspace",
         label: "alpha-workspace",
@@ -4888,7 +4890,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         background: projectlessChatComputed.backgroundColor,
         title: rowTitle(projectlessChatRow),
       } : null;
-      const chatSectionProjectlessRows = await waitForProjectlessRowsInChatsSection();
+      const chatSectionProjectlessRows = chatGptFamily ? [] : await waitForProjectlessRowsInChatsSection();
       const standaloneFixtureRows = visibleElements("[data-app-action-sidebar-thread-row]")
         .map((row) => {
           const computed = getComputedStyle(row);
@@ -4979,7 +4981,6 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           const ariaLabel = normalize(button.getAttribute?.("aria-label"));
           return !ariaLabel.startsWith("Start new chat in ") && (text.startsWith("New chat") || text.startsWith("New task"));
         });
-      const chatGptFamily = window.CodexPlus?.config?.sourceFamily === "chatgpt";
       const versionParts = String(window.CodexPlus?.config?.codexVersion || "").split(".").map((part) => Number.parseInt(part, 10) || 0);
       const versionAtLeast = (...minimum) => {
         for (let index = 0; index < minimum.length; index += 1) {
