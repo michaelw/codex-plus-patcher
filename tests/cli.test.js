@@ -1348,6 +1348,8 @@ test("New Chat visual proof captures neutral and two project-color states with t
   assert.match(source, /projectLabels\.has\(text\)/);
   assert.match(source, /kind === "project-option"/);
   assert.match(source, /\[role='menuitem'\],\[role='option'\],button/);
+  assert.match(source, /element\.closest\("\[role='listbox'\],\[role='menu'\]"\)/);
+  assert.match(source, /!element\.closest\("\[data-app-action-sidebar-project-row\]"\)/);
   assert.match(source, /Start new task in/);
   assert.match(source, /Start new \(\?:chat\|task\) in/);
   assert.match(source, /target\?\.scrollIntoView\(\{ block: "center" \}\)/);
