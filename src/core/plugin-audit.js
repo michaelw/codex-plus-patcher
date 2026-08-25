@@ -6591,6 +6591,7 @@ async function runAudit(args, {
     }
     let live = null;
     for (const plugin of baseAuditPlugins) {
+      const pluginTimeoutMs = plugin === "projectColors" ? 180000 : 90000;
       const focused = await withAuditProgress(
         progress,
         `Running plugin probe: ${plugin}`,
@@ -6599,7 +6600,7 @@ async function runAudit(args, {
           includeNativeOpenProbes: args.includeNativeOpenProbes,
           auditPlugins: [plugin],
           capabilities: applyResult?.capabilities || args.sourceCapabilities || {},
-        }), { timeoutMs: Math.min(runtimeTimeoutMs, 90000) }),
+        }), { timeoutMs: Math.min(runtimeTimeoutMs, pluginTimeoutMs) }),
       );
       if (live) mergeFocusedPluginAudit(live, focused, plugin);
       else live = focused;
