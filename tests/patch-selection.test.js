@@ -298,10 +298,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
   assert.equal(patchSets[0]?.id, "chatgpt-26.825.41651-7345");
-  assert.equal(chatgptPatchSets.length, 42);
+  assert.equal(chatgptPatchSets.length, 43);
 
   for (const identity of [
     ["26.825.41651", "7345", "c089b63abb7ca4a751072c0da434248db13c32bed9c363e1b7e5428584b0576d"],
+    ["26.825.32147", "7303", "0462b03e878f0e78b223b849ee14cbba0de043f2c16acebee163cb95daa622ef"],
     ["26.818.61809", "7019", "76bbcdc2a4a2d77cfe03904a6537d0a655f9892f27a8925e3a6c7b613801d4cf"],
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
@@ -379,6 +380,10 @@ test("new cached ChatGPT sources own exact transform variants", () => {
     true,
   );
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.825.32147-7303", "chatgpt-26.825.41651"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.61809-7019", "chatgpt-26.818.61809"),
     true,
   );
@@ -424,6 +429,13 @@ test("new cached ChatGPT sources map exact split assets and all transforms", () 
       "webview/assets/app-initial-Cw7fcqej.js",
       "webview/assets/terminal-panel-B_esrX1X.js",
       "webview/assets/mermaid-diagram-DVg-7aXG.js",
+    ]],
+    ["chatgpt-26.825.32147-7303", [
+      ".vite/build/main-BvHpyFqC.js",
+      ".vite/build/src-4lLVrYxe.js",
+      "webview/assets/app-initial-DJrCTPoN.js",
+      "webview/assets/terminal-panel-D-cizQmB.js",
+      "webview/assets/mermaid-diagram-DyMOiiIc.js",
     ]],
     ["chatgpt-26.818.61809-7019", [
       ".vite/build/main-Io6iABGI.js",

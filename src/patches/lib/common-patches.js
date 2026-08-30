@@ -1199,7 +1199,7 @@ function patchWorker(text, context = {}) {
 }
 
 function patchThreadSidePanelTabs(text, context = {}) {
-  if (context.patchSetId === "chatgpt-26.825.41651-7345") {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.825.41651")) {
     let patched = replaceOnce(text, "function Fs(e){let t=(0,Vs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:a}=e", `${reviewHook("[Hs,xo,null,null,null,null,null,null,null,null,null,wo,null,null,null,null,null,Fr,xr,Pt,Gr]")}function Fs(e){let t=(0,Vs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:a}=e`, "26.825.41651 review host hook insertion anchor");
     return replaceOnce(patched, "l=(0,Hs.jsx)($n,{children:(0,Hs.jsx)(wo,{diffMode:o,setTabState:r,tabState:a})}),t[2]=o,t[3]=r,t[4]=a,t[5]=l):l=t[5];", "l=(0,Hs.jsx)($n,{children:(0,Hs.jsx)(CPXRM,{mainReviewContent:(0,Hs.jsx)(wo,{diffMode:o,setTabState:r,tabState:a}),diffMode:o,setTabState:r,tabState:a})}),t[2]=o,t[3]=r,t[4]=a,t[5]=l):l=t[5];", "26.825.41651 review body mux anchor");
   }

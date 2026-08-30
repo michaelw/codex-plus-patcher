@@ -4,7 +4,7 @@ const { patchSetUsesTransformVariant: patchSetOwnsTransformVariant } = require("
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, context = {}) {
-  if (context.patchSetId === "chatgpt-26.825.41651-7345") {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.825.41651")) {
     let patched = replaceOnce(text, "function jZo(e){let t=(0,FZo.c)(101),", `${projectSelectorSearchHook()}${projectSelectorTriggerHook("IZo")}function jZo(e){let t=(0,FZo.c)(101),`, "26.825.41651 project selector adapter insertion anchor");
     patched = replaceOnce(patched, 'M=(0,t1.jsx)(mZo,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,', 'M=(0,t1.jsx)(mZo,{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-composer-navigation-target":`workspace-project`,', "26.825.41651 project selector visible trigger marker anchor");
     patched = replaceOnce(patched, "function SZo(e){let t=(0,CZo.c)(28),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,", "function SZo(e){let t=(0,CZo.c)(28),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l,onSearchKeyDown:CPXKD}=e,", "26.825.41651 project selector search key handler prop anchor");
@@ -1183,7 +1183,7 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, cont
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text, context = {}) {
-  if (context.patchSetId === "chatgpt-26.825.41651-7345") {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.825.41651")) {
     let patched = replaceOnce(text, "v=TZo(r,g,lac)", "v=(CPXP.setProjects(r),CPXP.fuzzyFilter(r,g))", "26.825.41651 home project selector fuzzy filter anchor");
     patched = replaceOnce(patched, "T=(0,Q3.jsx)(OZo,{groups:y,selectedProjectIds:i,getProjectDetails:cac,getProjectTooltipText:C,onSelectProject:w})", "T=(0,Q3.jsx)(OZo,{groups:y.map(e=>({...e,__codexPlusQuery:g})),selectedProjectIds:i,getProjectDetails:cac,getProjectTooltipText:C,onSelectProject:w})", "26.825.41651 home project selector highlight query anchor");
     patched = replaceOnce(patched, "D=(0,Q3.jsx)(SZo,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,", "D=(0,Q3.jsx)(SZo,{searchQuery:g,onSearchQueryChange:_,onSearchKeyDown:e=>CPXP.acceptFirst(e,y,t=>w(t),g),hasProjectItems:S,", "26.825.41651 home project selector accept first anchor");
