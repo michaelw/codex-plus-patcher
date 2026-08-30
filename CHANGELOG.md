@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.38.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.37.0...v0.38.0) (2026-08-30)
+
+
+### Features
+
+* support ChatGPT 26.825.31414 ([#173](https://github.com/michaelw/codex-plus-patcher/issues/173)) ([ef08a24](https://github.com/michaelw/codex-plus-patcher/commit/ef08a240edcdd7bf0f65cbcae90e650229bec0cb))
+* support ChatGPT 26.825.32147 ([#172](https://github.com/michaelw/codex-plus-patcher/issues/172)) ([b3bc625](https://github.com/michaelw/codex-plus-patcher/commit/b3bc62540794a990cb327b4bd4ccc30657c237ec))
+* support ChatGPT 26.825.41651 and harden composer contrast ([#171](https://github.com/michaelw/codex-plus-patcher/issues/171)) ([b4edc55](https://github.com/michaelw/codex-plus-patcher/commit/b4edc55f8771c590b4dde499b953e1521b986d2e))
+
 ## [0.37.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.36.0...v0.37.0) (2026-08-25)
 
 
