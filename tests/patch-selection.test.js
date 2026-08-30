@@ -297,10 +297,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.818.61809-7019");
-  assert.equal(chatgptPatchSets.length, 41);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.825.41651-7345");
+  assert.equal(chatgptPatchSets.length, 42);
 
   for (const identity of [
+    ["26.825.41651", "7345", "c089b63abb7ca4a751072c0da434248db13c32bed9c363e1b7e5428584b0576d"],
     ["26.818.61809", "7019", "76bbcdc2a4a2d77cfe03904a6537d0a655f9892f27a8925e3a6c7b613801d4cf"],
     ["26.818.41705", "6971", "7ab7808f570fac3839943c0c324eb46b3ed34bee2647c75fd2155b39509b361e"],
     ["26.818.41509", "6962", "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791"],
@@ -374,6 +375,10 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 
 test("new cached ChatGPT sources own exact transform variants", () => {
   assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.825.41651-7345", "chatgpt-26.825.41651"),
+    true,
+  );
+  assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.818.61809-7019", "chatgpt-26.818.61809"),
     true,
   );
@@ -413,6 +418,13 @@ test("new cached ChatGPT sources own exact transform variants", () => {
 
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.825.41651-7345", [
+      ".vite/build/main-BvHpyFqC.js",
+      ".vite/build/src-4lLVrYxe.js",
+      "webview/assets/app-initial-Cw7fcqej.js",
+      "webview/assets/terminal-panel-B_esrX1X.js",
+      "webview/assets/mermaid-diagram-DVg-7aXG.js",
+    ]],
     ["chatgpt-26.818.61809-7019", [
       ".vite/build/main-Io6iABGI.js",
       ".vite/build/src-DlBR1tzg.js",
@@ -476,6 +488,9 @@ test("new cached ChatGPT sources map exact split assets and all transforms", () 
     const transformedPaths = new Set(transforms.map(([filePath]) => filePath));
     for (const filePath of paths) assert.equal(transformedPaths.has(filePath), true, `${id}: ${filePath}`);
     assert.equal(transforms.length, 30, id);
+    if (id === "chatgpt-26.825.41651-7345") {
+      assert.equal(transforms.some(([, transform]) => transform.name === "patchStatsigDevFallback"), true);
+    }
     if (id === "chatgpt-26.814.41957-6744") {
       assert.equal(patchSet.runtimeConfig.mermaidCoreAsset, "mermaid.core-rWpCEtWP.js");
     }
@@ -530,6 +545,67 @@ test("41705 thread title binds the local React namespace", () => {
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /function CPXThreadHeaderTitle\(e\).*Xa\.useSyncExternalStore/);
   assert.doesNotMatch(transformed, /Ja\.useSyncExternalStore/);
+});
+
+test("41651 thread title and header bind the same live React namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.825.41651-7345");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadTitle",
+  )?.[1];
+  const source = [
+    "function eo(e){let t=(0,to.c)(62),",
+    "projectName:l,title:u,titleSuffix:d,cwd:f,canPin:p,hideIdentity:m}=e",
+    "let E=T,D=J(Wn,n),k=J(Se,a),ee=J(ke,a),te=J(j,n)??n,A=k??D,M=C(E,xt(A).id),N;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /function CPXThreadHeaderTitle\(e\).*qa\.useSyncExternalStore/);
+  assert.doesNotMatch(transformed, /ro\.useSyncExternalStore/);
+});
+
+test("41651 thread header accessories do not rebind the active route context", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.825.41651-7345");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadHeaderActionShell",
+  )?.[1];
+  const source = [
+    "function eo(e){let t=(0,to.c)(62),",
+    "let U;t[45]===S?U=t[46]:(U=null,t[45]=S,t[46]=U);",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXH\.threadHeader\.accessories\(e\.context,e\.deps\)/);
+  assert.doesNotMatch(transformed, /function CPXThreadHeaderAccessories\(e\)\{CPXH\.context\.bindActive/);
+});
+
+test("41651 audit Statsig fallback supports the async bootstrap provider", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.825.41651-7345");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchStatsigDevFallback",
+  )?.[1];
+  const source = [
+    "function Snl(e){let t=(0,V7.c)(43),{appSessionId:n,appVersion:r,auth:i,browserLocale:a,hostBuildFlavor:o,preloadAttribution:s,stableId:c,statsigClientKey:l,systemName:u,systemVersion:d,children:f}=e,",
+    "{data:p}=SD(),g=async e=>{let t=await ktl(e);return new knl.StatsigClient(l,t.user,p===!0?Rnl:znl)},",
+    "E=(0,U7.jsxs)(wnl,{appVersion:r,authMethod:i.authMethod,client:y,deviceId:c,hostBuildFlavor:o,preloadAttribution:s,children:[T,f]});return E}",
+    "dg.dispatchMessage(`electron-avatar-overlay-restore-ready`,{shouldPrewarmAvatarOverlay:!a&&fe})" +
+      "dg.dispatchMessage(`electron-desktop-features-changed`,{cuaPIP:_,computerUse:V.available})",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /devModeStatsigFallback===true/);
+  assert.match(transformed, /new knl\.StatsigClient\(l,.*znl\)/);
+  assert.match(transformed, /\(0,U7\.jsx\)\(wnl,/);
+  assert.match(
+    transformed,
+    /shouldPrewarmAvatarOverlay:globalThis\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback===true\?!1:!a&&fe/,
+  );
+  assert.match(
+    transformed,
+    /cuaPIP:globalThis\.__CodexPlusRuntimeConfig\?\.devModeStatsigFallback===true\?!1:_/,
+  );
 });
 
 test("41705 review host binds current in-bundle rich-diff dependencies", () => {
@@ -7872,6 +7948,27 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   const bubbleColors = context.window.CodexPlus.plugins.get("userBubbleColors").exports;
   assert.equal(bubbleColors.textColor("#e0218a"), "#000000");
   assert.equal(bubbleColors.controlTextColor("#e0218a"), "#ffffff");
+  assert.equal(bubbleColors.contrastForeground("rgb(31, 41, 55)"), "#ffffff");
+  assert.equal(bubbleColors.contrastForeground("rgb(95, 255, 95)"), "#111111");
+  assert.equal(bubbleColors.contrastRatio("#111111", "rgb(95, 255, 95)") >= 4.5, true);
+  assert.equal(typeof bubbleColors.applyComposerContrast, "function");
+  const bubbleColorsSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
+  assert.match(bubbleColorsSource, /setProperty\?\.\("color", nextForeground, "important"\)/);
+  assert.match(bubbleColorsSource, /setProperty\?\.\("-webkit-text-fill-color", "currentColor", "important"\)/);
+  assert.match(bubbleColorsSource, /restoreComposerContrast/);
+  assert.match(bubbleColorsSource, /element\.closest\?\.\("\.ProseMirror"\)/);
+  assert.match(bubbleColorsSource, /if \(element\.closest\?\.\("\[class\*='h-token-button-composer'\]"\)\) continue/);
+  assert.match(bubbleColorsSource, /scheduleComposerContrastSettled/);
+  assert.match(bubbleColorsSource, /window\.setTimeout\?\.\([^,]+, 750\)/s);
+  assert.match(bubbleColorsSource, /contrastTimer = null;\n      refreshComposerContrast\(\)/);
+  assert.match(bubbleColorsSource, /element\.matches\?\.\("button,\[role='button'\]"\)/);
+  assert.match(bubbleColorsSource, /\[class\*="h-token-button-composer"\].*--codex-plus-user-bubble-light-fg/);
+  assert.match(bubbleColorsSource, /\[class\*="h-token-button-composer"\].*--codex-plus-user-bubble-dark-fg/);
+  const setVarsSource = bubbleColorsSource.slice(
+    bubbleColorsSource.indexOf("  function setVars()"),
+    bubbleColorsSource.indexOf("  function renderColorRow"),
+  );
+  assert.match(setVarsSource, /scheduleComposerContrastSettled\(\)/);
   const newChatProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: true });
   const existingThreadProps = context.window.CodexPlus.ui.composer.surfaceProps({ newChat: false });
   assert.equal(newChatProps?.["data-codex-plus-user-entry"], "");

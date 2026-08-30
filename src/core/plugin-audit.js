@@ -589,12 +589,41 @@ async function verifyProjectSelectorShortcutKey(cdp, {
   return { ok: false, ...setup, ...status, message: `Cmd+. did not open the project selector: ${JSON.stringify(status)}` };
 }
 
+async function dismissBlockingAuxiliaryTargets(cdp) {
+  const targetInfos = typeof cdp.listTargets === "function"
+    ? await cdp.listTargets()
+    : ((await cdp.send("Target.getTargets"))?.targetInfos || []);
+  const blockers = targetInfos.filter((target) => {
+    const url = target.url || "";
+    return target.type === "webview" &&
+      /[?&]source=codex-embedded-checkout(?:[&#]|$)/.test(url);
+  });
+  for (const blocker of blockers) {
+    const targetId = blocker.targetId || blocker.id;
+    const success = typeof cdp.closeTarget === "function"
+      ? await cdp.closeTarget(targetId)
+      : (await cdp.send("Target.closeTarget", { targetId }))?.success;
+    if (!success) {
+      const remainingTargets = typeof cdp.listTargets === "function"
+        ? await cdp.listTargets()
+        : ((await cdp.send("Target.getTargets"))?.targetInfos || []);
+      if (remainingTargets.some((target) => (target.targetId || target.id) === targetId)) {
+        throw new Error(`Could not close blocking embedded checkout target: ${JSON.stringify(blocker)}`);
+      }
+    }
+  }
+  if (blockers.length > 0) await cdp.send("Page.bringToFront");
+  return blockers.map(({ targetId, id, title, type, url }) => ({ targetId: targetId || id, title, type, url }));
+}
+
 async function activateFixtureThread(cdp, {
   nested = false,
   wait = delay,
   timeoutMs = 60000,
   retryIntervalMs = 2000,
+  pointerSettleMs = 2000,
 } = {}) {
+  const dismissedAuxiliaryTargets = await dismissBlockingAuxiliaryTargets(cdp, { wait });
   const initialRoute = await cdp.evaluate(`location.search.includes("initialRoute=")`);
   if (initialRoute) {
     await cdp.send("Page.navigate", { url: "app://-/index.html" });
@@ -645,7 +674,46 @@ async function activateFixtureThread(cdp, {
     await wait(250);
   }
   if (!target) return { ok: false, message: "Fixture thread row was not visible" };
+  const dispatchMouseInput = async (params) => {
+    let settled = false;
+    let recoveryStarted = false;
+    const dispatched = cdp.send("Input.dispatchMouseEvent", params, { timeoutMs: 45000 });
+    dispatched.then(() => { settled = true; }, () => { settled = true; });
+    const dispatchResult = dispatched.catch((error) => {
+      if (recoveryStarted) return undefined;
+      throw error;
+    });
+    const blockerWatch = (async () => {
+      for (let check = 0; check < 60 && !settled; check += 1) {
+        await wait(250);
+        if (settled) break;
+        dismissedAuxiliaryTargets.push(...await dismissBlockingAuxiliaryTargets(cdp, { wait }));
+      }
+      return dispatchResult;
+    })();
+    const rendererRecovery = params.type === "mouseReleased" && typeof cdp.reconnect === "function"
+      ? (async () => {
+        await new Promise((resolve) => setTimeout(resolve, pointerSettleMs));
+        if (settled) return dispatched;
+        recoveryStarted = true;
+        settled = true;
+        await cdp.reconnect();
+        return undefined;
+      })()
+      : null;
+    try {
+      return await Promise.race([dispatchResult, blockerWatch, ...(rendererRecovery ? [rendererRecovery] : [])]);
+    } catch (error) {
+      const renderer = await cdp.evaluate(`({ url: String(location.href || ""), title: document.title, bodyText: document.body?.innerText?.slice(0, 300) || "" })`, { timeoutMs: 2000 })
+        .catch((evaluationError) => ({ evaluationError: evaluationError.message }));
+      const targets = typeof cdp.listTargets === "function"
+        ? await cdp.listTargets().catch((targetError) => [{ targetError: targetError.message }])
+        : [];
+      throw new Error(`Trusted ${params.type} did not settle: ${error.message}; renderer=${JSON.stringify(renderer)}; targets=${JSON.stringify(targets)}`);
+    }
+  };
   const clickTarget = async (preferRow = false) => {
+    dismissedAuxiliaryTargets.push(...await dismissBlockingAuxiliaryTargets(cdp, { wait }));
     const point = await cdp.evaluate(`(() => {
       const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
         .find((element) => element.getAttribute("data-app-action-sidebar-thread-title") === ${JSON.stringify(target.title)} &&
@@ -660,43 +728,45 @@ async function activateFixtureThread(cdp, {
           const b = right.getBoundingClientRect();
           return a.width * a.height - b.width * b.height;
         });
-      const rect = (${preferRow ? "row" : "(labels[0] || row)"}).getBoundingClientRect();
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const clickElement = ${preferRow ? "row" : "(labels[0] || row)"};
+      const rect = clickElement.getBoundingClientRect();
+      const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const hit = document.elementFromPoint(point.x, point.y);
+      const control = hit?.closest?.("button, a, [role='button'], [tabindex]") || null;
+      return {
+        ...point,
+        hitInsideRow: Boolean(hit && (hit === row || row.contains(hit))),
+        hitTag: hit?.tagName || "",
+        hitText: String(hit?.textContent || "").trim().slice(0, 160),
+        controlTag: control?.tagName || "",
+        controlHref: control?.getAttribute?.("href") || "",
+        controlRole: control?.getAttribute?.("role") || "",
+      };
     })()`);
     if (!point) return false;
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
-    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
-    return true;
+    if (!point.hitInsideRow) return { ...point, dispatched: false };
+    await dispatchMouseInput({ type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+    await dispatchMouseInput({ type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+    return { ...point, dispatched: true };
   };
-  const activateTargetWithKeyboard = async () => {
-    const focused = await cdp.evaluate(`(() => {
-      const row = Array.from(document.querySelectorAll("[data-app-action-sidebar-thread-row]"))
-        .find((element) => element.getAttribute("data-app-action-sidebar-thread-title") === ${JSON.stringify(target.title)} &&
-          (element.getAttribute("data-codex-plus-project-path") || "") === ${JSON.stringify(target.path)});
-      if (!row) return false;
-      row.scrollIntoView({ block: "center" });
-      const labels = [row, ...row.querySelectorAll("*")]
-        .filter((element) => String(element.textContent || "").trim() === ${JSON.stringify(target.title)});
-      const label = labels[labels.length - 1] || row;
-      const control = label.closest("button, a, [role='button'], [tabindex]") ||
-        (row.matches("button, a, [role='button'], [tabindex]") ? row : null);
-      if (!control) return false;
-      control.focus();
-      return document.activeElement === control;
-    })()`);
-    if (!focused) return false;
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-    return true;
-  };
-  await clickTarget(true);
+  const initialInteraction = await clickTarget();
+  if (initialInteraction && !initialInteraction.dispatched) {
+    return {
+      ok: false,
+      target,
+      initialInteraction,
+      message: `Fixture thread row is covered by another surface: ${JSON.stringify({ target, initialInteraction })}`,
+    };
+  }
   const deadline = Date.now() + timeoutMs;
   let nextRetry = Date.now() + Math.min(1000, retryIntervalMs);
   let retries = 0;
   let active = null;
   while (Date.now() < deadline) {
+    dismissedAuxiliaryTargets.push(...await dismissBlockingAuxiliaryTargets(cdp, { wait }));
     active = await cdp.evaluate(`(() => {
+      const currentUrl = String(location.href || "");
+      if (!currentUrl.startsWith("app://-")) return { url: currentUrl };
       const visible = (element) => {
         const rect = element?.getBoundingClientRect?.();
         if (!(rect?.width > 0 && rect?.height > 0)) return false;
@@ -712,22 +782,36 @@ async function activateFixtureThread(cdp, {
       const chips = Array.from(document.querySelectorAll("[data-codex-plus-project-path-header]")).filter(visible);
       const chip = Array.from(header?.querySelectorAll("[data-codex-plus-project-path-header]") || []).find(visible) || null;
       const activeContext = CodexPlusHost.adapters.context.active();
-      const openButton = Array.from(header?.querySelectorAll("button") || []).find((button) => visible(button) && String(button.textContent || "").trim().startsWith("Open in"));
       const chipRect = chip?.getBoundingClientRect?.();
-      const openRect = openButton?.getBoundingClientRect?.();
+      const actionButtons = Array.from(header?.querySelectorAll("button") || []).filter(visible);
+      const nativeAction = actionButtons.find((button) => {
+        const rect = button.getBoundingClientRect();
+        return !chip?.contains(button) && chipRect && rect.left >= chipRect.right;
+      }) || null;
+      const actionRect = nativeAction?.getBoundingClientRect?.();
       return {
+        url: currentUrl,
         titleReady: Boolean(header),
         errorBoundaryText: /^Oops, an error has occurred\b/.test(bodyText) ? bodyText.slice(0, 500) : "",
         activeCwd: activeContext?.cwd || "",
         chipPath: chip?.getAttribute("title") || "",
         chipCount: chips.length,
         fallbackChipCount: chips.filter((element) => element.hasAttribute("data-codex-plus-project-path-header-fallback")).length,
-        anchoredBeforeOpenIn: Boolean(chipRect && openRect && chipRect.right <= openRect.left),
+        anchoredBeforeAction: Boolean(chipRect && actionRect && chipRect.right <= actionRect.left),
         chipRect: chipRect ? { left: chipRect.left, right: chipRect.right } : null,
-        openRect: openRect ? { left: openRect.left, right: openRect.right } : null,
+        actionRect: actionRect ? { left: actionRect.left, right: actionRect.right } : null,
         headerText: String(header?.textContent || "").trim().slice(0, 240),
       };
     })()`);
+    if (active?.url && !active.url.startsWith("app://-")) {
+      return {
+        ok: false,
+        target,
+        initialInteraction,
+        active,
+        message: `Fixture-thread activation navigated away from the app: ${JSON.stringify({ target, initialInteraction, active })}`,
+      };
+    }
     if (active?.errorBoundaryText) {
       return {
         ok: false,
@@ -736,14 +820,13 @@ async function activateFixtureThread(cdp, {
         message: `Fixture-thread activation rendered an error boundary: ${active.errorBoundaryText}`,
       };
     }
-    if (active?.titleReady && active.activeCwd && active.chipPath === active.activeCwd && active.chipCount === 1 && active.anchoredBeforeOpenIn) {
+    if (active?.titleReady && active.activeCwd && active.chipPath === active.activeCwd && active.chipCount === 1 && active.anchoredBeforeAction) {
       await cdp.evaluate(`window.__CPX_AUDIT_FIXTURE_THREAD_ACTIVE__ = true`);
-      return { ok: true, target, active };
+      return { ok: true, target, active, dismissedAuxiliaryTargets };
     }
     if (Date.now() >= nextRetry) {
-      const retryMode = retries % 3;
-      if (retryMode === 0) await activateTargetWithKeyboard();
-      else await clickTarget(retryMode === 2);
+      const retryMode = retries % 2;
+      await clickTarget(retryMode === 1);
       retries += 1;
       nextRetry = Date.now() + retryIntervalMs;
     }
@@ -753,7 +836,7 @@ async function activateFixtureThread(cdp, {
     ok: false,
     target,
     active,
-    message: `Trusted fixture-thread activation did not update the native title and path header: ${JSON.stringify({ target, active })}`,
+    message: `Trusted fixture-thread activation did not update the native title and path header: ${JSON.stringify({ target, initialInteraction, active })}`,
   };
 }
 
@@ -1896,19 +1979,29 @@ class CdpSession {
     this.nextId = 1;
     this.pending = new Map();
     this.events = [];
+    this.webSocketDebuggerUrl = webSocketDebuggerUrl;
     this.socket = new WebSocket(webSocketDebuggerUrl);
+    const debuggerUrl = new URL(webSocketDebuggerUrl);
+    debuggerUrl.protocol = debuggerUrl.protocol === "wss:" ? "https:" : "http:";
+    debuggerUrl.pathname = "";
+    debuggerUrl.search = "";
+    debuggerUrl.hash = "";
+    this.debuggerBaseUrl = debuggerUrl.href.replace(/\/$/, "");
   }
 
   connect() {
+    const socket = this.socket;
     return new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
-      this.socket.addEventListener("close", () => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", reject, { once: true });
+      socket.addEventListener("close", () => {
+        if (this.socket !== socket) return;
         const error = new Error("DevTools connection closed");
         for (const pending of this.pending.values()) pending.reject(error);
         this.pending.clear();
       });
-      this.socket.addEventListener("message", (event) => {
+      socket.addEventListener("message", (event) => {
+        if (this.socket !== socket) return;
         const message = JSON.parse(event.data);
         if (!message.id) {
           if (["Log.entryAdded", "Runtime.consoleAPICalled", "Runtime.exceptionThrown"].includes(message.method)) {
@@ -1944,6 +2037,31 @@ class CdpSession {
         },
       });
     });
+  }
+
+  async listTargets() {
+    const response = await fetch(`${this.debuggerBaseUrl}/json/list`);
+    if (!response.ok) throw new Error(`Could not list DevTools targets: HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async closeTarget(targetId) {
+    const response = await fetch(`${this.debuggerBaseUrl}/json/close/${encodeURIComponent(targetId)}`);
+    return response.ok;
+  }
+
+  async reconnect() {
+    const previousSocket = this.socket;
+    const error = new Error("DevTools connection replaced after renderer navigation");
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+    this.socket = new WebSocket(this.webSocketDebuggerUrl);
+    try {
+      previousSocket.close();
+    } catch {
+      // The renderer may already have discarded the previous connection.
+    }
+    await this.connect();
   }
 
   async evaluate(expression, { awaitPromise = true, timeoutMs = 90000 } = {}) {
@@ -3407,7 +3525,55 @@ async function verifyComposerVerbatimContrast(cdp, {
     const optionFg = luminance(rgb(optionForeground));
     const menuBg = luminance(rgb(menuStyle?.backgroundColor));
     const menuContrast = optionFg == null || menuBg == null ? null : (Math.max(optionFg, menuBg) + 0.05) / (Math.min(optionFg, menuBg) + 0.05);
+    const footerControls = Array.from(surface?.querySelectorAll?.("button,[role='button']") || [])
+      .filter((element) => visible(element) && !toolbar?.contains?.(element))
+      .map((element) => {
+        const style = getComputedStyle(element);
+        const fill = style.webkitTextFillColor && style.webkitTextFillColor !== "transparent" ? style.webkitTextFillColor : style.color;
+        const ownBackground = style.backgroundColor;
+        const background = !ownBackground || ownBackground === "transparent" || ownBackground === "rgba(0, 0, 0, 0)"
+          ? surfaceStyle?.backgroundColor
+          : ownBackground;
+        const foregroundLuminance = luminance(rgb(fill));
+        const backgroundLuminance = luminance(rgb(background));
+        const entryContrast = foregroundLuminance == null || backgroundLuminance == null
+          ? null
+          : (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+        const paintContrasts = [element, ...element.querySelectorAll("*")].flatMap((paintElement) => {
+          if (!visible(paintElement)) return [];
+          const paintStyle = getComputedStyle(paintElement);
+          const hasDirectText = Array.from(paintElement.childNodes || []).some((node) =>
+            node.nodeType === Node.TEXT_NODE && String(node.textContent || "").trim());
+          const paintValues = paintElement === element || hasDirectText
+            ? [paintStyle.color, paintStyle.webkitTextFillColor]
+            : [];
+          if (paintElement.namespaceURI === "http://www.w3.org/2000/svg") {
+            paintValues.push(paintStyle.fill, paintStyle.stroke);
+          }
+          return paintValues
+            .filter((value, index, values) => value && value !== "none" && value !== "transparent" && values.indexOf(value) === index)
+            .map((paint) => {
+              const paintLuminance = luminance(rgb(paint));
+              return {
+                paint,
+                contrast: paintLuminance == null || backgroundLuminance == null
+                  ? null
+                  : (Math.max(paintLuminance, backgroundLuminance) + 0.05) / (Math.min(paintLuminance, backgroundLuminance) + 0.05),
+              };
+            });
+        });
+        return {
+          text: String(element.innerText || element.textContent || "").trim(),
+          ariaLabel: element.getAttribute("aria-label") || "",
+          foreground: fill || "",
+          background: background || "",
+          contrast: entryContrast,
+          paintContrasts,
+        };
+      });
     const rect = control?.getBoundingClientRect?.();
+    const point = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+    const hit = point ? document.elementFromPoint(point.x, point.y) : null;
     const details = {
       surfaceMounted: Boolean(surface),
       editorMounted: Boolean(editor),
@@ -3430,8 +3596,13 @@ async function verifyComposerVerbatimContrast(cdp, {
       menuForeground: optionForeground || "",
       menuBackground: menuStyle?.backgroundColor || "",
       menuContrast,
+      footerControls,
       selectedText: String(control?.innerText || control?.textContent || "").trim(),
-      point: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null,
+      point,
+      hitInsideControl: Boolean(hit && (hit === control || control?.contains?.(hit))),
+      hitTag: hit?.tagName || "",
+      hitClassName: hit?.className || "",
+      hitHtml: hit?.outerHTML?.slice(0, 1200) || "",
       controlTag: control?.tagName || "",
       controlRole: control?.getAttribute?.("role") || "",
       controlClassName: control?.className || "",
@@ -3472,10 +3643,31 @@ async function verifyComposerVerbatimContrast(cdp, {
   })()`);
   const click = async (point) => {
     if (!point) return false;
+    await dismissBlockingAuxiliaryTargets(cdp);
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, button: "none" });
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
     return true;
+  };
+  const waitForMenu = async (timeoutMs = 1000) => {
+    const deadline = Date.now() + timeoutMs;
+    let state = await inspect();
+    while (!state.menuMounted && Date.now() < deadline) {
+      await wait(100);
+      state = await inspect();
+    }
+    return state;
+  };
+  const openControl = async (point) => {
+    await click(point);
+    let state = await waitForMenu();
+    if (state.menuMounted) return { method: "pointer", state };
+    await dismissBlockingAuxiliaryTargets(cdp);
+    await focusControl();
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    state = await waitForMenu();
+    return { method: "keyboard", state };
   };
   const cases = [];
   const screenshots = {};
@@ -3489,6 +3681,7 @@ async function verifyComposerVerbatimContrast(cdp, {
     for (const theme of themes) {
       for (const [colorName, color] of colors) {
         await setComposerColorForVisualContract(cdp, theme, color);
+        await wait(800);
         const initial = await inspect();
         if (!initial.point) return { ok: false, supported: true, message: "Composer code language control was not mounted", cases, screenshots };
         await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1, button: "none" });
@@ -3497,33 +3690,33 @@ async function verifyComposerVerbatimContrast(cdp, {
         const hover = await inspect();
         await focusControl();
         const focused = await inspect();
-        await click(initial.point);
-        await wait(150);
-        const open = await inspect();
-        const choice = await optionPoint(initial.selectedText);
-        if (choice) {
-          await click(choice);
-          await wait(100);
-        }
+        const opened = await openControl(initial.point);
+        const open = opened.state;
+        const shouldSelect = cases.length === 0;
         let selected = await inspect();
-        for (let attempt = 0; attempt < 3 && selected.selectedText === initial.selectedText; attempt += 1) {
-          if (!selected.menuMounted) {
-            await click(selected.point);
-            await wait(150);
-          }
-          const retryChoice = await optionPoint(initial.selectedText);
-          if (retryChoice) {
-            await click(retryChoice);
-            await wait(150);
+        if (shouldSelect) {
+          const choice = await optionPoint(initial.selectedText);
+          if (choice) {
+            await click(choice);
+            await wait(100);
           }
           selected = await inspect();
+          for (let attempt = 0; attempt < 3 && selected.selectedText === initial.selectedText; attempt += 1) {
+            if (!selected.menuMounted) {
+              selected = (await openControl(selected.point)).state;
+            }
+            const retryChoice = await optionPoint(initial.selectedText);
+            if (retryChoice) {
+              await click(retryChoice);
+              await wait(150);
+            }
+            selected = await inspect();
+          }
         }
         let reopened = null;
         for (let attempt = 0; attempt < 3 && !reopened?.menuMounted; attempt += 1) {
           const current = await inspect();
-          await click(current.point);
-          await wait(150);
-          reopened = await inspect();
+          reopened = (await openControl(current.point)).state;
         }
         const key = `composerVerbatim-${theme}-${colorName}`;
         if (artifactDir) screenshots[key] = await capturePng(cdp, path.join(artifactDir, `composer-verbatim-${theme}-${colorName}.png`), { fsImpl });
@@ -3533,13 +3726,15 @@ async function verifyComposerVerbatimContrast(cdp, {
           state.toolbarMounted && state.controlMounted && state.submitMounted &&
           state.toolbarBackground === state.controlBackground &&
           state.controlBackground !== state.surfaceBackground &&
-          state.contrast != null && state.contrast >= 4.5);
+          state.contrast != null && state.contrast >= 4.5 &&
+          state.footerControls.length > 0 && state.footerControls.every((entry) =>
+            entry.contrast != null && entry.contrast >= 4.5 &&
+            entry.paintContrasts.length > 0 && entry.paintContrasts.every((paint) => paint.contrast != null && paint.contrast >= 4.5)));
         const menuStatesOk = [open, reopened].every((state) =>
           state.menuContrast != null && state.menuContrast >= 4.5);
         const interactionsOk = hover.hovered && focused.focused && open.open && open.menuMounted && open.optionCount > 0 &&
-          reopened.open && reopened.menuMounted && reopened.optionCount > 0 &&
-          selected.selectedText.length > 0 && selected.selectedText !== initial.selectedText;
-        cases.push({ theme, colorName, color, ok: stateOk && menuStatesOk && interactionsOk, initial, hover, focused, open, selected, reopened });
+          reopened.open && reopened.menuMounted && reopened.optionCount > 0;
+        cases.push({ theme, colorName, color, activationMethod: opened.method, ok: stateOk && menuStatesOk && interactionsOk, initial, hover, focused, open, selected, reopened });
       }
     }
   } finally {
@@ -3554,13 +3749,16 @@ async function verifyComposerVerbatimContrast(cdp, {
     const themeCases = cases.filter((entry) => entry.theme === theme);
     return new Set(themeCases.map((entry) => entry.initial.controlBackground)).size === colors.length;
   });
+  const selectionOk = cases.some((entry) => entry.selected.selectedText !== entry.initial.selectedText);
   const contract = {
-    ok: cases.length === 6 && cases.every((entry) => entry.ok) && adaptiveColorsOk,
+    ok: cases.length === 6 && cases.every((entry) => entry.ok) && adaptiveColorsOk && selectionOk,
     supported: true,
     adaptiveColorsOk,
+    selectionOk,
     summary: cases.map((entry) => ({
       theme: entry.theme,
       colorName: entry.colorName,
+      activationMethod: entry.activationMethod,
       ok: entry.ok,
       focused: entry.focused.focused,
       opened: entry.open.open && entry.open.menuMounted && entry.open.optionCount > 0,
@@ -4445,6 +4643,9 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       probe.innerHTML =
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
         (requiresCodeToolbar ? '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' : '') +
+        '<button type="button" data-codex-plus-contrast-kind="change-summary" style="background:rgb(31,41,55);color:rgb(17,17,17)">7 files changed +155 -13</button>' +
+        '<div role="menu" data-codex-plus-contrast-state="composer-menu" style="background:rgb(31,41,55)"><button type="button" role="menuitem" data-codex-plus-contrast-kind="composer-menu-item" style="background:rgb(31,41,55);color:rgb(17,17,17)">Goal Set a goal to keep pursuing</button></div>' +
+        '<div role="dialog" data-codex-plus-contrast-state="request-input" style="background:rgb(31,41,55)"><button type="button" data-codex-plus-contrast-kind="request-input-option" style="background:rgb(55,65,81);color:rgb(17,17,17)">Offline replay first</button></div>' +
         '<button type="submit" class="rounded-full bg-token-foreground" data-codex-plus-contrast-kind="submit">Submit</button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Full access</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy" aria-disabled="true" class="opacity-25"><span>Ask for approval</span><svg><path d="M0 0h1"/></svg></button>' +
@@ -4452,6 +4653,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Custom</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="model" aria-expanded="true"><span>5.6 Sol Medium</span><svg><path d="M0 0h1"/></svg></button>';
       surface.appendChild(probe);
+      window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.applyComposerContrast?.(surface);
       const actualButtons = Array.from(surface.querySelectorAll("button")).filter((button) => !probe.contains(button));
       const policyLabels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
       const actualControls = actualButtons.filter((button) => {
