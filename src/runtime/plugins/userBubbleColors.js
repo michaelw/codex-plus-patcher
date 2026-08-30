@@ -2,6 +2,11 @@
   const CodexPlus = window.CodexPlus;
   const STORAGE_KEY = "codex-plus:user-message-bubble-colors";
   const EVENT = "codex-plus:user-message-bubble-colors-change";
+  const AUTO_CONTRAST_ATTRIBUTE = "data-codex-plus-auto-contrast";
+  const contrastOriginals = new WeakMap();
+  let contrastObserver = null;
+  let contrastFrame = null;
+  let contrastTimer = null;
 
   function isColor(value) {
     return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
@@ -61,6 +66,126 @@
     return textColor(mix(baseForeground, background, 0.14));
   }
 
+  function parseCssColor(value) {
+    if (typeof value !== "string") return null;
+    const hex = value.trim().match(/^#([0-9a-f]{6})$/i);
+    if (hex) {
+      return [0, 2, 4].map((offset) => parseInt(hex[1].slice(offset, offset + 2), 16)).concat(1);
+    }
+    const rgb = value.trim().match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i);
+    if (!rgb) return null;
+    return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] == null ? 1 : Number(rgb[4])];
+  }
+
+  function relativeLuminance(value) {
+    const color = parseCssColor(value);
+    if (!color) return null;
+    const channel = (component) => {
+      const normalized = component / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+  }
+
+  function contrastRatio(foreground, background) {
+    const foregroundLuminance = relativeLuminance(foreground);
+    const backgroundLuminance = relativeLuminance(background);
+    if (foregroundLuminance == null || backgroundLuminance == null) return 0;
+    const light = Math.max(foregroundLuminance, backgroundLuminance);
+    const dark = Math.min(foregroundLuminance, backgroundLuminance);
+    return (light + 0.05) / (dark + 0.05);
+  }
+
+  function contrastForeground(background) {
+    return contrastRatio("#111111", background) >= contrastRatio("#ffffff", background) ? "#111111" : "#ffffff";
+  }
+
+  function effectiveBackground(element, boundary) {
+    for (let current = element; current; current = current.parentElement) {
+      const background = window.getComputedStyle(current).backgroundColor;
+      const parsed = parseCssColor(background);
+      if (parsed && parsed[3] >= 0.95) return background;
+      if (current === boundary) break;
+    }
+    return window.getComputedStyle(document.documentElement).backgroundColor || "rgb(255, 255, 255)";
+  }
+
+  function composerBackground(element, surface) {
+    const background = window.getComputedStyle(element).backgroundColor;
+    const parsed = parseCssColor(background);
+    const transparent = background === "transparent" || (parsed && parsed[3] < 0.05);
+    if (element.matches?.("button,[role='button']") && transparent) {
+      return window.getComputedStyle(surface).backgroundColor;
+    }
+    return effectiveBackground(element, surface);
+  }
+
+  function restoreComposerContrast(element) {
+    const original = contrastOriginals.get(element);
+    if (!original) return;
+    for (const [property, value, priority] of original) {
+      if (value) element.style?.setProperty?.(property, value, priority);
+      else element.style?.removeProperty?.(property);
+    }
+    element.removeAttribute?.(AUTO_CONTRAST_ATTRIBUTE);
+    contrastOriginals.delete(element);
+  }
+
+  function applyComposerContrast(surface) {
+    if (!surface?.querySelectorAll || typeof window.getComputedStyle !== "function") return 0;
+    const elements = [surface, ...surface.querySelectorAll("*")];
+    for (const element of elements) {
+      restoreComposerContrast(element);
+    }
+    let adjusted = 0;
+    for (const element of elements) {
+      if (element !== surface && element.closest?.(".ProseMirror")) continue;
+      if (element.closest?.("[class*='h-token-button-composer']")) continue;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const foreground = style.color;
+      const background = composerBackground(element, surface);
+      if (contrastRatio(foreground, background) >= 4.5) continue;
+      const nextForeground = contrastForeground(background);
+      contrastOriginals.set(element, ["color", "-webkit-text-fill-color", "opacity"].map((property) => [
+        property,
+        element.style?.getPropertyValue?.(property) || "",
+        element.style?.getPropertyPriority?.(property) || "",
+      ]));
+      element.setAttribute?.(AUTO_CONTRAST_ATTRIBUTE, "");
+      element.style?.setProperty?.("color", nextForeground, "important");
+      element.style?.setProperty?.("-webkit-text-fill-color", "currentColor", "important");
+      element.style?.setProperty?.("opacity", "1", "important");
+      adjusted += 1;
+    }
+    return adjusted;
+  }
+
+  function refreshComposerContrast() {
+    contrastFrame = null;
+    for (const surface of document.querySelectorAll?.("[data-codex-plus-user-entry]") || []) {
+      applyComposerContrast(surface);
+    }
+  }
+
+  function scheduleComposerContrast() {
+    if (contrastFrame != null) return;
+    const schedule = window.requestAnimationFrame || (typeof window.setTimeout === "function"
+      ? (callback) => window.setTimeout(callback, 0)
+      : null);
+    if (!schedule) return;
+    contrastFrame = schedule(refreshComposerContrast);
+  }
+
+  function scheduleComposerContrastSettled() {
+    scheduleComposerContrast();
+    if (contrastTimer != null) window.clearTimeout?.(contrastTimer);
+    contrastTimer = window.setTimeout?.(() => {
+      contrastTimer = null;
+      refreshComposerContrast();
+    }, 750) ?? null;
+  }
+
   function setVars() {
     const colors = readColors(null);
     for (const variant of ["light", "dark"]) {
@@ -75,6 +200,7 @@
         document.documentElement.style.setProperty(`--codex-plus-user-bubble-${variant}-control-fg`, controlTextColor(color));
       }
     }
+    scheduleComposerContrastSettled();
   }
 
   function renderColorRow({ React, jsx, SettingRow, ColorInput, variant, label, ariaLabel }) {
@@ -119,6 +245,7 @@
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]){opacity:1!important;color:var(--codex-plus-user-bubble-light-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"],[class*="text-token-text-link-foreground"],[class*="text-token-editor-warning-foreground"]){color:var(--codex-plus-user-bubble-light-fg)}' +
+        ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] [class*="h-token-button-composer"]{color:var(--codex-plus-user-bubble-light-fg)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important}:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] [class*="h-token-button-composer"] *{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]){background-color:color-mix(in srgb,var(--codex-plus-user-bubble-light-fg) 14%,var(--codex-plus-user-bubble-light-bg))!important;color:var(--codex-plus-user-bubble-light-control-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]):is(:hover,:focus-visible,:active,[data-state="open"],[aria-expanded="true"]){background-color:color-mix(in srgb,var(--codex-plus-user-bubble-light-fg) 14%,var(--codex-plus-user-bubble-light-bg))!important;background-image:none!important;color:var(--codex-plus-user-bubble-light-control-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *{color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
@@ -145,6 +272,7 @@
         ':root.dark [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]),:root.electron-dark [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]){opacity:1!important;color:var(--codex-plus-user-bubble-dark-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *,:root.electron-dark [data-codex-plus-user-entry] :is(button,[role="button"]):not([data-composer-code-block-toolbar] *):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root.electron-dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,textarea,[contenteditable="true"],[data-placeholder]),:root.dark [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"],[class*="text-token-text-link-foreground"],[class*="text-token-editor-warning-foreground"]),:root.electron-dark [data-codex-plus-user-entry] :is(button:not([class*="bg-token-foreground"]),[role="button"]:not([class*="bg-token-foreground"]),button:not([class*="bg-token-foreground"]) svg,[role="button"]:not([class*="bg-token-foreground"]) svg,[class*="text-token-foreground"],[class*="text-token-description-foreground"],[class*="text-token-input-placeholder-foreground"],[class*="text-token-text-link-foreground"],[class*="text-token-editor-warning-foreground"]){color:var(--codex-plus-user-bubble-dark-fg)}' +
+        ':root.dark [data-codex-plus-user-entry] [class*="h-token-button-composer"],:root.electron-dark [data-codex-plus-user-entry] [class*="h-token-button-composer"]{color:var(--codex-plus-user-bubble-dark-fg)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important}:root.dark [data-codex-plus-user-entry] [class*="h-token-button-composer"] *,:root.electron-dark [data-codex-plus-user-entry] [class*="h-token-button-composer"] *{color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]),:root.electron-dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]){background-color:color-mix(in srgb,var(--codex-plus-user-bubble-dark-fg) 14%,var(--codex-plus-user-bubble-dark-bg))!important;color:var(--codex-plus-user-bubble-dark-control-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]):is(:hover,:focus-visible,:active,[data-state="open"],[aria-expanded="true"]),:root.electron-dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]):is(:hover,:focus-visible,:active,[data-state="open"],[aria-expanded="true"]){background-color:color-mix(in srgb,var(--codex-plus-user-bubble-dark-fg) 14%,var(--codex-plus-user-bubble-dark-bg))!important;background-image:none!important;color:var(--codex-plus-user-bubble-dark-control-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *,:root.electron-dark [data-codex-plus-user-entry] :is(button,[role="button"]):is([class*="rounded-full"],[class*="rounded-"]):is([class*="bg-token-foreground"],[class*="bg-token-input"],[class*="bg-token-dropdown"]):not([data-composer-attachment-pill]):not([class*="bg-token-foreground-inverse"]):not([class*="bg-token-foreground-primary"]):not([class*="bg-token-foreground-button"]) *{color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
@@ -161,8 +289,12 @@
         ':root.dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]),:root.electron-dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]){opacity:1!important;color:var(--codex-plus-user-bubble-dark-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]) *,:root.electron-dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]) *{animation:none!important;background-image:none!important;color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.electron-dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-dark-fg)}' +
-        ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *{color:var(--color-token-text-tertiary)!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}',
+        ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *{color:var(--color-token-text-tertiary)!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
+        '[data-codex-plus-auto-contrast] :is(svg,path){color:inherit!important;stroke:currentColor!important}',
       exports: {
+        applyComposerContrast,
+        contrastForeground,
+        contrastRatio,
         defaultColor,
         controlTextColor,
         eventName: EVENT,
@@ -189,9 +321,32 @@
         api.ui.composer.decorateSurface(() => ({ "data-codex-plus-user-entry": "" }));
         setVars();
         window.addEventListener(EVENT, setVars);
+        if (typeof MutationObserver === "function" && document.documentElement) {
+          contrastObserver = new MutationObserver(scheduleComposerContrast);
+          contrastObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["class", "data-state", "aria-expanded"],
+            childList: true,
+            subtree: true,
+          });
+        }
       },
       stop() {
         window.removeEventListener(EVENT, setVars);
+        contrastObserver?.disconnect();
+        contrastObserver = null;
+        for (const element of document.querySelectorAll?.(`[${AUTO_CONTRAST_ATTRIBUTE}]`) || []) {
+          restoreComposerContrast(element);
+        }
+        if (contrastFrame != null) {
+          const cancel = window.cancelAnimationFrame || window.clearTimeout;
+          cancel?.(contrastFrame);
+          contrastFrame = null;
+        }
+        if (contrastTimer != null) {
+          window.clearTimeout?.(contrastTimer);
+          contrastTimer = null;
+        }
       },
     }),
   );

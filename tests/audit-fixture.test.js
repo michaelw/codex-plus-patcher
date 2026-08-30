@@ -141,6 +141,7 @@ test("audit fixture writes project assignments, pinned data, and projectless thr
     const projectlessThreads = fixture.threads.filter((thread) => thread.projectless);
     const nestedAssignment = atomState["thread-project-assignments"][nestedThread.id];
 
+    assert.equal(atomState["electron-avatar-overlay-open"], false);
     assert.ok(state["pinned-project-ids"].includes(fixture.workspaces.alpha));
     assert.ok(state["pinned-thread-ids"].includes(pinnedThread.id));
     assert.equal(projectlessThreads.length, 5);

@@ -15,7 +15,7 @@ const FILE_KEYS = new Set([
   "threadSidePanelCore", "threadSidePanelTabs", "threadTitle", "userMessageAttachments",
 ]);
 const ANCHOR_KEYS = new Set([
-  "composerProjectAccentCaller", "composerProjectImports", "composerProjectStyleCaller", "terminalConstruction",
+  "composerProjectAccentCaller", "composerProjectImports", "composerProjectStyleCaller", "terminalConstruction", "title",
 ]);
 
 function rejectUnknownKeys(value, allowed, label) {

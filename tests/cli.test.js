@@ -72,14 +72,12 @@ test("fixture activation keeps retrying trusted input until the header contract 
   const sent = [];
   const activeStates = [
     { titleReady: false },
-    { titleReady: false },
-    { titleReady: false },
     {
       titleReady: true,
       activeCwd: "/fixture-workspaces/alpha-main",
       chipPath: "/fixture-workspaces/alpha-main",
       chipCount: 1,
-      anchoredBeforeOpenIn: true,
+      anchoredBeforeAction: true,
     },
   ];
   let evaluation = 0;
@@ -94,8 +92,9 @@ test("fixture activation keeps retrying trusted input until the header contract 
           path: "/fixture-workspaces/alpha-main",
         });
       }
-      if (evaluation === 3 || evaluation === 7) return Promise.resolve({ x: 10, y: 10 });
-      if (evaluation === 5 || evaluation === 9 || evaluation === 11) return Promise.resolve(true);
+      if (evaluation === 3 || evaluation === 5) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true });
+      }
       return Promise.resolve(activeStates.shift());
     },
     send(method, params) {
@@ -111,11 +110,13 @@ test("fixture activation keeps retrying trusted input until the header contract 
   });
 
   assert.equal(result.ok, true);
-  assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent" && call.params.type === "keyDown").length, 1);
-  assert.equal(sent.filter((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed").length, 3);
+  assert.equal(sent.find((call) => call.method.startsWith("Input."))?.method, "Input.dispatchMouseEvent");
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchKeyEvent").length, 0);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed").length, 2);
+  assert.equal(sent.filter((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mouseMoved").length, 0);
 });
 
-test("fixture activation retries the stable row hit target after keyboard and label attempts", async () => {
+test("fixture activation retries the stable row hit target after a label attempt", async () => {
   let activeChecks = 0;
   let rowPoints = 0;
   const cdp = {
@@ -128,13 +129,12 @@ test("fixture activation retries the stable row hit target after keyboard and la
           path: "/fixture-workspaces/alpha-main",
         });
       }
-      if (expression.includes("const rect = (row).getBoundingClientRect()")) {
+      if (expression.includes("const clickElement = row;")) {
         rowPoints += 1;
-        return Promise.resolve({ x: 10, y: 10 });
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true });
       }
-      if (expression.includes("const rect = ((labels[0] || row)).getBoundingClientRect()") ||
-          expression.includes("const rect = (labels[0] || row).getBoundingClientRect()")) {
-        return Promise.resolve({ x: 11, y: 11 });
+      if (expression.includes("const clickElement = (labels[0] || row);")) {
+        return Promise.resolve({ x: 11, y: 11, hitInsideRow: true });
       }
       if (expression.includes("control.focus()")) return Promise.resolve(true);
       if (expression.includes("const headers =")) {
@@ -145,7 +145,7 @@ test("fixture activation retries the stable row hit target after keyboard and la
           activeCwd: "/fixture-workspaces/alpha-main",
           chipPath: "/fixture-workspaces/alpha-main",
           chipCount: 1,
-          anchoredBeforeOpenIn: true,
+          anchoredBeforeAction: true,
         });
       }
       return Promise.resolve(true);
@@ -160,7 +160,7 @@ test("fixture activation retries the stable row hit target after keyboard and la
   });
 
   assert.equal(result.ok, true);
-  assert.equal(rowPoints, 2);
+  assert.equal(rowPoints, 1);
 });
 
 test("fixture activation fails immediately when opening the thread renders an error boundary", async () => {
@@ -175,7 +175,7 @@ test("fixture activation fails immediately when opening the thread renders an er
           path: "/fixture-workspaces/alpha-main",
         });
       }
-      if (expression.includes("const rect = (row).getBoundingClientRect()")) return Promise.resolve({ x: 10, y: 10 });
+      if (expression.includes("const clickElement =")) return Promise.resolve({ x: 10, y: 10, hitInsideRow: true });
       if (expression.includes("const headers =")) {
         activeChecks += 1;
         return Promise.resolve({ titleReady: false, errorBoundaryText: "Oops, an error has occurred TypeError: broken host hook" });
@@ -190,6 +190,369 @@ test("fixture activation fails immediately when opening the thread renders an er
   assert.equal(result.ok, false);
   assert.equal(activeChecks, 1);
   assert.match(result.message, /rendered an error boundary.*broken host hook/);
+});
+
+test("fixture activation fails before clicking a covered thread row", async () => {
+  const sent = [];
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({
+          x: 10,
+          y: 10,
+          hitInsideRow: false,
+          hitTag: "BUTTON",
+          hitText: "Upgrade",
+        });
+      }
+      return Promise.resolve(false);
+    },
+    send(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve();
+    },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, false);
+  assert.equal(sent.filter((call) => call.method.startsWith("Input.")).length, 0);
+  assert.match(result.message, /covered by another surface.*Upgrade/);
+});
+
+test("fixture activation closes the embedded checkout before trusted input", async () => {
+  const sent = [];
+  let targetChecks = 0;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+      }
+      if (expression.includes("control.focus()")) return Promise.resolve(false);
+      if (expression.includes("const currentUrl")) {
+        return Promise.resolve({
+          url: "app://-/index.html",
+          titleReady: true,
+          activeCwd: "/fixture-workspaces/alpha-main",
+          chipPath: "/fixture-workspaces/alpha-main",
+          chipCount: 1,
+          anchoredBeforeAction: true,
+        });
+      }
+      return Promise.resolve(true);
+    },
+    send(method, params) {
+      sent.push({ method, params });
+      if (method === "Target.getTargets") {
+        targetChecks += 1;
+        return Promise.resolve({
+          targetInfos: targetChecks === 1 ? [{
+            targetId: "checkout-1",
+            type: "webview",
+            title: "ChatGPT Plans",
+            url: "https://chatgpt.com/?source=codex-embedded-checkout#pricing",
+          }] : [],
+        });
+      }
+      if (method === "Target.closeTarget") return Promise.resolve({ success: true });
+      return Promise.resolve();
+    },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.dismissedAuxiliaryTargets.length, 1);
+  assert.deepEqual(sent.slice(0, 2).map((call) => call.method), ["Target.getTargets", "Target.closeTarget"]);
+  assert.equal(sent[1].params.targetId, "checkout-1");
+  assert.equal(sent.some((call) => call.method === "Page.bringToFront"), true);
+  assert.equal(sent.some((call) => call.method === "Input.dispatchMouseEvent"), true);
+});
+
+test("fixture activation prefers the browser target list for auxiliary-window dismissal", async () => {
+  const closed = [];
+  let targetChecks = 0;
+  const cdp = {
+    listTargets() {
+      targetChecks += 1;
+      return Promise.resolve(targetChecks === 1 ? [{
+        id: "browser-checkout-1",
+        type: "webview",
+        title: "ChatGPT Plans",
+        url: "https://chatgpt.com/?source=codex-embedded-checkout#pricing",
+      }, {
+        id: "browser-avatar-overlay-1",
+        type: "page",
+        title: "ChatGPT Plus",
+        url: "app://-/index.html?initialRoute=%2Favatar-overlay",
+      }] : []);
+    },
+    closeTarget(targetId) {
+      closed.push(targetId);
+      return Promise.resolve(false);
+    },
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({ kind: "thread", title: "Fixture: main repo path header", path: "/fixture-workspaces/alpha-main" });
+      }
+      if (expression.includes("const clickElement =")) return Promise.resolve({ x: 10, y: 10, hitInsideRow: true });
+      if (expression.includes("const currentUrl")) {
+        return Promise.resolve({
+          url: "app://-/index.html",
+          titleReady: true,
+          activeCwd: "/fixture-workspaces/alpha-main",
+          chipPath: "/fixture-workspaces/alpha-main",
+          chipCount: 1,
+          anchoredBeforeAction: true,
+        });
+      }
+      return Promise.resolve(true);
+    },
+    send(method) {
+      if (method.startsWith("Target.")) throw new Error(`page target domain should not be used: ${method}`);
+      return Promise.resolve();
+    },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(closed, ["browser-checkout-1"]);
+  assert.equal(result.dismissedAuxiliaryTargets[0].targetId, "browser-checkout-1");
+});
+
+test("fixture activation closes an embedded checkout that appears after the first click", async () => {
+  const sent = [];
+  let targetChecks = 0;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+      }
+      if (expression.includes("control.focus()")) return Promise.resolve(false);
+      if (expression.includes("const currentUrl")) {
+        return Promise.resolve({
+          url: "app://-/index.html",
+          titleReady: true,
+          activeCwd: "/fixture-workspaces/alpha-main",
+          chipPath: "/fixture-workspaces/alpha-main",
+          chipCount: 1,
+          anchoredBeforeAction: true,
+        });
+      }
+      return Promise.resolve(true);
+    },
+    send(method, params) {
+      sent.push({ method, params });
+      if (method === "Target.getTargets") {
+        targetChecks += 1;
+        return Promise.resolve({
+          targetInfos: targetChecks === 2 ? [{
+            targetId: "late-checkout-1",
+            type: "webview",
+            title: "ChatGPT Plans",
+            url: "https://chatgpt.com/?source=codex-embedded-checkout#pricing",
+          }] : [],
+        });
+      }
+      if (method === "Target.closeTarget") return Promise.resolve({ success: true });
+      return Promise.resolve();
+    },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.dismissedAuxiliaryTargets.length, 1);
+  assert.equal(sent.some((call) => call.method === "Target.closeTarget" && call.params.targetId === "late-checkout-1"), true);
+});
+
+test("fixture activation keeps watching for a late checkout while trusted pointer input is pending", { timeout: 500 }, async () => {
+  for (const pendingType of ["mousePressed", "mouseReleased"]) {
+    let targetChecks = 0;
+    let releasePointer;
+    const cdp = {
+      evaluate(expression) {
+        if (expression.includes('location.search.includes')) return Promise.resolve(false);
+        if (expression.includes("const collapsedProject")) {
+          return Promise.resolve({ kind: "thread", title: "Fixture: main repo path header", path: "/fixture-workspaces/alpha-main" });
+        }
+        if (expression.includes("const clickElement =")) {
+          return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+        }
+        if (expression.includes("const currentUrl")) {
+          return Promise.resolve({
+            url: "app://-/index.html",
+            titleReady: true,
+            activeCwd: "/fixture-workspaces/alpha-main",
+            chipPath: "/fixture-workspaces/alpha-main",
+            chipCount: 1,
+            anchoredBeforeAction: true,
+          });
+        }
+        return Promise.resolve(true);
+      },
+      send(method, params) {
+        if (method === "Target.getTargets") {
+          targetChecks += 1;
+          return Promise.resolve({
+            targetInfos: targetChecks === 6 ? [{
+              targetId: `pending-${pendingType}`,
+              type: "webview",
+              title: "ChatGPT Plans",
+              url: "https://chatgpt.com/?source=codex-embedded-checkout#pricing",
+            }] : [],
+          });
+        }
+        if (method === "Target.closeTarget") {
+          releasePointer?.();
+          return Promise.resolve({ success: true });
+        }
+        if (method === "Input.dispatchMouseEvent" && params.type === pendingType) {
+          return new Promise((resolve) => { releasePointer = resolve; });
+        }
+        return Promise.resolve();
+      },
+    };
+
+    const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+    assert.equal(result.ok, true, pendingType);
+    assert.equal(result.dismissedAuxiliaryTargets.some((target) => target.targetId === `pending-${pendingType}`), true, pendingType);
+  }
+});
+
+test("fixture activation reports pointer phase and renderer state when trusted input times out", async () => {
+  let dispatchTimeoutMs = null;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({ kind: "thread", title: "Fixture: main repo path header", path: "/fixture-workspaces/alpha-main" });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+      }
+      if (expression.includes("bodyText: document.body")) {
+        return Promise.resolve({ url: "app://-/index.html", title: "ChatGPT", bodyText: "fixture" });
+      }
+      return Promise.resolve(true);
+    },
+    send(method, params, options) {
+      if (method === "Target.getTargets") return Promise.resolve({ targetInfos: [] });
+      if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") {
+        dispatchTimeoutMs = options?.timeoutMs ?? null;
+        return Promise.reject(new Error("DevTools request timed out: Input.dispatchMouseEvent"));
+      }
+      return Promise.resolve();
+    },
+  };
+
+  await assert.rejects(
+    activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 }),
+    /Trusted mouseReleased did not settle.*renderer=.*app:\/\/-\/index\.html.*targets=\[\]/,
+  );
+  assert.equal(dispatchTimeoutMs, 45000);
+});
+
+test("fixture activation reconnects when navigation swallows the trusted release response", async () => {
+  let reconnected = false;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({ kind: "thread", title: "Fixture: main repo path header", path: "/fixture-workspaces/alpha-main" });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+      }
+      if (expression.includes("const currentUrl")) {
+        return Promise.resolve(reconnected ? {
+          url: "app://-/index.html",
+          titleReady: true,
+          activeCwd: "/fixture-workspaces/alpha-main",
+          chipPath: "/fixture-workspaces/alpha-main",
+          chipCount: 1,
+          anchoredBeforeAction: true,
+        } : { url: "app://-/index.html", titleReady: false });
+      }
+      return Promise.resolve(true);
+    },
+    send(method, params) {
+      if (method === "Target.getTargets") return Promise.resolve({ targetInfos: [] });
+      if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") return new Promise(() => {});
+      return Promise.resolve();
+    },
+    reconnect() {
+      reconnected = true;
+      return Promise.resolve();
+    },
+  };
+
+  const outcome = await Promise.race([
+    activateFixtureThread(cdp, { wait() {}, pointerSettleMs: 0, timeoutMs: 1000, retryIntervalMs: 0 }),
+    new Promise((resolve) => setTimeout(() => resolve("timed out"), 100)),
+  ]);
+
+  assert.notEqual(outcome, "timed out");
+  assert.equal(outcome.ok, true);
+  assert.equal(reconnected, true);
+});
+
+test("fixture activation fails immediately when the renderer navigates away", async () => {
+  let activeChecks = 0;
+  const cdp = {
+    evaluate(expression) {
+      if (expression.includes('location.search.includes')) return Promise.resolve(false);
+      if (expression.includes("const collapsedProject")) {
+        return Promise.resolve({
+          kind: "thread",
+          title: "Fixture: main repo path header",
+          path: "/fixture-workspaces/alpha-main",
+        });
+      }
+      if (expression.includes("const clickElement =")) {
+        return Promise.resolve({ x: 10, y: 10, hitInsideRow: true, hitText: "Fixture: main repo path header" });
+      }
+      if (expression.includes("const currentUrl")) {
+        activeChecks += 1;
+        return Promise.resolve({ url: "https://chatgpt.com/#pricing" });
+      }
+      return Promise.resolve(false);
+    },
+    send() { return Promise.resolve(); },
+  };
+
+  const result = await activateFixtureThread(cdp, { wait() {}, timeoutMs: 1000, retryIntervalMs: 0 });
+
+  assert.equal(result.ok, false);
+  assert.equal(activeChecks, 1);
+  assert.match(result.message, /navigated away from the app.*chatgpt\.com/);
 });
 
 test("successful trusted Review capture supersedes only the matching cold-render failure", () => {
@@ -1201,23 +1564,23 @@ test("fixture activation verifies the canonical active cwd and retries the stabl
   assert.match(activation, /getAttribute\("aria-hidden"\) === "true"/);
   assert.match(activation, /header\?\.querySelectorAll\("\[data-codex-plus-project-path-header\]"\)/);
   assert.match(activation, /header\?\.querySelectorAll\("button"\)/);
-  assert.match(activation, /chipRect\.right <= openRect\.left/);
-  assert.doesNotMatch(activation, /openRect\.left - chipRect\.right <= 24/);
+  assert.match(activation, /const nativeAction = actionButtons\.find/);
+  assert.match(activation, /chipRect\.right <= actionRect\.left/);
+  assert.doesNotMatch(activation, /startsWith\("Open in"\)/);
   assert.match(activation, /activeContext\?\.cwd/);
   assert.match(activation, /target\.title/);
   assert.match(activation, /data-app-action-sidebar-thread-title/);
   assert.match(activation, /target\.path/);
   assert.match(activation, /data-app-action-sidebar-project-row.*aria-expanded='false'/);
   assert.match(activation, /aria-label='Expand project'/);
-  assert.match(activation, /activateTargetWithKeyboard/);
   assert.match(activation, /clickTarget = async \(preferRow = false\)/);
   assert.match(activation, /preferRow \? "row" : "\(labels\[0\] \|\| row\)"/);
-  assert.match(activation, /await clickTarget\(true\)/);
-  assert.match(activation, /Input\.dispatchKeyEvent/);
-  assert.match(activation, /key: "Enter"/);
+  assert.match(activation, /const initialInteraction = await clickTarget\(\);/);
+  assert.match(activation, /Input\.dispatchMouseEvent/);
+  assert.doesNotMatch(activation, /Input\.dispatchKeyEvent/);
   assert.doesNotMatch(activation, /target\.rowText/);
   assert.doesNotMatch(activation, /replace\(\/\\s\+\/g/);
-  assert.match(activation, /JSON\.stringify\(\{ target, active \}\)/);
+  assert.match(activation, /JSON\.stringify\(\{ target, initialInteraction, active \}\)/);
   assert.doesNotMatch(activation, /active\.chipPath === target\.path/);
   assert.doesNotMatch(activation, /getAttribute\("data-codex-plus-project-path"\) ===/);
   assert.match(activation, /initialRoute/);
@@ -4209,18 +4572,30 @@ test("visual contract uses preflighted capability evidence for the fenced-code l
   assert.match(verifier, /capability\?\.status !== "required"/);
   assert.match(verifier, /srgbMatch/);
   assert.match(verifier, /submitBackground/);
+  assert.match(verifier, /footerControls/);
+  assert.match(verifier, /entry\.contrast != null && entry\.contrast >= 4\.5/);
+  assert.match(verifier, /entry\.paintContrasts\.every\(\(paint\) => paint\.contrast != null && paint\.contrast >= 4\.5\)/);
+  assert.match(verifier, /paintElement\.namespaceURI === "http:\/\/www\.w3\.org\/2000\/svg"/);
   assert.match(verifier, /const themes = \["light", "dark"\]/);
   assert.match(verifier, /#f8fafc/);
   assert.match(verifier, /#e0218a/);
   assert.match(verifier, /#111827/);
   assert.match(verifier, /mouseMoved", x: 1, y: 1/);
+  assert.match(verifier, /document\.elementFromPoint/);
+  assert.match(verifier, /hitInsideControl/);
+  assert.match(verifier, /const waitForMenu = async/);
+  assert.match(verifier, /await waitForMenu\(\)/);
+  assert.match(verifier, /dismissBlockingAuxiliaryTargets\(cdp\)/);
+  assert.match(verifier, /key: "Enter"/);
+  assert.doesNotMatch(verifier, /control\?\.click|control\.click/);
   assert.match(verifier, /hover\.hovered/);
   assert.match(verifier, /focused\.focused && open\.open/);
   assert.match(verifier, /open\.menuMounted && open\.optionCount > 0/);
   assert.match(verifier, /state\.menuContrast != null && state\.menuContrast >= 4\.5/);
   assert.match(verifier, /for \(let attempt = 0; attempt < 3 && !reopened\?\.menuMounted; attempt \+= 1\)/);
   assert.match(verifier, /for \(let attempt = 0; attempt < 3 && selected\.selectedText === initial\.selectedText; attempt \+= 1\)/);
-  assert.match(verifier, /selected\.selectedText !== initial\.selectedText/);
+  assert.match(verifier, /const shouldSelect = cases\.length === 0/);
+  assert.match(verifier, /const selectionOk = cases\.some/);
   assert.match(verifier, /state\.toolbarBackground === state\.controlBackground/);
   assert.match(verifier, /const adaptiveColorsOk = themes\.every/);
   assert.match(verifier, /new Set\(themeCases\.map\(\(entry\) => entry\.initial\.controlBackground\)\)\.size === colors\.length/);

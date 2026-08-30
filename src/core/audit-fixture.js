@@ -707,6 +707,7 @@ function createGlobalState(layout, threads) {
         roles: ["something_else"],
         personalizedSuggestionsEnabled: false,
       },
+      "electron-avatar-overlay-open": false,
       "last_completed_onboarding": FIXTURE_NOW_SECONDS,
       "agent-mode": "custom",
       "agent-mode-by-host-id": { local: "full-access" },
