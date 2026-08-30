@@ -1,4 +1,5 @@
 const chatgpt_26_825_41651_7345 = require("./26.825.41651-7345");
+const chatgpt_26_825_32147_7303 = require("./26.825.32147-7303");
 const chatgpt_26_818_61809_7019 = require("./26.818.61809-7019");
 const chatgpt_26_818_41705_6971 = require("./26.818.41705-6971");
 const chatgpt_26_818_41509_6962 = require("./26.818.41509-6962");
@@ -56,6 +57,7 @@ const { validatePatchSetRegistry } = require("./lib/manifest-validation");
 
 const patchSets = [
   chatgpt_26_825_41651_7345,
+  chatgpt_26_825_32147_7303,
   chatgpt_26_818_61809_7019,
   chatgpt_26_818_41705_6971,
   chatgpt_26_818_41509_6962,
