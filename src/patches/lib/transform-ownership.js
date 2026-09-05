@@ -1,16 +1,22 @@
 const TRANSFORM_VARIANT_OWNERS = Object.freeze({
+  "chatgpt-26.901.22334": Object.freeze([
+    "chatgpt-26.901.22334-7746",
+  ]),
   "chatgpt-26.901.31953": Object.freeze([
     "chatgpt-26.901.31953-7868",
+    "chatgpt-26.901.22334-7746",
   ]),
   "chatgpt-26.901.41600": Object.freeze([
     "chatgpt-26.901.41600-7982",
     "chatgpt-26.901.41123-7942",
     "chatgpt-26.901.31953-7868",
+    "chatgpt-26.901.22334-7746",
   ]),
   "chatgpt-26.825.41651": Object.freeze([
     "chatgpt-26.901.41600-7982",
     "chatgpt-26.901.41123-7942",
     "chatgpt-26.901.31953-7868",
+    "chatgpt-26.901.22334-7746",
     "chatgpt-26.825.41651-7345",
     "chatgpt-26.825.32147-7303",
     "chatgpt-26.825.31414-7287",

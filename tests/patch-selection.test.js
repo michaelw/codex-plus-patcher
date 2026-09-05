@@ -305,6 +305,7 @@ test("newest supported ChatGPT source identity is registered first while Codex r
     ["26.901.41600", "7982", "077cc65356aeae34c5d8b4de0b4cc383f6fb137ed1d69a9b3dfe69ffafa058ab"],
     ["26.901.41123", "7942", "959726c107e11691044b60445e34e1a5c732d89320b0bee22cf1a3b13da00cd1"],
     ["26.901.31953", "7868", "4b385ffce845bb319a1769a3cb59751e1a8f157bab79f5018ba51d83f9e6df4e"],
+    ["26.901.22334", "7746", "405f0e1600fc63851abe4c763ec0546f56c32da312c2c2745e2b997c579ce0d0"],
     ["26.825.41651", "7345", "c089b63abb7ca4a751072c0da434248db13c32bed9c363e1b7e5428584b0576d"],
     ["26.825.32147", "7303", "0462b03e878f0e78b223b849ee14cbba0de043f2c16acebee163cb95daa622ef"],
     ["26.825.31414", "7287", "8dc2bc705d5ba49f0e427b21c14b6549c29fcd3ef540e75d6dad386d78f2d255"],
@@ -380,6 +381,10 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("new cached ChatGPT sources own exact transform variants", () => {
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.901.22334-7746", "chatgpt-26.901.22334"),
+    true,
+  );
   assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.901.31953-7868", "chatgpt-26.901.31953"),
     true,
@@ -461,8 +466,67 @@ test("26.901.31953 review mux receives the React namespace used by its bundle", 
   assert.match(transformed, /mainReviewContent:\(0,\$\.jsx\)\(_o/);
 });
 
+test("26.901.22334 review mux receives its local rich-diff dependencies", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.22334-7746");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function Ms(e){let t=(0,Rs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,$.jsx)(nr,{children:(0,$.jsx)(vo,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(
+    transformed,
+    /renderBodyFromHost\(e,\[\$,ho,null,null,null,null,null,null,null,null,null,vo,null,null,null,null,null,Or,c,f,Wr\]\)/,
+  );
+  assert.match(transformed, /mainReviewContent:\(0,\$\.jsx\)\(vo/);
+});
+
+test("26.901.22334 composer surface hook binds the React namespace, not the motion namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.22334-7746");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerBubbleColors",
+  )?.[1];
+  const source = [
+    "function b1t(e){let t=(0,KV.c)(24),{children:n,className:r,animateRadius:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,",
+    'M=(0,JV.jsx)(_a.div,{className:k,inert:o,"data-composer-dark":A,"data-composer-drag-active":j,',
+    'Jt=(0,L9.jsxs)(`div`,{className:Nt,"data-codex-composer-root":``,"data-composer-placement":le.kind,children:[Ft,qt]})',
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXComposerContext\?\?=qV\.createContext/);
+  assert.doesNotMatch(transformed, /CPXComposerContext\?\?=_a\.createContext/);
+});
+
+test("26.901.22334 native file opener falls back to the current local execution host", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.22334-7746");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "re=(0,n8.jsx)(Hbr,{ref:n,...h,composerLayoutMode:K,conversationId:i,",
+    "currentLocalExecutionHostId:Sr,",
+    "Bo=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /hostId:t\.hostId\|\|globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\?\.hostId\|\|Sr\|\|`local`/);
+});
+
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.901.22334-7746", [
+      ".vite/build/main-7G1VcsUF.js",
+      ".vite/build/src-BXVxNf6C.js",
+      "webview/assets/app-initial-f1c3ba37268a.js",
+      "webview/assets/terminal-panel-5d5a6a7da9ae.js",
+      "webview/assets/mermaid-diagram-15380077c28a.js",
+    ]],
     ["chatgpt-26.901.31953-7868", [
       ".vite/build/main-C5K7o1Hr.js",
       ".vite/build/src-VqXTPopo.js",

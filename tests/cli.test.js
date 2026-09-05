@@ -1186,7 +1186,9 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
-  assert.match(defaultExpression, /text-editor:local:/);
+  assert.match(defaultExpression, /data-tab-id\^='text-editor:'/);
+  assert.match(defaultExpression, /artifactTabId\.startsWith\("text-editor:"\)/);
+  assert.match(defaultExpression, /artifactTextEditorHostId === ""/);
   assert.match(defaultExpression, /composerContrastStatus/);
   assert.match(defaultExpression, /Ask for approval/);
   assert.match(defaultExpression, /Approve for me/);
@@ -1786,7 +1788,7 @@ test("aharness artifact audit recognizes both native app-shell tab layouts", () 
 
   assert.match(artifactAudit, /data-app-shell-tabs/);
   assert.match(artifactAudit, /data-app-shell-tab-strip-controller/);
-  assert.match(artifactAudit, /data-app-shell-tab-panel-controller/);
+  assert.match(artifactAudit, /artifactTextEditorHostId/);
   assert.match(artifactAudit, /artifactCommonShell/);
   assert.match(artifactAudit, /new Set/);
 });
