@@ -6211,7 +6211,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       let artifactFileContent = null;
       try {
         press(artifactButton);
-        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 20000);
+        artifactTab = await waitForAharness("[data-app-shell-tabs] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tabs] [data-tab-id^='text-editor:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='file:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [data-app-shell-tab-strip-controller] [data-tab-id^='text-editor:'][data-tab-id*='result.md']", 20000);
         if (nativeFileAlerts.some((message) => message.includes("native-file-opener-not-found"))) {
           throw new Error(`Aharness artifact open showed native file opener alert: ${nativeFileAlerts.join(" | ")}`);
         }
@@ -6230,16 +6230,22 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
           artifactTabId.startsWith("file:local:") ||
           artifactTabId.startsWith("file:") ||
           artifactTabId.startsWith("mcp-capability:file-viewer:file:local:") ||
-          artifactTabId.startsWith("text-editor:local:");
+          artifactTabId.startsWith("text-editor:");
+        const artifactTextEditorHostId = artifactTabId.startsWith("text-editor:")
+          ? artifactTabId.slice("text-editor:".length).split(":")[0]
+          : null;
         if (!artifactTabUsesNativeFileViewer || !artifactTabId.includes("aharness-examples") || !artifactTabId.includes("result.md")) {
           throw new Error(`Aharness artifact tab did not use the aharness examples file path: ${artifactTabId}`);
+        }
+        if (artifactTextEditorHostId === "") {
+          throw new Error(`Aharness artifact text editor tab is missing its host ID: ${artifactTabId}`);
         }
         const artifactAppShell = artifactTab.closest?.("[data-app-shell-tabs]");
         const artifactTabStrip = artifactTab.closest?.("[data-app-shell-tab-strip-controller]");
         if (!artifactAppShell && !artifactTabStrip) {
           throw new Error(`Aharness artifact tab is not inside the native app shell tab strip: ${artifactTabId}`);
         }
-        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='text-editor:local:'][data-tab-id*='result.md']", 30000);
+        artifactFileContent = await waitForAharness("[role='tabpanel'][data-tab-id^='file:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='mcp-capability:file-viewer:file:local:'][data-tab-id*='result.md'], [role='tabpanel'][data-tab-id^='text-editor:'][data-tab-id*='result.md']", 30000);
         if (!artifactFileContent || !normalize(artifactFileContent.textContent).includes("Color Funnel Result")) {
           const startedAt = Date.now();
           while (Date.now() - startedAt < 30000) {
