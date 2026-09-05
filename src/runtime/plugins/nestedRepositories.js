@@ -189,35 +189,38 @@
     const hasNativeFullContentLoader = typeof commentProps.loadFullContent === "function";
     return jsx("div", {
       className: "mx-3 mb-3 flex min-w-0 max-w-none flex-col gap-2",
-      children: parsed.map((diff, index) =>
-        createElement(ControlledDiffCard, {
-          key: `${diff.metadata?.newPath ?? diff.metadata?.oldPath ?? index}:${index}`,
-          DiffCard,
-          deps,
-          props: {
-            ...commentProps,
-            containerClassName: "codex-review-diff-card extension:rounded-lg w-full max-w-none",
-            conversationId: conversationId ?? undefined,
-            cwd: repoCwd,
-            diff: hasNativeFullContentLoader || !diff.metadata?.isPartial
-              ? diff
-              : { ...diff, metadata: { ...diff.metadata, isPartial: false } },
-            diffViewWrap: true,
-            expandScope: "review",
-            fullContentNextFallbackToDisk: hasNativeFullContentLoader,
-            headerVariant: "full-review",
-            hostConfig,
-            hunkActionsVariant: "unstaged",
-            hunkSeparators: diff.metadata?.additionLines ? "line-info" : "metadata",
-            roundedCorners: false,
-            showFileActions: false,
-            showHunkActions: false,
-            stickyHeader: false,
-            viewType: diffMode ?? "unified",
-            workspaceRoot: repoCwd,
-          },
-        }),
-      ),
+      children: parsed.map((diff, index) => {
+        const key = `${diff.metadata?.newPath ?? diff.metadata?.oldPath ?? index}:${index}`;
+        return jsx("div", {
+          className: "codex-review-diff-card w-full max-w-none",
+          children: createElement(ControlledDiffCard, {
+            DiffCard,
+            deps,
+            props: {
+              ...commentProps,
+              containerClassName: "extension:rounded-lg w-full max-w-none",
+              conversationId: conversationId ?? undefined,
+              cwd: repoCwd,
+              diff: hasNativeFullContentLoader || !diff.metadata?.isPartial
+                ? diff
+                : { ...diff, metadata: { ...diff.metadata, isPartial: false } },
+              diffViewWrap: true,
+              expandScope: "review",
+              fullContentNextFallbackToDisk: hasNativeFullContentLoader,
+              headerVariant: "full-review",
+              hostConfig,
+              hunkActionsVariant: "unstaged",
+              hunkSeparators: diff.metadata?.additionLines ? "line-info" : "metadata",
+              roundedCorners: false,
+              showFileActions: false,
+              showHunkActions: false,
+              stickyHeader: false,
+              viewType: diffMode ?? "unified",
+              workspaceRoot: repoCwd,
+            },
+          }),
+        }, key);
+      }),
     });
   }
 
