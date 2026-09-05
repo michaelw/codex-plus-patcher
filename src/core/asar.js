@@ -9,6 +9,12 @@ function sha256File(file) {
   return sha256(fs.readFileSync(file));
 }
 
+function asarIntegrityHash(input) {
+  const buffer = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
+  const jsonSize = buffer.readUInt32LE(12);
+  return sha256(buffer.subarray(16, 16 + jsonSize));
+}
+
 function readAsar(input) {
   const buffer = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
   const headerSize = buffer.readUInt32LE(4);
@@ -158,6 +164,7 @@ function patchAsar(asarPath, fileTransforms, transformContext = {}) {
 }
 
 module.exports = {
+  asarIntegrityHash,
   ensureFileEntry,
   patchAsar,
   readAsar,

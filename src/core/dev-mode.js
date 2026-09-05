@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { patchAsar } = require("./asar");
+const { asarIntegrityHash, patchAsar } = require("./asar");
 const {
   appExecutablePath,
   detectSourceFamily,
@@ -277,7 +277,14 @@ function buildLaunchDev({
   };
 }
 
-function markDevRuntimeConfig(targetApp, { patchAsarImpl = patchAsar, setPlistBuddyValueImpl = setPlistBuddyValue } = {}) {
+function markDevRuntimeConfig(
+  targetApp,
+  {
+    asarIntegrityHashImpl = asarIntegrityHash,
+    patchAsarImpl = patchAsar,
+    setPlistBuddyValueImpl = setPlistBuddyValue,
+  } = {},
+) {
   const target = path.resolve(targetApp);
   const asarPath = path.join(target, ASAR_PATH_IN_BUNDLE);
   const patchedAsarSha = patchAsarImpl(asarPath, [
@@ -289,12 +296,13 @@ function markDevRuntimeConfig(targetApp, { patchAsarImpl = patchAsar, setPlistBu
       return text.replace(match[0], `window.__CodexPlusRuntimeConfig=${JSON.stringify(config)};`);
     }],
   ]);
+  const patchedAsarIntegrityHash = asarIntegrityHashImpl(asarPath);
   setPlistBuddyValueImpl(
     path.join(target, "Contents/Info.plist"),
     ":ElectronAsarIntegrity:Resources/app.asar:hash",
-    patchedAsarSha,
+    patchedAsarIntegrityHash,
   );
-  return { asar: asarPath, patchedAsarSha };
+  return { asar: asarPath, patchedAsarSha, patchedAsarIntegrityHash };
 }
 
 function signDevApp(targetApp, execFileSync = childProcess.execFileSync) {

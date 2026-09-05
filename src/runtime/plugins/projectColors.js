@@ -286,6 +286,27 @@
     return () => observer.disconnect();
   }
 
+  function activateProjectFromTarget(target) {
+    if (target?.closest?.("[data-app-action-sidebar-thread-row][data-codex-plus-projectless='true']")) {
+      window.CodexPlusHost?.adapters?.messageComposer?.setComposerProject?.(null);
+      return true;
+    }
+    if (target?.closest?.("[data-app-action-sidebar-thread-row]")) return false;
+    const row = target?.closest?.("[data-app-action-sidebar-project-row][data-codex-plus-project-sidebar-color]");
+    const key = row?.getAttribute?.("data-codex-plus-project-key") || "";
+    const project = projectByKey.get(key);
+    if (!project) return false;
+    window.CodexPlusHost?.adapters?.messageComposer?.setComposerProject?.(project);
+    return true;
+  }
+
+  function watchSidebarProjectNavigation() {
+    if (typeof document.addEventListener !== "function") return () => {};
+    const listener = (event) => activateProjectFromTarget(event.target);
+    document.addEventListener("pointerdown", listener, true);
+    return () => document.removeEventListener("pointerdown", listener, true);
+  }
+
   function needsSidebarRailCompensation() {
     return CodexPlus.config?.codexVersion === "26.623.81905";
   }
@@ -320,6 +341,7 @@
         "[data-codex-plus-user-bubble][data-codex-plus-project-color]:has([data-user-message-bubble]){box-shadow:none!important;border-left:0!important}" +
         "[data-codex-plus-user-bubble][data-codex-plus-project-color] [data-user-message-bubble]{box-shadow:inset 6px 0 0 var(--codex-plus-project-accent)!important}",
       exports: {
+        activateProjectFromTarget,
         colorFor,
         colorKey,
         dataAttributes,
@@ -349,8 +371,10 @@
         api.ui.composer.decorateSurface((props) => composerDataAttributes(props?.project));
         setSidebarRailCompensation(needsSidebarRailCompensation());
         const stopWatchingLists = watchRenderedProjectLists();
+        const stopWatchingNavigation = watchSidebarProjectNavigation();
         return () => {
           stopWatchingLists?.();
+          stopWatchingNavigation?.();
           setSidebarRailCompensation(false);
         };
       },

@@ -14,6 +14,13 @@
     return projectSnapshot.map((project) => ({ ...project }));
   }
 
+  function resolveProject(project) {
+    if (project == null || typeof project !== "object") return project;
+    const id = project.projectId ?? project.id;
+    if (id == null || String(id).trim() === "") return project;
+    return projectSnapshot.find((candidate) => String(candidate.projectId ?? candidate.id) === String(id)) || project;
+  }
+
   function setProjects(nextProjects) {
     projectSnapshot = Array.isArray(nextProjects) ? nextProjects.map(normalizeProject) : [];
   }
@@ -94,6 +101,7 @@
     fuzzyHighlight,
     open,
     projects,
+    resolveProject,
     setAcceptFirstHandler,
     setOpenHandler,
     setProjects,

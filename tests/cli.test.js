@@ -1201,6 +1201,10 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /effectiveBackground = isTransparent\(style\.backgroundColor\) \? surfaceBackground : style\.backgroundColor/);
   assert.match(defaultExpression, /Composer code toolbar does not match the submit button background/);
   assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
+  assert.match(defaultExpression, /data-codex-plus-contrast-kind="goal-status"/);
+  assert.match(defaultExpression, /data-codex-plus-contrast-kind="context-window-indicator"/);
+  assert.match(defaultExpression, /goalStatusFlattened/);
+  assert.match(defaultExpression, /contextIndicatorContrast/);
   assert.match(defaultExpression, /userBubbleShapeStatus/);
   assert.match(defaultExpression, /User message wrapper painted behind the rounded bubble/);
   assert.match(defaultExpression, /\[data-user-message-bubble\]/);
@@ -4516,7 +4520,7 @@ test("visual contract writes screenshots and compact readbacks", async () => {
         expectedWarnings: [],
         applyResult: {
           sourceApp: "/Applications/Codex.app",
-          patchSet: "codex-test",
+          patchSet: "chatgpt-test",
           codexVersion: "26.623.141536",
           bundleVersion: "4753",
         },
@@ -4533,6 +4537,16 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true, pillCount: 1, synthetic: true }),
+      verifyComposerVerbatim: async () => ({ ok: true, supported: false, screenshots: {} }),
+      captureNewChat: async () => ({ ok: true, supported: false, screenshots: {} }),
+      verifyComposerState: async () => ({
+        ok: true,
+        synthetic: true,
+        goalStatusFlattened: true,
+        textContrast: 12,
+        contextIndicatorContrast: 12,
+        contextIndicatorAdaptive: true,
+      }),
       verifySidebarStatus: async () => ({ ok: true, synthetic: true, textContrast: 12 }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
@@ -4545,13 +4559,15 @@ test("visual contract writes screenshots and compact readbacks", async () => {
 
     assert.equal(contract.ok, true);
     assert.equal(dialogDismissals, 1);
-    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
+    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "composer-state-contrast.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
     }
     const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
     assert.equal(readback.settings.generalVisible, true);
     assert.equal(readback.review.diffCardCount, 2);
     assert.equal(readback.composerPill.ok, true);
+    assert.equal(readback.composerStateContrast.goalStatusFlattened, true);
+    assert.equal(readback.composerStateContrast.contextIndicatorAdaptive, true);
     assert.equal(readback.sidebarNeedsInput.ok, true);
     const summary = JSON.parse(fs.readFileSync(path.join(tmpDir, "audit-summary.json"), "utf8"));
     assert.equal(summary.newChatComposer.newChatNeutral, true);
