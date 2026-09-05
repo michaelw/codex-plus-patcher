@@ -46,7 +46,9 @@ test("message composer adapter bridges opt-in scope across detached host roots",
   adapter.setComposerProject({ projectId: "remounted-project" });
 
   release();
-  assert.deepEqual(plain(adapter.activeComposerScope()), {});
+  assert.deepEqual(plain(adapter.activeComposerScope()), {
+    project: { projectId: "remounted-project" },
+  });
   const remountedOwner = {};
   const releaseRemounted = adapter.bindComposerScope(remountedOwner, { project: null, newChat: true });
   assert.deepEqual(plain(adapter.activeComposerScope()), {

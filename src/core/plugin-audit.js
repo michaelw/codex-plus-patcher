@@ -3565,6 +3565,9 @@ async function verifyComposerVerbatimContrast(cdp, {
         return {
           text: String(element.innerText || element.textContent || "").trim(),
           ariaLabel: element.getAttribute("aria-label") || "",
+          autoContrast: element.hasAttribute("data-codex-plus-auto-contrast"),
+          className: String(element.className || ""),
+          html: element.outerHTML.slice(0, 1200),
           foreground: fill || "",
           background: background || "",
           contrast: entryContrast,
@@ -3575,6 +3578,17 @@ async function verifyComposerVerbatimContrast(cdp, {
     const point = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
     const hit = point ? document.elementFromPoint(point.x, point.y) : null;
     const details = {
+      rootClassName: document.documentElement.className,
+      configuredSurfaceBackground: getComputedStyle(document.documentElement).getPropertyValue(
+        document.documentElement.classList.contains("electron-dark") || document.documentElement.classList.contains("dark")
+          ? "--codex-plus-user-bubble-dark-bg"
+          : "--codex-plus-user-bubble-light-bg",
+      ).trim(),
+      configuredSurfaceForeground: getComputedStyle(document.documentElement).getPropertyValue(
+        document.documentElement.classList.contains("electron-dark") || document.documentElement.classList.contains("dark")
+          ? "--codex-plus-user-bubble-dark-fg"
+          : "--codex-plus-user-bubble-light-fg",
+      ).trim(),
       surfaceMounted: Boolean(surface),
       editorMounted: Boolean(editor),
       toolbarMounted: Boolean(toolbar),
@@ -3831,6 +3845,70 @@ async function verifySidebarStatusPillContrast(cdp) {
   })()`);
 }
 
+async function verifyComposerStateContrast(cdp) {
+  return cdp.evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const rgb = (value) => {
+      const text = String(value || "");
+      const match = text.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      if (match) return [Number(match[1]), Number(match[2]), Number(match[3])];
+      const srgb = text.match(/color\\(srgb\\s+([0-9.]+)\\s+([0-9.]+)\\s+([0-9.]+)/);
+      return srgb ? [srgb[1], srgb[2], srgb[3]].map((channel) => Math.round(Number(channel) * 255)) : null;
+    };
+    const luminance = (color) => {
+      if (!color) return null;
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
+    };
+    const contrast = (foreground, background) => {
+      const fg = luminance(rgb(foreground));
+      const bg = luminance(rgb(background));
+      return fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    };
+    const transparent = (value) => value === "transparent" || value === "rgba(0, 0, 0, 0)";
+    const surface = Array.from(document.querySelectorAll("[data-codex-plus-user-entry]:not(:has([data-user-message-bubble]))")).find(visible);
+    if (!surface) return { ok: false, message: "Visible composer surface was not found" };
+    document.querySelector("[data-codex-plus-visual-contract-composer-state]")?.remove();
+    const probe = document.createElement("div");
+    probe.setAttribute("data-codex-plus-visual-contract-composer-state", "");
+    probe.style.cssText = "display:flex;align-items:center;box-sizing:border-box;width:96%;height:32px;min-height:32px;padding:0 10px;margin:2px auto;border-radius:16px;background:rgb(31,41,55);color:rgb(17,17,17)";
+    probe.innerHTML = '<span data-codex-plus-visual-contract-goal-text>Pursuing goal</span><svg viewBox="0 0 16 16" aria-label="Context window usage" style="width:16px;height:16px;margin-left:auto;color:rgb(255,255,255)"><circle data-codex-plus-visual-contract-context-indicator cx="8" cy="8" r="5" fill="none" stroke="rgb(255,255,255)" stroke-width="2"/></svg>';
+    surface.prepend(probe);
+    window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.applyComposerContrast?.(surface);
+    const probeStyle = getComputedStyle(probe);
+    const textStyle = getComputedStyle(probe.querySelector("[data-codex-plus-visual-contract-goal-text]"));
+    const indicator = probe.querySelector("[data-codex-plus-visual-contract-context-indicator]");
+    const indicatorStyle = getComputedStyle(indicator);
+    const surfaceBackground = getComputedStyle(surface).backgroundColor;
+    const textContrast = contrast(textStyle.color, surfaceBackground);
+    const contextIndicatorColor = indicatorStyle.stroke !== "none" ? indicatorStyle.stroke : indicatorStyle.color;
+    const contextIndicatorContrast = contrast(contextIndicatorColor, surfaceBackground);
+    const goalStatusFlattened = transparent(probeStyle.backgroundColor) && Number.parseFloat(probeStyle.borderTopLeftRadius) === 0;
+    const contextIndicatorAdaptive = rgb(contextIndicatorColor)?.join(",") !== "255,255,255";
+    return {
+      ok: goalStatusFlattened && textContrast != null && textContrast >= 4.5 && contextIndicatorContrast != null && contextIndicatorContrast >= 4.5 && contextIndicatorAdaptive,
+      synthetic: true,
+      surfaceBackground,
+      goalStatusBackground: probeStyle.backgroundColor,
+      goalStatusRadius: probeStyle.borderTopLeftRadius,
+      goalStatusFlattened,
+      textColor: textStyle.color,
+      textContrast,
+      contextIndicatorColor,
+      contextIndicatorContrast,
+      contextIndicatorAdaptive,
+    };
+  })()`);
+}
+
 async function captureVisualContract(cdp, {
   artifactDir,
   result,
@@ -3841,6 +3919,7 @@ async function captureVisualContract(cdp, {
   wait = delay,
   activateFixture = activateFixtureThread,
   verifyComposer = verifyComposerPillContrast,
+  verifyComposerState = verifyComposerStateContrast,
   verifyComposerVerbatim = verifyComposerVerbatimContrast,
   verifySidebarStatus = verifySidebarStatusPillContrast,
   verifyReview = verifyReviewPanelRender,
@@ -3889,6 +3968,9 @@ async function captureVisualContract(cdp, {
   const composerPill = await verifyComposer(cdp);
   screenshots.composerPill = await capturePng(cdp, path.join(artifactDir, "composer-pill.png"), { fsImpl });
   await cdp.evaluate(`(() => document.querySelector("[data-codex-plus-visual-contract-pill]")?.remove())()`);
+  const composerStateContrast = isChatGpt ? await verifyComposerState(cdp) : null;
+  if (composerStateContrast) screenshots.composerStateContrast = await capturePng(cdp, path.join(artifactDir, "composer-state-contrast.png"), { fsImpl });
+  await cdp.evaluate(`(() => document.querySelector("[data-codex-plus-visual-contract-composer-state]")?.remove())()`);
   screenshots.shell = await capturePng(cdp, path.join(artifactDir, "shell.png"), { fsImpl });
   const shell = await visualReadback(cdp);
   if (verifyReview === verifyReviewPanelRender) await activateReviewControlWithTrustedInput(cdp);
@@ -3926,6 +4008,7 @@ async function captureVisualContract(cdp, {
     capabilities: result?.applyResult?.capabilities || result?.capabilities || {},
     sidebarNeedsInput,
     composerPill,
+    composerStateContrast,
     composerVerbatim,
     newChatComposer,
     shell,
@@ -3946,7 +4029,7 @@ async function captureVisualContract(cdp, {
     contract.ok = false;
     contract.message = "Settings visual contract did not render General settings";
   }
-  if (!shellState?.ok || composerVerbatim?.ok === false || newChatComposer?.ok === false || !sidebarNeedsInput?.ok || !composerPill?.ok || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
+  if (!shellState?.ok || composerVerbatim?.ok === false || newChatComposer?.ok === false || !sidebarNeedsInput?.ok || !composerPill?.ok || composerStateContrast?.ok === false || !fixtureDiffText?.ok || !commandState?.ok || !review.review.repoHeaderVisible || review.review.loadingPlaceholderCount > 0 || review.review.rawDiffFallbackCount > 0 || !command.commandPalette.visible || !command.commandPalette.toggleItemVisible) {
     contract.ok = false;
     contract.message = `Visual contract states were not capture-ready: ${JSON.stringify({ shellState, composerVerbatim, sidebarNeedsInput, composerPill, reviewState, fixtureDiffText, commandState, review: review.review, command: command.commandPalette })}`;
   }
@@ -4641,6 +4724,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
       const requiresCodeToolbar = options.capabilities?.composerCodeLanguageControl?.status === "required";
       probe.innerHTML =
+        '<div data-codex-plus-contrast-kind="goal-status" style="display:flex;align-items:center;width:96%;height:32px;border-radius:16px;background:rgb(31,41,55);color:rgb(17,17,17)"><span data-codex-plus-contrast-kind="goal-status-text">Pursuing goal</span><svg viewBox="0 0 16 16" style="width:16px;height:16px;margin-left:auto"><circle data-codex-plus-contrast-kind="context-window-indicator" cx="8" cy="8" r="5" fill="none" stroke="rgb(255,255,255)" stroke-width="2"/></svg></div>' +
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
         (requiresCodeToolbar ? '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' : '') +
         '<button type="button" data-codex-plus-contrast-kind="change-summary" style="background:rgb(31,41,55);color:rgb(17,17,17)">7 files changed +155 -13</button>' +
@@ -4652,7 +4736,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         '<button type="button" data-codex-plus-contrast-kind="policy" data-state="open"><span>Approve for me</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="policy"><span>Custom</span><svg><path d="M0 0h1"/></svg></button>' +
         '<button type="button" data-codex-plus-contrast-kind="model" aria-expanded="true"><span>5.6 Sol Medium</span><svg><path d="M0 0h1"/></svg></button>';
-      surface.appendChild(probe);
+      surface.prepend(probe);
       window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.applyComposerContrast?.(surface);
       const actualButtons = Array.from(surface.querySelectorAll("button")).filter((button) => !probe.contains(button));
       const policyLabels = ["Full access", "Ask for approval", "Approve for me", "Custom"];
@@ -4691,6 +4775,16 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       const codeToolbarBackground = codeToolbar ? getComputedStyle(codeToolbar).backgroundColor : null;
       const submit = probe.querySelector("[data-codex-plus-contrast-kind='submit']");
       const submitBackground = submit ? getComputedStyle(submit).backgroundColor : null;
+      const goalStatus = probe.querySelector("[data-codex-plus-contrast-kind='goal-status']");
+      const goalStatusStyle = goalStatus ? getComputedStyle(goalStatus) : null;
+      const contextIndicator = probe.querySelector("[data-codex-plus-contrast-kind='context-window-indicator']");
+      const contextIndicatorStyle = contextIndicator ? getComputedStyle(contextIndicator) : null;
+      const contextIndicatorBackground = contextIndicator
+        ? window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.composerBackground?.(contextIndicator, surface) || null
+        : null;
+      const contextIndicatorColor = contextIndicatorStyle?.stroke || contextIndicatorStyle?.color || null;
+      const goalStatusFlattened = goalStatusStyle != null && isTransparent(goalStatusStyle.backgroundColor) && Number.parseFloat(goalStatusStyle.borderTopLeftRadius) === 0;
+      const contextIndicatorContrast = contextIndicatorColor && contextIndicatorBackground ? contrast(contextIndicatorColor, contextIndicatorBackground) : null;
       probe.remove();
       return {
         editorMounted: Boolean(editor),
@@ -4706,6 +4800,10 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         submitBackground,
         codeToolbarRequired: requiresCodeToolbar,
         codeToolbarMatchesSubmit: !requiresCodeToolbar || (codeToolbarBackground !== surfaceBackground && codeToolbarBackground === submitBackground),
+        goalStatusFlattened,
+        contextIndicatorColor,
+        contextIndicatorBackground,
+        contextIndicatorContrast,
         occludingDescendants,
         checks,
       };
@@ -5446,6 +5544,12 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         }
         if (!status.codeToolbarMatchesSubmit) {
           throw new Error(`Composer code toolbar does not match the submit button background: ${JSON.stringify(status)}`);
+        }
+        if (!status.goalStatusFlattened) {
+          throw new Error(`Composer goal status paints a duplicate rounded surface: ${JSON.stringify(status)}`);
+        }
+        if (status.contextIndicatorContrast == null || status.contextIndicatorContrast < 4.5) {
+          throw new Error(`Composer context window indicator is unreadable: ${JSON.stringify(status)}`);
         }
         if (status.editorMounted && (!status.caretMatchesEditor || status.caretContrast == null || status.caretContrast < 4.5)) {
           throw new Error(`Composer text caret is unreadable: ${JSON.stringify(status)}`);
@@ -7254,6 +7358,7 @@ module.exports = {
   waitForLiveRuntime,
   verifyMermaidViewerRender,
   verifyProjectSelectorShortcutKey,
+  verifyComposerStateContrast,
   reviewPanelNeedsWarmRetry,
   verifyReviewPanelRender,
   verifySidebarBlurCommandPalette,
