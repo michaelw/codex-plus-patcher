@@ -2794,6 +2794,16 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
   return filePath;
 }
 
+function parseComputedCssAlpha(value) {
+  const text = String(value || "").trim();
+  const alphaMatch = text.match(/\/\s*([0-9]*\.?[0-9]+%?)\s*\)$/)
+    || text.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([0-9]*\.?[0-9]+%?)\s*\)$/i);
+  if (!alphaMatch) return 1;
+  const alpha = Number.parseFloat(alphaMatch[1]);
+  if (!Number.isFinite(alpha)) return 1;
+  return Math.max(0, Math.min(1, alphaMatch[1].endsWith("%") ? alpha / 100 : alpha));
+}
+
 async function captureNewChatComposerProof(cdp, {
   artifactDir,
   codexVersion,
@@ -2938,6 +2948,7 @@ async function captureNewChatComposerProof(cdp, {
     throw new Error(`New Chat project target was not visible: ${JSON.stringify({ label, retry, visibleChoices })}`);
   };
   const readState = () => cdp.evaluate(`(() => {
+    const parseComputedCssAlpha = ${parseComputedCssAlpha.toString()};
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
       const style = element ? getComputedStyle(element) : null;
@@ -3020,7 +3031,7 @@ async function captureNewChatComposerProof(cdp, {
       const foregroundColor = rgb(colorValue);
       const backgroundColor = rgb(surfaceBackground);
       if (!foregroundColor || !backgroundColor) return null;
-      const colorAlpha = Number(String(colorValue).match(/rgba?\([^)]*[,/]\s*([0-9.]+)\s*\)$/)?.[1] || 1);
+      const colorAlpha = parseComputedCssAlpha(colorValue);
       const alpha = Math.max(0, Math.min(1, colorAlpha * Number(style.opacity || 1)));
       return "rgb(" + foregroundColor.map((channel, index) => Math.round(channel * alpha + backgroundColor[index] * (1 - alpha))).join(", ") + ")";
     };
@@ -7405,6 +7416,7 @@ module.exports = {
   listRunningAuditApps,
   listCrashpadPendingDumps,
   mergeFocusedPluginAudit,
+  parseComputedCssAlpha,
   parseArgs,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,

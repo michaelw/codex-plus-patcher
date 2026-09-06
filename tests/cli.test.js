@@ -50,6 +50,7 @@ const {
   listCrashpadPendingDumps,
   listRunningAuditApps,
   mergeFocusedPluginAudit,
+  parseComputedCssAlpha,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
   reconcileNestedReviewProof,
@@ -67,6 +68,14 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("computed CSS alpha parsing preserves transparent and percentage colors", () => {
+  assert.equal(parseComputedCssAlpha("rgb(0, 0, 0)"), 1);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0)"), 0);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0.25)"), 0.25);
+  assert.equal(parseComputedCssAlpha("rgb(0 0 0 / 40%)"), 0.4);
+  assert.equal(parseComputedCssAlpha("color(srgb 0 0 0 / 75%)"), 0.75);
+});
 
 test("New Chat proof audits the real editor placeholder in every captured state", () => {
   const source = String(captureNewChatComposerProof);
