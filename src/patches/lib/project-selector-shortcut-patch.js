@@ -4,6 +4,20 @@ const { patchSetUsesTransformVariant: patchSetOwnsTransformVariant } = require("
 const { projectSelectorSearchHook, projectSelectorTriggerHook } = require("./hooks/project-selector");
 
 function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.901.20858")) {
+    let patched = replaceOnce(text, "function nSr(e){let t=(0,oSr.c)(101),", `${projectSelectorSearchHook()}${projectSelectorTriggerHook("sSr")}function nSr(e){let t=(0,oSr.c)(101),`, "26.901.20858 project selector adapter insertion anchor");
+    patched = replaceOnce(patched, 'M=(0,m8.jsx)(Bxr,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,', 'M=(0,m8.jsx)(Bxr,{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-composer-navigation-target":`workspace-project`,', "26.901.20858 project selector visible trigger marker anchor");
+    patched = replaceOnce(patched, "function qxr(e){let t=(0,Jxr.c)(28),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l}=e,", "function qxr(e){let t=(0,Jxr.c)(28),{children:n,emptyMessage:r,footerItems:i,hasProjectItems:a,projectItems:o,searchQuery:s,status:c,onSearchQueryChange:l,onSearchKeyDown:CPXKD}=e,", "26.901.20858 project selector search key handler prop anchor");
+    patched = replaceOnce(patched, "onKeyDown:p,onValueChange:l", "onKeyDown:e=>{p(e),CPXKD?.(e)},onValueChange:l", "26.901.20858 project selector search key handler mount anchor");
+    patched = replaceOnce(patched, "children:(0,g8.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,g8.jsx)(`span`,{className:`truncate`,children:e.label}),i?.(e)]})", "children:(0,g8.jsxs)(`div`,{className:`flex min-w-0 items-center gap-1`,children:[(0,g8.jsx)(`span`,{className:`truncate`,children:CPXP.fuzzyHighlight(e.label,e.__codexPlusQuery,g8.jsx)}),i?.(e)]})", "26.901.20858 project selector fuzzy highlight anchor");
+    patched = replaceOnce(patched, "o=s==null?void 0:Xxr(s.projects,k,aSr)", "o=s==null?void 0:CPXP.fuzzyFilter(s.projects,k)", "26.901.20858 project selector fuzzy filter anchor");
+    patched = replaceOnce(patched, "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:t},e.gizmo.id)}),", "onSelect:()=>{E.current=!0,v(e.gizmo.id,t),N(!1)},children:CPXP.fuzzyHighlight(t,k,_8.jsx)},e.gizmo.id)}),", "26.901.20858 cloud project selector fuzzy highlight anchor");
+    patched = replaceOnce(patched, "ue=s==null?null:(0,_8.jsx)($xr,{groups:d??[],selectedProjectIds:c==null?[]:[c],getProjectDetails:rSr,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})", "ue=s==null?null:(0,_8.jsx)($xr,{groups:(d??[]).map(e=>({...e,__codexPlusQuery:k})),selectedProjectIds:c==null?[]:[c],getProjectDetails:rSr,onSelectProject:e=>{E.current=!0,s.onSelectProject(e),N(!1)}})", "26.901.20858 project selector highlight query mount anchor");
+    patched = replaceOnce(patched, "W=(0,_8.jsx)(qxr,{searchQuery:k,onSearchQueryChange:A,hasProjectItems:(d?.length??0)+f.length>0,", "W=(0,_8.jsx)(qxr,{searchQuery:k,onSearchQueryChange:A,onSearchKeyDown:e=>CPXP.acceptFirst(e,d,e=>{let t=s?.projects.find(t=>t.projectId===e);t&&(E.current=!0,s.onSelectProject(t),N(!1))},k),hasProjectItems:(d?.length??0)+f.length>0,", "26.901.20858 project selector accept first anchor");
+    patched = replaceOnce(patched, "let N=M,P;t[2]===Symbol.for(`react.memo_cache_sentinel`)", "let N=M,CPXOH=CPXP.setOpenHandler(w,()=>{N(!0);return!0}),P;t[2]===Symbol.for(`react.memo_cache_sentinel`)", "26.901.20858 project selector controlled open handler anchor");
+    patched = replaceOnce(patched, "triggerButton:m,onOpenChange:N,children:W", "triggerButton:CPXPST(m,w),onOpenChange:N,children:W", "26.901.20858 project selector hero trigger anchor");
+    return replaceOnce(patched, "V=Wxr,K=", "V=e=>CPXPST((0,_8.jsx)(Wxr,e),w),K=", "26.901.20858 project selector default trigger anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.901.22334")) {
     let patched = replaceOnce(text, "function DSr(e){let t=(0,jSr.c)(101),", `${projectSelectorSearchHook()}${projectSelectorTriggerHook("MSr")}function DSr(e){let t=(0,jSr.c)(101),`, "26.901.22334 project selector adapter insertion anchor");
     patched = replaceOnce(patched, 'M=(0,p8.jsx)(dSr,{"aria-label":n,"data-composer-navigation-target":`workspace-project`,', 'M=(0,p8.jsx)(dSr,{"aria-label":n,"data-codex-plus-project-selector-trigger":!0,"data-composer-navigation-target":`workspace-project`,', "26.901.22334 project selector visible trigger marker anchor");
@@ -1225,6 +1239,17 @@ function patchLocalActiveWorkspaceRootDropdownProjectSelectorShortcut(text, cont
 }
 
 function patchHomeProjectDropdownProjectSelectorShortcut(text, context = {}) {
+  if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.901.20858")) {
+    let patched = replaceOnce(text, "v=Xxr(r,g,k1r)", "v=(CPXP.setProjects(r),CPXP.fuzzyFilter(r,g))", "26.901.20858 home project selector fuzzy filter anchor");
+    patched = replaceOnce(patched, "T=(0,U9.jsx)($xr,{groups:y,selectedProjectIds:i,getProjectDetails:O1r,getProjectTooltipText:C,onSelectProject:w})", "T=(0,U9.jsx)($xr,{groups:y.map(e=>({...e,__codexPlusQuery:g})),selectedProjectIds:i,getProjectDetails:O1r,getProjectTooltipText:C,onSelectProject:w})", "26.901.20858 home project selector highlight query anchor");
+    patched = replaceOnce(patched, "D=(0,U9.jsx)(qxr,{searchQuery:g,onSearchQueryChange:_,hasProjectItems:S,", "D=(0,U9.jsx)(qxr,{searchQuery:g,onSearchQueryChange:_,onSearchKeyDown:e=>CPXP.acceptFirst(e,y,t=>w(t),g),hasProjectItems:S,", "26.901.20858 home project selector accept first anchor");
+    patched = replaceOnce(patched, "let fe=de,pe=h&&y===`home`&&k.length===0&&!A;", "let fe=de,CPXOH=CPXP.setOpenHandler(y,()=>{fe(!0);return!0}),CPXWxr=e=>CPXPST((0,W9.jsx)(Wxr,e),y),pe=h&&y===`home`&&k.length===0&&!A;", "26.901.20858 home project selector controlled open handler anchor");
+    patched = replaceOnce(patched, "q=e=>{oO(b,Rre,{});let t=k.find(t=>t.projectId===e);if(t!=null){if(c!=null){c(t.projectId);return}Cx(b,t)}}", "q=e=>{oO(b,Rre,{});let t=k.find(t=>t.projectId===e);if(t!=null){window.CodexPlusHost.adapters.messageComposer.setComposerProject(t);if(c!=null){c(t.projectId);return}Cx(b,t)}}", "26.901.20858 controlled composer project selection bridge anchor");
+    patched = replaceOnce(patched, "ae=()=>{if(oO(b,Rre,{}),c!=null){c(null);return}Cx(b,null)}", "ae=()=>{if(oO(b,Rre,{}),window.CodexPlusHost.adapters.messageComposer.setComposerProject(null),c!=null){c(null);return}Cx(b,null)}", "26.901.20858 controlled composer project clear bridge anchor");
+    patched = replaceOnce(patched, "i=(0,W9.jsx)(Wxr,{\"aria-label\":Te,contentWidth:`menu`,", "i=(0,W9.jsx)(CPXWxr,{\"aria-label\":Te,contentWidth:`menu`,", "26.901.20858 home project selector empty trigger anchor");
+    patched = replaceOnce(patched, "i=(0,W9.jsx)(Wxr,{\"aria-label\":Te,disabled:_,", "i=(0,W9.jsx)(CPXWxr,{\"aria-label\":Te,disabled:_,", "26.901.20858 home project selector direct trigger anchor");
+    return replaceOnce(patched, "triggerButton:Ye,contentWidth:`workspace`", "triggerButton:CPXPST(Ye,y),contentWidth:`workspace`", "26.901.20858 home project selector dropdown trigger anchor");
+  }
   if (patchSetOwnsTransformVariant(context.patchSetId, "chatgpt-26.901.22334")) {
     let patched = text;
     patched = replaceOnce(patched, "v=xSr(r,g,Z1r)", "v=CPXP.fuzzyFilter(r,g)", "26.901.22334 home project selector fuzzy filter anchor");

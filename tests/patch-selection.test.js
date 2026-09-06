@@ -306,6 +306,7 @@ test("newest supported ChatGPT source identity is registered first while Codex r
     ["26.901.41123", "7942", "959726c107e11691044b60445e34e1a5c732d89320b0bee22cf1a3b13da00cd1"],
     ["26.901.31953", "7868", "4b385ffce845bb319a1769a3cb59751e1a8f157bab79f5018ba51d83f9e6df4e"],
     ["26.901.22334", "7746", "405f0e1600fc63851abe4c763ec0546f56c32da312c2c2745e2b997c579ce0d0"],
+    ["26.901.20858", "7658", "3dee62fa9bfabc58d1c96d9de1b04ab2a09597e78b9f39f14403e26d627f8b73"],
     ["26.825.41651", "7345", "c089b63abb7ca4a751072c0da434248db13c32bed9c363e1b7e5428584b0576d"],
     ["26.825.32147", "7303", "0462b03e878f0e78b223b849ee14cbba0de043f2c16acebee163cb95daa622ef"],
     ["26.825.31414", "7287", "8dc2bc705d5ba49f0e427b21c14b6549c29fcd3ef540e75d6dad386d78f2d255"],
@@ -381,6 +382,14 @@ test("newest supported ChatGPT source identity is registered first while Codex r
 });
 
 test("new cached ChatGPT sources own exact transform variants", () => {
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.901.20858-7658", "chatgpt-26.901.22334"),
+    true,
+  );
+  assert.equal(
+    patchSetOwnsTransformVariant("chatgpt-26.901.20858-7658", "chatgpt-26.901.20858"),
+    true,
+  );
   assert.equal(
     patchSetOwnsTransformVariant("chatgpt-26.901.22334-7746", "chatgpt-26.901.22334"),
     true,
@@ -485,6 +494,25 @@ test("26.901.22334 review mux receives its local rich-diff dependencies", () => 
   assert.match(transformed, /mainReviewContent:\(0,\$\.jsx\)\(vo/);
 });
 
+test("26.901.20858 review mux receives its local rich-diff dependencies", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.20858-7658");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchThreadSidePanelTabs",
+  )?.[1];
+  const source = [
+    "function Ms(e){let t=(0,Rs.c)(16),{expandedActionsPortalTarget:n,setTabState:r,tabState:i}=e",
+    "c=(0,$.jsx)(tr,{children:(0,$.jsx)(_o,{diffMode:a,setTabState:r,tabState:i})}),t[2]=a,t[3]=r,t[4]=i,t[5]=c):c=t[5];",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(
+    transformed,
+    /renderBodyFromHost\(e,\[\$,gs,null,null,null,null,null,null,null,null,null,_o,null,null,null,null,null,Or,o,u,Ur\]\)/,
+  );
+  assert.match(transformed, /mainReviewContent:\(0,\$\.jsx\)\(_o/);
+});
+
 test("26.901.22334 composer surface hook binds the React namespace, not the motion namespace", () => {
   const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.22334-7746");
   const transform = collectFileTransforms(patchSet).find(
@@ -500,6 +528,23 @@ test("26.901.22334 composer surface hook binds the React namespace, not the moti
   const transformed = transform(source, { patchSetId: patchSet.id });
   assert.match(transformed, /CPXComposerContext\?\?=qV\.createContext/);
   assert.doesNotMatch(transformed, /CPXComposerContext\?\?=_a\.createContext/);
+});
+
+test("26.901.20858 composer surface hook binds the React namespace, not the motion namespace", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.20858-7658");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerBubbleColors",
+  )?.[1];
+  const source = [
+    "function m1t(e){let t=(0,JV.c)(24),{children:n,className:r,animateRadius:i,utilityBarVariant:a,inert:o,isDragActive:s,layout:c,radiusVariant:l,surfaceOverflow:u,surfaceVariant:d,onDragEnter:f,onDragLeave:p,onDragOver:m,onDrop:h}=e,",
+    'M=(0,XV.jsx)(vi.div,{className:k,inert:o,"data-composer-dark":A,"data-composer-drag-active":j,',
+    'Xt=(0,R9.jsxs)(`div`,{className:Pt,"data-codex-composer-root":``,"data-composer-placement":ue.kind,children:[It,Yt]})',
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /CPXComposerContext\?\?=YV\.createContext/);
+  assert.doesNotMatch(transformed, /CPXComposerContext\?\?=vi\.createContext/);
 });
 
 test("26.901.22334 native file opener falls back to the current local execution host", () => {
@@ -518,8 +563,31 @@ test("26.901.22334 native file opener falls back to the current local execution 
   assert.match(transformed, /hostId:t\.hostId\|\|globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\?\.hostId\|\|Sr\|\|`local`/);
 });
 
+test("26.901.20858 native file opener falls back to the current local execution host", () => {
+  const patchSet = patchSets.find((candidate) => candidate.id === "chatgpt-26.901.20858-7658");
+  const transform = collectFileTransforms(patchSet).find(
+    ([, candidate]) => candidate.name === "patchComposerProjectColors",
+  )?.[1];
+  const source = [
+    "re=(0,r8.jsx)(_br,{ref:n,...h,composerLayoutMode:K,conversationId:i,",
+    "currentLocalExecutionHostId:Er,",
+    "Uo=(e,t)=>{let n=e.fsPath||e.path;",
+  ].join("");
+
+  assert.equal(typeof transform, "function");
+  const transformed = transform(source, { patchSetId: patchSet.id });
+  assert.match(transformed, /hostId:t\.hostId\|\|globalThis\.CodexPlusHost\.adapters\.context\.active\(\)\?\.hostId\|\|Er\|\|`local`/);
+});
+
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.901.20858-7658", [
+      ".vite/build/main-b_QrpbvH.js",
+      ".vite/build/src-BXVxNf6C.js",
+      "webview/assets/app-initial-7a6c8787453d.js",
+      "webview/assets/terminal-panel-9c9480e22b47.js",
+      "webview/assets/mermaid-diagram-3cf52bdd21df.js",
+    ]],
     ["chatgpt-26.901.22334-7746", [
       ".vite/build/main-7G1VcsUF.js",
       ".vite/build/src-BXVxNf6C.js",
@@ -8173,6 +8241,23 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     [121, 255, 121, 1],
   );
   assert.equal(typeof bubbleColors.applyComposerContrast, "function");
+  const composerRect = { left: 0, top: 0, width: 760, height: 128 };
+  const goalStatusRect = { left: 16, top: 8, width: 728, height: 34 };
+  const insetElement = {
+    getBoundingClientRect: () => goalStatusRect,
+    matches: () => false,
+  };
+  const composerSurface = { getBoundingClientRect: () => composerRect };
+  const insetStyle = {
+    backgroundColor: "rgba(0, 0, 0, 0)",
+    backgroundImage: "linear-gradient(rgb(31, 41, 55), rgb(17, 24, 39))",
+    boxShadow: "none",
+    borderTopLeftRadius: "16px",
+    borderTopRightRadius: "16px",
+    borderBottomRightRadius: "16px",
+    borderBottomLeftRadius: "16px",
+  };
+  assert.equal(bubbleColors.isComposerInsetSurface(insetElement, composerSurface, insetStyle), true);
   assert.equal(typeof bubbleColors.composerBackground, "function");
   const bubbleColorsSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
   assert.match(bubbleColorsSource, /setProperty\?\.\("color", nextForeground, "important"\)/);

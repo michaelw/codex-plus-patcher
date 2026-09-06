@@ -179,9 +179,12 @@
     const rect = element.getBoundingClientRect?.();
     if (!surfaceRect || !rect || surfaceRect.width <= 0 || surfaceRect.height <= 0 || rect.width <= 0 || rect.height <= 0) return false;
     const background = parseCssColor(style.backgroundColor);
+    const hasPaint = background?.[3] >= 0.95 ||
+      (style.backgroundImage && style.backgroundImage !== "none") ||
+      (style.boxShadow && style.boxShadow !== "none");
     const radius = Math.max(...[style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius]
       .map((value) => Number.parseFloat(value) || 0));
-    return background?.[3] >= 0.95 &&
+    return hasPaint &&
       radius > 0 &&
       rect.width / surfaceRect.width >= 0.85 &&
       rect.height / surfaceRect.height <= 0.55 &&
@@ -189,7 +192,7 @@
   }
 
   function flattenComposerInsetSurface(element) {
-    insetSurfaceOriginals.set(element, ["background-color", "background-image", "box-shadow", "border-radius"].map((property) => [
+    insetSurfaceOriginals.set(element, ["background-color", "background-image", "box-shadow", "border-color", "border-radius"].map((property) => [
       property,
       element.style?.getPropertyValue?.(property) || "",
       element.style?.getPropertyPriority?.(property) || "",
@@ -198,6 +201,7 @@
     element.style?.setProperty?.("background-color", "transparent", "important");
     element.style?.setProperty?.("background-image", "none", "important");
     element.style?.setProperty?.("box-shadow", "none", "important");
+    element.style?.setProperty?.("border-color", "transparent", "important");
     element.style?.setProperty?.("border-radius", "0", "important");
   }
 
@@ -317,6 +321,7 @@
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble]:not(:has([data-user-message-bubble])),:root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble],:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry]:not(:has([data-codex-plus-user-bubble])){background-color:var(--codex-plus-user-bubble-light-bg);color:var(--codex-plus-user-bubble-light-fg)}' +
         '[data-codex-plus-user-entry] .composer-surface-chrome{background-color:transparent!important;background-image:none!important}' +
         '[data-codex-plus-user-entry] [data-composer-layout]{background-color:transparent!important;background-image:none!important}' +
+        '[data-codex-plus-composer-inset-surface]::before,[data-codex-plus-composer-inset-surface]::after{background-color:transparent!important;background-image:none!important;box-shadow:none!important;border-color:transparent!important;border-radius:0!important}' +
         '[data-codex-plus-user-entry]:has([data-codex-plus-user-bubble]){background-color:transparent!important;box-shadow:none!important}' +
         '[data-codex-plus-user-bubble]:has([data-user-message-bubble]){background-color:transparent!important;box-shadow:none!important;border-left:0!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,[data-codex-plus-rich-content],[data-codex-plus-rich-content] *){color:var(--codex-plus-user-bubble-light-fg)!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
@@ -385,6 +390,7 @@
         controlTextColor,
         eventName: EVENT,
         isColor,
+        isComposerInsetSurface,
         isStoredColor,
         readColors,
         renderColorRow,
