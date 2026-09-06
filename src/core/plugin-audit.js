@@ -3010,6 +3010,37 @@ async function captureNewChatComposerProof(cdp, {
       const channel = (value) => { const normalized = value / 255; return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4); };
       return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
     };
+    const contrast = (foreground, background) => {
+      const fg = luminance(rgb(foreground));
+      const bg = luminance(rgb(background));
+      return fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    };
+    const effectiveTextColor = (style) => {
+      const colorValue = style.webkitTextFillColor && style.webkitTextFillColor !== "transparent" ? style.webkitTextFillColor : style.color;
+      const foregroundColor = rgb(colorValue);
+      const backgroundColor = rgb(surfaceBackground);
+      if (!foregroundColor || !backgroundColor) return null;
+      const colorAlpha = Number(String(colorValue).match(/rgba?\([^)]*[,/]\s*([0-9.]+)\s*\)$/)?.[1] || 1);
+      const alpha = Math.max(0, Math.min(1, colorAlpha * Number(style.opacity || 1)));
+      return "rgb(" + foregroundColor.map((channel, index) => Math.round(channel * alpha + backgroundColor[index] * (1 - alpha))).join(", ") + ")";
+    };
+    const placeholderReadings = [];
+    for (const element of Array.from(surface?.querySelectorAll?.("*") || []).filter(visible)) {
+      for (const pseudo of ["::before", "::after"]) {
+        if (String(element.textContent || "").trim()) continue;
+        const style = getComputedStyle(element, pseudo);
+        const content = String(style.content || "").replace(/^['"]|['"]$/g, "");
+        if (!content || content === "none" || content === "normal") continue;
+        const effectiveColor = effectiveTextColor(style);
+        placeholderReadings.push({ pseudo, content, color: style.color, textFillColor: style.webkitTextFillColor || null, opacity: style.opacity, effectiveColor, contrast: contrast(effectiveColor, surfaceBackground) });
+      }
+      if (/^(INPUT|TEXTAREA)$/.test(element.tagName) && element.getAttribute("placeholder") && !element.value) {
+        const style = getComputedStyle(element, "::placeholder");
+        const effectiveColor = effectiveTextColor(style);
+        placeholderReadings.push({ pseudo: "::placeholder", content: element.getAttribute("placeholder"), color: style.color, textFillColor: style.webkitTextFillColor || null, opacity: style.opacity, effectiveColor, contrast: contrast(effectiveColor, surfaceBackground) });
+      }
+    }
+    const placeholderContrast = placeholderReadings.length > 0 ? Math.min(...placeholderReadings.map((reading) => reading.contrast ?? 0)) : null;
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
     const fg = luminance(rgb(foreground));
     const bg = luminance(rgb(controlStyle?.backgroundColor));
@@ -3038,6 +3069,8 @@ async function captureNewChatComposerProof(cdp, {
       codeControlBackground: controlStyle?.backgroundColor || "",
       submitBackground: submitStyle?.backgroundColor || "",
       codeControlContrast: fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+      placeholderReadings,
+      placeholderContrast,
       bridgeProject: composerScope.project || null,
       bridgeNewChat: composerScope.newChat === true,
       bridgeProjectCalls: globalThis.__codexPlusComposerProjectCalls || [],
@@ -3056,6 +3089,11 @@ async function captureNewChatComposerProof(cdp, {
   };
   const hasRoundedCorners = (status) => Object.values(status.borderRadii)
     .every((value) => Number.parseFloat(value) > 0);
+  const assertPlaceholderContrast = (status, label) => {
+    if (status.placeholderContrast == null || status.placeholderContrast < 4.5) {
+      throw new Error(`New Chat composer placeholder is unreadable in ${label}: ${JSON.stringify(status)}`);
+    }
+  };
   await click(await pointFor("projectless-row"));
   await wait(250);
   await click(await pointFor("new-chat"));
@@ -3086,6 +3124,7 @@ async function captureNewChatComposerProof(cdp, {
   if (!hasRoundedCorners(neutral)) {
     throw new Error(`New Chat composer does not preserve rounded upstream corners: ${JSON.stringify(neutral)}`);
   }
+  assertPlaceholderContrast(neutral, "no-project state");
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
   };
@@ -3115,6 +3154,7 @@ async function captureNewChatComposerProof(cdp, {
         throw new Error(`Timed out waiting for requested New Chat project state: ${JSON.stringify({ target, previous, observed })}`);
       }
     }
+    assertPlaceholderContrast(status, `project state ${target.label}`);
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
     }

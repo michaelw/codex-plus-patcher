@@ -68,6 +68,15 @@ const {
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
 
+test("New Chat proof audits the real editor placeholder in every captured state", () => {
+  const source = String(captureNewChatComposerProof);
+  assert.match(source, /placeholderContrast/);
+  assert.match(source, /::placeholder/);
+  assert.match(source, /surface\?\.querySelectorAll/);
+  assert.match(source, /assertPlaceholderContrast\(neutral/);
+  assert.match(source, /assertPlaceholderContrast\(status/);
+});
+
 test("fixture activation keeps retrying trusted input until the header contract is ready", async () => {
   const sent = [];
   const activeStates = [

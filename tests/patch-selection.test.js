@@ -8275,6 +8275,14 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   assert.match(bubbleColorsSource, /element\.matches\?\.\("button,\[role='button'\]"\)/);
   assert.match(bubbleColorsSource, /\[class\*="h-token-button-composer"\].*--codex-plus-user-bubble-light-fg/);
   assert.match(bubbleColorsSource, /\[class\*="h-token-button-composer"\].*--codex-plus-user-bubble-dark-fg/);
+  assert.match(
+    bubbleColorsSource,
+    /::placeholder\{color:var\(--codex-plus-user-bubble-light-fg\)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important\}/,
+  );
+  assert.match(
+    bubbleColorsSource,
+    /::placeholder\{color:var\(--codex-plus-user-bubble-dark-fg\)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important\}/,
+  );
   const setVarsSource = bubbleColorsSource.slice(
     bubbleColorsSource.indexOf("  function setVars()"),
     bubbleColorsSource.indexOf("  function renderColorRow"),
