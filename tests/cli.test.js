@@ -50,6 +50,7 @@ const {
   listCrashpadPendingDumps,
   listRunningAuditApps,
   mergeFocusedPluginAudit,
+  parseComputedCssAlpha,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
   reconcileNestedReviewProof,
@@ -67,6 +68,23 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("computed CSS alpha parsing preserves transparent and percentage colors", () => {
+  assert.equal(parseComputedCssAlpha("rgb(0, 0, 0)"), 1);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0)"), 0);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0.25)"), 0.25);
+  assert.equal(parseComputedCssAlpha("rgb(0 0 0 / 40%)"), 0.4);
+  assert.equal(parseComputedCssAlpha("color(srgb 0 0 0 / 75%)"), 0.75);
+});
+
+test("New Chat proof audits the real editor placeholder in every captured state", () => {
+  const source = String(captureNewChatComposerProof);
+  assert.match(source, /placeholderContrast/);
+  assert.match(source, /::placeholder/);
+  assert.match(source, /surface\?\.querySelectorAll/);
+  assert.match(source, /assertPlaceholderContrast\(neutral/);
+  assert.match(source, /assertPlaceholderContrast\(status/);
+});
 
 test("fixture activation keeps retrying trusted input until the header contract is ready", async () => {
   const sent = [];
@@ -679,9 +697,10 @@ test("live terminal Unicode audit asserts CSI 6n coordinates and captures the te
   const evaluations = [
     { terminalVisible: false, toggle: { x: 100, y: 20 } },
     { x: 400, y: 500 },
-    true,
     { x: 400, y: 500 },
     true,
+    [],
+    ["$"],
     {
       rows: ["🍎📦", "CPX_UNICODE11_DSR row=7 col=5"],
       cursor: { row: 7, column: 5 },
@@ -718,9 +737,51 @@ test("live terminal Unicode audit asserts CSI 6n coordinates and captures the te
     assert.equal(fs.existsSync(result.screenshot), true);
     assert.match(calls.find((call) => call.method === "Input.insertText").params.text, /🍎📦.*\\e\[6n/);
     assert.equal(calls.filter((call) => call.method === "Input.dispatchMouseEvent").length, 9);
+    const enterKeyDowns = calls.filter((call) =>
+      call.method === "Input.dispatchKeyEvent" && call.params.type === "keyDown" && call.params.key === "Enter"
+    );
+    assert.equal(enterKeyDowns.length, 2);
+    assert.ok(
+      calls.indexOf(enterKeyDowns[0]) < calls.findIndex((call) => call.method === "Input.insertText"),
+      "terminal wake-up Enter should precede cursor-position input",
+    );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("live terminal Unicode audit probes a focused terminal whose prompt stays visually blank", async () => {
+  const evaluations = [
+    { terminalVisible: true },
+    { x: 400, y: 500 },
+    true,
+  ];
+  const calls = [];
+  const cdp = {
+    async evaluate(source) {
+      if (evaluations.length > 0) return evaluations.shift();
+      if (source.includes("const marker")) {
+        return {
+          rows: ["🍎📦", "CPX_UNICODE11_DSR row=7 col=5"],
+          cursor: { row: 7, column: 5 },
+        };
+      }
+      return [];
+    },
+    async send(method, params) {
+      calls.push({ method, params });
+      return {};
+    },
+  };
+
+  const result = await verifyTerminalUnicodeCursor(cdp, {
+    wait() {},
+    timeoutMs: 2,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.column, 5);
+  assert.equal(calls.filter((call) => call.method === "Input.insertText").length, 1);
 });
 
 test("empty invocation shows help", () => {

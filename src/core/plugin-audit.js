@@ -2794,6 +2794,16 @@ async function capturePng(cdp, filePath, { fsImpl = fs } = {}) {
   return filePath;
 }
 
+function parseComputedCssAlpha(value) {
+  const text = String(value || "").trim();
+  const alphaMatch = text.match(/\/\s*([0-9]*\.?[0-9]+%?)\s*\)$/)
+    || text.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([0-9]*\.?[0-9]+%?)\s*\)$/i);
+  if (!alphaMatch) return 1;
+  const alpha = Number.parseFloat(alphaMatch[1]);
+  if (!Number.isFinite(alpha)) return 1;
+  return Math.max(0, Math.min(1, alphaMatch[1].endsWith("%") ? alpha / 100 : alpha));
+}
+
 async function captureNewChatComposerProof(cdp, {
   artifactDir,
   codexVersion,
@@ -2938,6 +2948,7 @@ async function captureNewChatComposerProof(cdp, {
     throw new Error(`New Chat project target was not visible: ${JSON.stringify({ label, retry, visibleChoices })}`);
   };
   const readState = () => cdp.evaluate(`(() => {
+    const parseComputedCssAlpha = ${parseComputedCssAlpha.toString()};
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
       const style = element ? getComputedStyle(element) : null;
@@ -3010,6 +3021,37 @@ async function captureNewChatComposerProof(cdp, {
       const channel = (value) => { const normalized = value / 255; return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4); };
       return 0.2126 * channel(color[0]) + 0.7152 * channel(color[1]) + 0.0722 * channel(color[2]);
     };
+    const contrast = (foreground, background) => {
+      const fg = luminance(rgb(foreground));
+      const bg = luminance(rgb(background));
+      return fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    };
+    const effectiveTextColor = (style) => {
+      const colorValue = style.webkitTextFillColor && style.webkitTextFillColor !== "transparent" ? style.webkitTextFillColor : style.color;
+      const foregroundColor = rgb(colorValue);
+      const backgroundColor = rgb(surfaceBackground);
+      if (!foregroundColor || !backgroundColor) return null;
+      const colorAlpha = parseComputedCssAlpha(colorValue);
+      const alpha = Math.max(0, Math.min(1, colorAlpha * Number(style.opacity || 1)));
+      return "rgb(" + foregroundColor.map((channel, index) => Math.round(channel * alpha + backgroundColor[index] * (1 - alpha))).join(", ") + ")";
+    };
+    const placeholderReadings = [];
+    for (const element of Array.from(surface?.querySelectorAll?.("*") || []).filter(visible)) {
+      for (const pseudo of ["::before", "::after"]) {
+        if (String(element.textContent || "").trim()) continue;
+        const style = getComputedStyle(element, pseudo);
+        const content = String(style.content || "").replace(/^['"]|['"]$/g, "");
+        if (!content || content === "none" || content === "normal") continue;
+        const effectiveColor = effectiveTextColor(style);
+        placeholderReadings.push({ pseudo, content, color: style.color, textFillColor: style.webkitTextFillColor || null, opacity: style.opacity, effectiveColor, contrast: contrast(effectiveColor, surfaceBackground) });
+      }
+      if (/^(INPUT|TEXTAREA)$/.test(element.tagName) && element.getAttribute("placeholder") && !element.value) {
+        const style = getComputedStyle(element, "::placeholder");
+        const effectiveColor = effectiveTextColor(style);
+        placeholderReadings.push({ pseudo: "::placeholder", content: element.getAttribute("placeholder"), color: style.color, textFillColor: style.webkitTextFillColor || null, opacity: style.opacity, effectiveColor, contrast: contrast(effectiveColor, surfaceBackground) });
+      }
+    }
+    const placeholderContrast = placeholderReadings.length > 0 ? Math.min(...placeholderReadings.map((reading) => reading.contrast ?? 0)) : null;
     const foreground = textStyle?.webkitTextFillColor && textStyle.webkitTextFillColor !== "transparent" ? textStyle.webkitTextFillColor : textStyle?.color;
     const fg = luminance(rgb(foreground));
     const bg = luminance(rgb(controlStyle?.backgroundColor));
@@ -3038,6 +3080,8 @@ async function captureNewChatComposerProof(cdp, {
       codeControlBackground: controlStyle?.backgroundColor || "",
       submitBackground: submitStyle?.backgroundColor || "",
       codeControlContrast: fg == null || bg == null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+      placeholderReadings,
+      placeholderContrast,
       bridgeProject: composerScope.project || null,
       bridgeNewChat: composerScope.newChat === true,
       bridgeProjectCalls: globalThis.__codexPlusComposerProjectCalls || [],
@@ -3056,6 +3100,11 @@ async function captureNewChatComposerProof(cdp, {
   };
   const hasRoundedCorners = (status) => Object.values(status.borderRadii)
     .every((value) => Number.parseFloat(value) > 0);
+  const assertPlaceholderContrast = (status, label) => {
+    if (status.placeholderContrast == null || status.placeholderContrast < 4.5) {
+      throw new Error(`New Chat composer placeholder is unreadable in ${label}: ${JSON.stringify(status)}`);
+    }
+  };
   await click(await pointFor("projectless-row"));
   await wait(250);
   await click(await pointFor("new-chat"));
@@ -3086,6 +3135,7 @@ async function captureNewChatComposerProof(cdp, {
   if (!hasRoundedCorners(neutral)) {
     throw new Error(`New Chat composer does not preserve rounded upstream corners: ${JSON.stringify(neutral)}`);
   }
+  assertPlaceholderContrast(neutral, "no-project state");
   const screenshots = {
     noProject: await capturePng(cdp, path.join(artifactDir, "new-chat-no-project.png"), { fsImpl }),
   };
@@ -3115,6 +3165,7 @@ async function captureNewChatComposerProof(cdp, {
         throw new Error(`Timed out waiting for requested New Chat project state: ${JSON.stringify({ target, previous, observed })}`);
       }
     }
+    assertPlaceholderContrast(status, `project state ${target.label}`);
     if (status.occludingDescendants.length > 0) {
       throw new Error(`New Chat composer color is covered by a differently colored child surface: ${JSON.stringify(status)}`);
     }
@@ -3152,6 +3203,14 @@ async function verifyTerminalUnicodeCursor(cdp, {
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
   };
+  const fail = async (message, details = {}) => ({
+    ok: false,
+    message,
+    ...details,
+    screenshot: artifactDir
+      ? await capturePng(cdp, path.join(artifactDir, "terminal-unicode11-failure.png"), { fsImpl })
+      : null,
+  });
   const panelState = await cdp.evaluate(`(() => {
     const visible = (element) => {
       const rect = element?.getBoundingClientRect?.();
@@ -3187,18 +3246,7 @@ async function verifyTerminalUnicodeCursor(cdp, {
       })()`);
       if (!terminalPoint) await wait(100);
     }
-    if (!terminalPoint) return { ok: false, message: "Terminal input did not mount" };
-
-    const promptDeadline = Date.now() + timeoutMs;
-    let promptReady = false;
-    while (!promptReady && Date.now() < promptDeadline) {
-      promptReady = await cdp.evaluate(`(() =>
-        Array.from(document.querySelectorAll(".xterm-rows > div"))
-          .some((row) => String(row.textContent || "").trim().length > 0)
-      )()`);
-      if (!promptReady) await wait(100);
-    }
-    if (!promptReady) return { ok: false, message: "Terminal prompt did not become ready" };
+    if (!terminalPoint) return fail("Terminal input did not mount");
 
     await cdp.send("Page.bringToFront");
     await wait(100);
@@ -3209,11 +3257,28 @@ async function verifyTerminalUnicodeCursor(cdp, {
         ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
         : null;
     })()`);
-    if (!terminalPoint) return { ok: false, message: "Terminal disappeared before cursor-position input" };
+    if (!terminalPoint) return fail("Terminal disappeared before prompt wake-up");
     await click(terminalPoint);
     await wait(100);
     const focused = await cdp.evaluate(`document.activeElement?.matches?.("textarea[aria-label='Terminal input']") === true`);
-    if (!focused) return { ok: false, message: "Trusted terminal click did not focus its input" };
+    if (!focused) return fail("Trusted terminal click did not focus its input");
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 });
+
+    const promptDeadline = Date.now() + timeoutMs;
+    let promptReady = false;
+    let promptRows = [];
+    while (!promptReady && Date.now() < promptDeadline) {
+      promptRows = await cdp.evaluate(`(() =>
+        Array.from(document.querySelectorAll(".xterm-rows > div"))
+          .map((row) => String(row.textContent || ""))
+      )()`);
+      promptReady = promptRows.some((row) => row.trim().length > 0);
+      if (!promptReady) await wait(100);
+    }
+    // Some supported builds accept terminal input before xterm paints a prompt.
+    // The cursor-response marker below is the authoritative readiness check.
+
     const command = "printf \"\\r\\e[2K🍎📦\\e[6n\"; IFS=\"[;\" read -r -d R esc row col; printf \"\\r\\e[2KCPX_UNICODE11_DSR row=%s col=%s\\n\" \"$row\" \"$col\"";
     await cdp.send("Input.insertText", { text: command });
     await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 });
@@ -3879,7 +3944,7 @@ async function verifyComposerStateContrast(cdp) {
     document.querySelector("[data-codex-plus-visual-contract-composer-state]")?.remove();
     const probe = document.createElement("div");
     probe.setAttribute("data-codex-plus-visual-contract-composer-state", "");
-    probe.style.cssText = "display:flex;align-items:center;box-sizing:border-box;width:96%;height:32px;min-height:32px;padding:0 10px;margin:2px auto;border-radius:16px;background:rgb(31,41,55);color:rgb(17,17,17)";
+    probe.style.cssText = "display:flex;align-items:center;box-sizing:border-box;width:96%;height:32px;min-height:32px;padding:0 10px;margin:2px auto;border:1px solid rgb(55,65,81);border-radius:16px;background-color:transparent;background-image:linear-gradient(rgb(31,41,55),rgb(17,24,39));box-shadow:0 1px 3px rgb(0 0 0 / 40%);color:rgb(17,17,17)";
     probe.innerHTML = '<span data-codex-plus-visual-contract-goal-text>Pursuing goal</span><svg viewBox="0 0 16 16" aria-label="Context window usage" style="width:16px;height:16px;margin-left:auto;color:rgb(255,255,255)"><circle data-codex-plus-visual-contract-context-indicator cx="8" cy="8" r="5" fill="none" stroke="rgb(255,255,255)" stroke-width="2"/></svg>';
     surface.prepend(probe);
     window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.applyComposerContrast?.(surface);
@@ -3891,13 +3956,15 @@ async function verifyComposerStateContrast(cdp) {
     const textContrast = contrast(textStyle.color, surfaceBackground);
     const contextIndicatorColor = indicatorStyle.stroke !== "none" ? indicatorStyle.stroke : indicatorStyle.color;
     const contextIndicatorContrast = contrast(contextIndicatorColor, surfaceBackground);
-    const goalStatusFlattened = transparent(probeStyle.backgroundColor) && Number.parseFloat(probeStyle.borderTopLeftRadius) === 0;
+    const goalStatusFlattened = transparent(probeStyle.backgroundColor) && probeStyle.backgroundImage === "none" && probeStyle.boxShadow === "none" && Number.parseFloat(probeStyle.borderTopLeftRadius) === 0;
     const contextIndicatorAdaptive = rgb(contextIndicatorColor)?.join(",") !== "255,255,255";
     return {
       ok: goalStatusFlattened && textContrast != null && textContrast >= 4.5 && contextIndicatorContrast != null && contextIndicatorContrast >= 4.5 && contextIndicatorAdaptive,
       synthetic: true,
       surfaceBackground,
       goalStatusBackground: probeStyle.backgroundColor,
+      goalStatusBackgroundImage: probeStyle.backgroundImage,
+      goalStatusBoxShadow: probeStyle.boxShadow,
       goalStatusRadius: probeStyle.borderTopLeftRadius,
       goalStatusFlattened,
       textColor: textStyle.color,
@@ -4724,7 +4791,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
       probe.setAttribute("data-codex-plus-composer-contrast-probe", "");
       const requiresCodeToolbar = options.capabilities?.composerCodeLanguageControl?.status === "required";
       probe.innerHTML =
-        '<div data-codex-plus-contrast-kind="goal-status" style="display:flex;align-items:center;width:96%;height:32px;border-radius:16px;background:rgb(31,41,55);color:rgb(17,17,17)"><span data-codex-plus-contrast-kind="goal-status-text">Pursuing goal</span><svg viewBox="0 0 16 16" style="width:16px;height:16px;margin-left:auto"><circle data-codex-plus-contrast-kind="context-window-indicator" cx="8" cy="8" r="5" fill="none" stroke="rgb(255,255,255)" stroke-width="2"/></svg></div>' +
+        '<div data-codex-plus-contrast-kind="goal-status" style="display:flex;align-items:center;width:96%;height:32px;border:1px solid rgb(55,65,81);border-radius:16px;background-color:transparent;background-image:linear-gradient(rgb(31,41,55),rgb(17,24,39));box-shadow:0 1px 3px rgb(0 0 0 / 40%);color:rgb(17,17,17)"><span data-codex-plus-contrast-kind="goal-status-text">Pursuing goal</span><svg viewBox="0 0 16 16" style="width:16px;height:16px;margin-left:auto"><circle data-codex-plus-contrast-kind="context-window-indicator" cx="8" cy="8" r="5" fill="none" stroke="rgb(255,255,255)" stroke-width="2"/></svg></div>' +
         '<div data-codex-plus-rich-content><h3 class="text-token-description-foreground">Removal Plan</h3><table><tbody><tr><th class="opacity-50">Step</th><td><code class="text-token-text-link-foreground">npm test</code></td></tr></tbody></table><p><a class="text-token-text-link-foreground">Verification</a></p></div>' +
         (requiresCodeToolbar ? '<div data-composer-code-block-toolbar><button type="button" data-codex-plus-contrast-kind="code-toolbar">Bash</button></div>' : '') +
         '<button type="button" data-codex-plus-contrast-kind="change-summary" style="background:rgb(31,41,55);color:rgb(17,17,17)">7 files changed +155 -13</button>' +
@@ -4783,7 +4850,7 @@ function pluginAuditExpression({ includeNativeOpenProbes = false, auditPlugins =
         ? window.CodexPlus?.plugins?.get?.("userBubbleColors")?.exports?.composerBackground?.(contextIndicator, surface) || null
         : null;
       const contextIndicatorColor = contextIndicatorStyle?.stroke || contextIndicatorStyle?.color || null;
-      const goalStatusFlattened = goalStatusStyle != null && isTransparent(goalStatusStyle.backgroundColor) && Number.parseFloat(goalStatusStyle.borderTopLeftRadius) === 0;
+      const goalStatusFlattened = goalStatusStyle != null && isTransparent(goalStatusStyle.backgroundColor) && goalStatusStyle.backgroundImage === "none" && goalStatusStyle.boxShadow === "none" && Number.parseFloat(goalStatusStyle.borderTopLeftRadius) === 0;
       const contextIndicatorContrast = contextIndicatorColor && contextIndicatorBackground ? contrast(contextIndicatorColor, contextIndicatorBackground) : null;
       probe.remove();
       return {
@@ -7349,6 +7416,7 @@ module.exports = {
   listRunningAuditApps,
   listCrashpadPendingDumps,
   mergeFocusedPluginAudit,
+  parseComputedCssAlpha,
   parseArgs,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
