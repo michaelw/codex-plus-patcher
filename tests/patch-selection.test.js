@@ -1,12 +1,13 @@
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const { patchAsar, readAsar, sha256, transformAsarBuffer, walkFiles } = require("../src/core/asar");
+const { asarIntegrityHash, patchAsar, readAsar, sha256, transformAsarBuffer, walkFiles } = require("../src/core/asar");
 const {
   applyPatchSet,
   collectAssetFiles,
@@ -297,10 +298,11 @@ test("selectPatch fails closed for unsupported Codex builds", () => {
 });
 
 test("newest supported ChatGPT source identity is registered first while Codex remains registered", () => {
-  assert.equal(patchSets[0]?.id, "chatgpt-26.825.41651-7345");
-  assert.equal(chatgptPatchSets.length, 44);
+  assert.equal(patchSets[0]?.id, "chatgpt-26.901.41600-7982");
+  assert.equal(chatgptPatchSets.length, 45);
 
   for (const identity of [
+    ["26.901.41600", "7982", "077cc65356aeae34c5d8b4de0b4cc383f6fb137ed1d69a9b3dfe69ffafa058ab"],
     ["26.825.41651", "7345", "c089b63abb7ca4a751072c0da434248db13c32bed9c363e1b7e5428584b0576d"],
     ["26.825.32147", "7303", "0462b03e878f0e78b223b849ee14cbba0de043f2c16acebee163cb95daa622ef"],
     ["26.825.31414", "7287", "8dc2bc705d5ba49f0e427b21c14b6549c29fcd3ef540e75d6dad386d78f2d255"],
@@ -428,6 +430,13 @@ test("new cached ChatGPT sources own exact transform variants", () => {
 
 test("new cached ChatGPT sources map exact split assets and all transforms", () => {
   for (const [id, paths] of [
+    ["chatgpt-26.901.41600-7982", [
+      ".vite/build/main-C5K7o1Hr.js",
+      ".vite/build/src-VqXTPopo.js",
+      "webview/assets/app-initial-86767c3d23e5.js",
+      "webview/assets/terminal-panel-4d55ad90ad36.js",
+      "webview/assets/mermaid-diagram-50f1a453d3ec.js",
+    ]],
     ["chatgpt-26.825.41651-7345", [
       ".vite/build/main-BvHpyFqC.js",
       ".vite/build/src-4lLVrYxe.js",
@@ -2606,6 +2615,7 @@ test("patch manifest validation rejects unsafe structure and duplicate identitie
 test("applyPatchSet reports non-dry-run apply steps in order", async () => {
   const progress = [];
   let transformContext;
+  let integrityPlistValue;
   const operations = {
     fs: {
       rmSync() {},
@@ -2616,11 +2626,16 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
       transformContext = context;
       return "patched-sha";
     },
+    asarIntegrityHash() {
+      return "patched-integrity-hash";
+    },
     getPatcherGitSha() {
       return "abc123def456";
     },
     replacePlistString() {},
-    setPlistBuddyValue() {},
+    setPlistBuddyValue(_plistPath, keyPath, value) {
+      if (keyPath === ":ElectronAsarIntegrity:Resources/app.asar:hash") integrityPlistValue = value;
+    },
   };
 
   const patchSet = {
@@ -2652,6 +2667,8 @@ test("applyPatchSet reports non-dry-run apply steps in order", async () => {
   });
 
   assert.equal(result.patchedAsarSha, "patched-sha");
+  assert.equal(result.patchedAsarIntegrityHash, "patched-integrity-hash");
+  assert.equal(integrityPlistValue, "patched-integrity-hash");
   assert.deepEqual(transformContext, {
     patcherRepoUrl: "https://github.com/michaelw/codex-plus-patcher",
     patcherGitSha: "abc123def456",
@@ -2823,6 +2840,15 @@ test("ASAR reader and writer preserve padded header data offsets", () => {
   patchAsar(asarPath, [[fileName, (text) => text.replace("true", "false")]]);
   archive = readAsar(asarPath);
   assert.equal(readAsarFileContent(archive, fileName), "let started = false;");
+});
+
+test("ASAR integrity hash covers the unpadded header JSON", () => {
+  const asarBuffer = makeAsar({ "main.js": "let started = true;" });
+  const jsonSize = asarBuffer.readUInt32LE(12);
+  const expected = crypto.createHash("sha256").update(asarBuffer.subarray(16, 16 + jsonSize)).digest("hex");
+
+  assert.equal(asarIntegrityHash(asarBuffer), expected);
+  assert.notEqual(asarIntegrityHash(asarBuffer), sha256(asarBuffer));
 });
 
 test("patchAsar inserts new runtime files and integrity metadata", () => {
@@ -3569,6 +3595,12 @@ test("project selector shortcut command focuses and opens the mounted selector t
     { ...projects[2], id: "c", cwd: "/tmp/gamma-tools" },
     { ...projects[3], id: "d", cwd: "/tmp/delta-service/archive" },
   ]);
+  window.CodexPlusHost.adapters.messageComposer.setComposerProject({ projectId: "a" });
+  assert.deepEqual(plain(window.CodexPlusHost.adapters.messageComposer.activeComposerScope().project), {
+    ...projects[0],
+    id: "a",
+    cwd: "/tmp/alpha-workspace",
+  });
   assert.deepEqual(
     window.CodexPlus.ui.projectSelector.fuzzyFilter(projects, "alpha   work").map((project) => project.projectId),
     ["a"],
@@ -7537,6 +7569,8 @@ test("nested review diff cards use the native controlled disclosure contract", (
   assert.match(plugin, /function ControlledDiffCard/);
   assert.match(plugin, /open,\s*onOpenChange: setOpen/);
   assert.match(plugin, /"data-codex-plus-repo-patch-group": repo\.path \?\? repo\.id/);
+  assert.match(plugin, /jsx\("div", \{\s*className: "codex-review-diff-card w-full max-w-none"/);
+  assert.match(plugin, /containerClassName: "extension:rounded-lg w-full max-w-none"/);
   assert.match(plugin, /hasNativeFullContentLoader \|\| !diff\.metadata\?\.isPartial/);
   assert.match(plugin, /\.\.\.commentProps/);
   assert.match(plugin, /workspaceRoot: repoCwd/);
@@ -7595,8 +7629,10 @@ test("nested review preserves partial diffs and forwards isolated comment props"
     },
     deps,
   );
-  const card = rendered.props.children[0];
+  const cardWrapper = rendered.props.children[0];
+  const card = cardWrapper.props.children;
 
+  assert.equal(cardWrapper.props.className, "codex-review-diff-card w-full max-w-none");
   assert.equal(card.type, "captured-diff-card");
   assert.equal(card.props.diff, diff);
   assert.equal(card.props.diff.metadata.isPartial, true);
@@ -7619,7 +7655,7 @@ test("nested review preserves partial diffs and forwards isolated comment props"
       isLoading: false,
     },
     deps,
-  ).props.children[0];
+  ).props.children[0].props.children;
   assert.equal(withoutNativeLoader.props.fullContentNextFallbackToDisk, false);
   assert.equal(withoutNativeLoader.props.diff.metadata.isPartial, false);
   assert.equal(diff.metadata.isPartial, true);
@@ -7871,7 +7907,45 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     path: "/tmp/codex-plus-audit/worktrees/c7ee/alpha-workspace",
     hostId: "local",
   };
+  context.window.CodexPlusHost.adapters.projectSelector.setProjects([project]);
+  const selectorOnlyComposerProps = context.window.CodexPlus.ui.composer.surfaceProps({
+    project: { projectId: project.projectId },
+  });
   const sidebarProps = context.window.CodexPlus.ui.sidebar.projectRowProps({ project });
+  context.window.CodexPlusHost.adapters.messageComposer.setComposerProject(null);
+  const activateProjectFromTarget = context.window.CodexPlus.plugins.get("projectColors").exports.activateProjectFromTarget;
+  const projectRow = {
+    getAttribute(name) {
+      return name === "data-codex-plus-project-key" ? sidebarProps["data-codex-plus-project-key"] : null;
+    },
+  };
+  assert.equal(activateProjectFromTarget({
+    closest(selector) {
+      if (selector.includes("data-codex-plus-projectless")) return null;
+      return selector.includes("sidebar-thread-row") ? {} : projectRow;
+    },
+  }), false);
+  assert.equal(context.window.CodexPlusHost.adapters.messageComposer.activeComposerScope().project, null);
+  assert.equal(activateProjectFromTarget({
+    closest(selector) {
+      if (selector.includes("sidebar-thread-row")) return null;
+      return {
+        getAttribute(name) {
+          return name === "data-codex-plus-project-key" ? sidebarProps["data-codex-plus-project-key"] : null;
+        },
+      };
+    },
+  }), true);
+  assert.equal(
+    context.window.CodexPlusHost.adapters.messageComposer.activeComposerScope().project.projectId,
+    project.projectId,
+  );
+  assert.equal(activateProjectFromTarget({
+    closest(selector) {
+      return selector.includes("data-codex-plus-projectless") ? {} : null;
+    },
+  }), true);
+  assert.equal(context.window.CodexPlusHost.adapters.messageComposer.activeComposerScope().project, null);
   context.window.CodexPlus.ui.sidebar.projectRowProps({
     project: { label: project.label, cwd: project.path, hostId: "local" },
   });
@@ -7885,6 +7959,8 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
   assert.equal(composerProps.style.borderRadius, "var(--composer-border-radius, var(--radius-3xl))");
   assert.equal(sidebarProps.style.borderRadius, undefined);
   assert.equal(sidebarProps["data-codex-plus-project-key"], "alpha-workspace");
+  assert.equal(selectorOnlyComposerProps["data-codex-plus-project-key"], "alpha-workspace");
+  assert.equal(selectorOnlyComposerProps.style["--codex-plus-project-accent"], sidebarProps.style["--codex-plus-project-accent"]);
   assert.equal(composerProps["data-codex-plus-project-key"], "alpha-workspace");
   assert.equal(
     composerProps.style["--codex-plus-project-accent"],
@@ -7970,18 +8046,33 @@ test("project colors resolve composer cwd to the sidebar project identity", () =
     { filename: "plugins/userBubbleColors.js" },
   );
   const bubbleColors = context.window.CodexPlus.plugins.get("userBubbleColors").exports;
+  const innerComposerSurface = { contains() { return false; } };
+  const outerComposerSurface = { contains(candidate) { return candidate === innerComposerSurface; } };
+  context.document.querySelectorAll = () => [outerComposerSurface, innerComposerSurface];
+  assert.deepEqual(Array.from(bubbleColors.composerContrastSurfaces()), [outerComposerSurface]);
   assert.equal(bubbleColors.textColor("#e0218a"), "#000000");
   assert.equal(bubbleColors.controlTextColor("#e0218a"), "#ffffff");
   assert.equal(bubbleColors.contrastForeground("rgb(31, 41, 55)"), "#ffffff");
   assert.equal(bubbleColors.contrastForeground("rgb(95, 255, 95)"), "#111111");
+  assert.equal(bubbleColors.contrastForeground("rgb(224, 33, 138)"), "#000000");
   assert.equal(bubbleColors.contrastRatio("#111111", "rgb(95, 255, 95)") >= 4.5, true);
+  assert.equal(bubbleColors.contrastRatio("#111111", "color(srgb 0.3725 1 0.3725)") >= 4.5, true);
+  assert.deepEqual(
+    Array.from(bubbleColors.compositeColor("rgba(255, 255, 255, 0.16)", "rgb(95, 255, 95)")),
+    [121, 255, 121, 1],
+  );
   assert.equal(typeof bubbleColors.applyComposerContrast, "function");
+  assert.equal(typeof bubbleColors.composerBackground, "function");
   const bubbleColorsSource = fs.readFileSync(path.join(__dirname, "../src/runtime/plugins/userBubbleColors.js"), "utf8");
   assert.match(bubbleColorsSource, /setProperty\?\.\("color", nextForeground, "important"\)/);
   assert.match(bubbleColorsSource, /setProperty\?\.\("-webkit-text-fill-color", "currentColor", "important"\)/);
   assert.match(bubbleColorsSource, /restoreComposerContrast/);
   assert.match(bubbleColorsSource, /element\.closest\?\.\("\.ProseMirror"\)/);
-  assert.match(bubbleColorsSource, /if \(element\.closest\?\.\("\[class\*='h-token-button-composer'\]"\)\) continue/);
+  assert.doesNotMatch(bubbleColorsSource, /if \(element\.closest\?\.\("\[class\*='h-token-button-composer'\]"\)\) continue/);
+  assert.match(bubbleColorsSource, /:is\(svg,path,circle\)/);
+  assert.match(bubbleColorsSource, /isComposerInsetSurface/);
+  assert.match(bubbleColorsSource, /closest\?\.\(`\[\$\{INSET_SURFACE_ATTRIBUTE\}\]`\)/);
+  assert.match(bubbleColorsSource, /composerContrastSurfaces/);
   assert.match(bubbleColorsSource, /scheduleComposerContrastSettled/);
   assert.match(bubbleColorsSource, /window\.setTimeout\?\.\([^,]+, 750\)/s);
   assert.match(bubbleColorsSource, /contrastTimer = null;\n      refreshComposerContrast\(\)/);
