@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.38.0...v0.39.0) (2026-11-04)
+
+
+### Features
+
+* support ChatGPT 26.901.41600 ([#176](https://github.com/michaelw/codex-plus-patcher/issues/176)) ([4ef8129](https://github.com/michaelw/codex-plus-patcher/commit/4ef812999cae52be6b51493134e8918559410c1a))
+
+
+### Bug Fixes
+
+* **deps:** update dependency ora to v10 ([#183](https://github.com/michaelw/codex-plus-patcher/issues/183)) ([48ba85d](https://github.com/michaelw/codex-plus-patcher/commit/48ba85da4914dac7a706027b054e6b56dc65c7ff))
+
 ## [0.38.0](https://github.com/michaelw/codex-plus-patcher/compare/v0.37.0...v0.38.0) (2026-08-30)
 
 
