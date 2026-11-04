@@ -12,8 +12,7 @@
   }
 
   function activeComposerScope() {
-    const scope = Array.from(composerScopes.values()).at(-1);
-    if (!scope) return {};
+    const scope = Array.from(composerScopes.values()).at(-1) || {};
     return composerProjectKnown ? { ...scope, project: composerProject } : scope;
   }
 
@@ -32,7 +31,7 @@
   }
 
   function setComposerProject(project) {
-    composerProject = project;
+    composerProject = globalObject.CodexPlusHost?.adapters?.projectSelector?.resolveProject?.(project) ?? project;
     composerProjectKnown = true;
     notifyComposerScope();
   }

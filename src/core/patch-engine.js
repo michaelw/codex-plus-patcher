@@ -2,7 +2,7 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { patchAsar, sha256, sha256File, transformAsarBuffer } = require("./asar");
+const { asarIntegrityHash, patchAsar, sha256, sha256File, transformAsarBuffer } = require("./asar");
 const { detectSourceFamily, readBundleExecutable, sourceFamilyConfig } = require("./app-identity");
 const { readPlistValue, replacePlistString, setPlistBuddyValue } = require("./plist");
 const { codexPlusRuntimeAssets } = require("../runtime/assets");
@@ -308,6 +308,7 @@ async function applyPatchSet({
   const fsImpl = operations.fs || fs;
   const runCommand = operations.run || run;
   const patchAsarFile = operations.patchAsar || patchAsar;
+  const readAsarIntegrityHash = operations.asarIntegrityHash || asarIntegrityHash;
   const replacePlistStringValue = operations.replacePlistString || replacePlistString;
   const setPlistBuddyStringValue = operations.setPlistBuddyValue || setPlistBuddyValue;
   const effectivePatchSet = mergeRuntimeConfig(patchSet, runtimeConfig);
@@ -341,13 +342,14 @@ async function applyPatchSet({
   const patchedAsarSha = await withProgress(progress, progressOffset + 3, progressTotal, "Patch app.asar", () =>
     patchAsarFile(targetAsar, fileTransforms, { ...patchContext, assetFiles }),
   );
+  const patchedAsarIntegrityHash = readAsarIntegrityHash(targetAsar);
 
   const plistPath = path.join(targetApp, "Contents/Info.plist");
   await withProgress(progress, progressOffset + 4, progressTotal, "Update bundle metadata", () => {
     for (const [keyPath, value] of Object.entries(collectInfoPlistStrings(effectivePatchSet))) {
       replacePlistStringValue(plistPath, keyPath, value);
     }
-    setPlistBuddyStringValue(plistPath, ":ElectronAsarIntegrity:Resources/app.asar:hash", patchedAsarSha);
+    setPlistBuddyStringValue(plistPath, ":ElectronAsarIntegrity:Resources/app.asar:hash", patchedAsarIntegrityHash);
   });
 
   await withProgress(progress, progressOffset + 5, progressTotal, "Sign copied app", () =>
@@ -366,6 +368,7 @@ async function applyPatchSet({
     patchedFiles: fileTransforms.map(([filePath]) => filePath),
     addedFiles: assetFiles.map(([filePath]) => filePath),
     patchedAsarSha,
+    patchedAsarIntegrityHash,
     dryRun: false,
   };
 }

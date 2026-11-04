@@ -50,6 +50,7 @@ const {
   listCrashpadPendingDumps,
   listRunningAuditApps,
   mergeFocusedPluginAudit,
+  parseComputedCssAlpha,
   pluginAuditExpression,
   projectColorsNeedsFixtureRetry,
   reconcileNestedReviewProof,
@@ -67,6 +68,23 @@ const {
   waitForAppShellMounted,
   writeAuditOutput,
 } = require("../src/core/plugin-audit");
+
+test("computed CSS alpha parsing preserves transparent and percentage colors", () => {
+  assert.equal(parseComputedCssAlpha("rgb(0, 0, 0)"), 1);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0)"), 0);
+  assert.equal(parseComputedCssAlpha("rgba(0, 0, 0, 0.25)"), 0.25);
+  assert.equal(parseComputedCssAlpha("rgb(0 0 0 / 40%)"), 0.4);
+  assert.equal(parseComputedCssAlpha("color(srgb 0 0 0 / 75%)"), 0.75);
+});
+
+test("New Chat proof audits the real editor placeholder in every captured state", () => {
+  const source = String(captureNewChatComposerProof);
+  assert.match(source, /placeholderContrast/);
+  assert.match(source, /::placeholder/);
+  assert.match(source, /surface\?\.querySelectorAll/);
+  assert.match(source, /assertPlaceholderContrast\(neutral/);
+  assert.match(source, /assertPlaceholderContrast\(status/);
+});
 
 test("fixture activation keeps retrying trusted input until the header contract is ready", async () => {
   const sent = [];
@@ -679,9 +697,10 @@ test("live terminal Unicode audit asserts CSI 6n coordinates and captures the te
   const evaluations = [
     { terminalVisible: false, toggle: { x: 100, y: 20 } },
     { x: 400, y: 500 },
-    true,
     { x: 400, y: 500 },
     true,
+    [],
+    ["$"],
     {
       rows: ["🍎📦", "CPX_UNICODE11_DSR row=7 col=5"],
       cursor: { row: 7, column: 5 },
@@ -718,9 +737,51 @@ test("live terminal Unicode audit asserts CSI 6n coordinates and captures the te
     assert.equal(fs.existsSync(result.screenshot), true);
     assert.match(calls.find((call) => call.method === "Input.insertText").params.text, /🍎📦.*\\e\[6n/);
     assert.equal(calls.filter((call) => call.method === "Input.dispatchMouseEvent").length, 9);
+    const enterKeyDowns = calls.filter((call) =>
+      call.method === "Input.dispatchKeyEvent" && call.params.type === "keyDown" && call.params.key === "Enter"
+    );
+    assert.equal(enterKeyDowns.length, 2);
+    assert.ok(
+      calls.indexOf(enterKeyDowns[0]) < calls.findIndex((call) => call.method === "Input.insertText"),
+      "terminal wake-up Enter should precede cursor-position input",
+    );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("live terminal Unicode audit probes a focused terminal whose prompt stays visually blank", async () => {
+  const evaluations = [
+    { terminalVisible: true },
+    { x: 400, y: 500 },
+    true,
+  ];
+  const calls = [];
+  const cdp = {
+    async evaluate(source) {
+      if (evaluations.length > 0) return evaluations.shift();
+      if (source.includes("const marker")) {
+        return {
+          rows: ["🍎📦", "CPX_UNICODE11_DSR row=7 col=5"],
+          cursor: { row: 7, column: 5 },
+        };
+      }
+      return [];
+    },
+    async send(method, params) {
+      calls.push({ method, params });
+      return {};
+    },
+  };
+
+  const result = await verifyTerminalUnicodeCursor(cdp, {
+    wait() {},
+    timeoutMs: 2,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.column, 5);
+  assert.equal(calls.filter((call) => call.method === "Input.insertText").length, 1);
 });
 
 test("empty invocation shows help", () => {
@@ -1186,7 +1247,9 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /data-app-action-sidebar-project-list-id/);
   assert.match(defaultExpression, /data-codex-plus-project-sidebar-color/);
   assert.match(defaultExpression, /composerPermissionPickerStatus/);
-  assert.match(defaultExpression, /text-editor:local:/);
+  assert.match(defaultExpression, /data-tab-id\^='text-editor:'/);
+  assert.match(defaultExpression, /artifactTabId\.startsWith\("text-editor:"\)/);
+  assert.match(defaultExpression, /artifactTextEditorHostId === ""/);
   assert.match(defaultExpression, /composerContrastStatus/);
   assert.match(defaultExpression, /Ask for approval/);
   assert.match(defaultExpression, /Approve for me/);
@@ -1201,6 +1264,10 @@ test("audit probe expression skips native window-opening probes by default", () 
   assert.match(defaultExpression, /effectiveBackground = isTransparent\(style\.backgroundColor\) \? surfaceBackground : style\.backgroundColor/);
   assert.match(defaultExpression, /Composer code toolbar does not match the submit button background/);
   assert.match(defaultExpression, /Composer custom color is covered by a differently colored child surface/);
+  assert.match(defaultExpression, /data-codex-plus-contrast-kind="goal-status"/);
+  assert.match(defaultExpression, /data-codex-plus-contrast-kind="context-window-indicator"/);
+  assert.match(defaultExpression, /goalStatusFlattened/);
+  assert.match(defaultExpression, /contextIndicatorContrast/);
   assert.match(defaultExpression, /userBubbleShapeStatus/);
   assert.match(defaultExpression, /User message wrapper painted behind the rounded bubble/);
   assert.match(defaultExpression, /\[data-user-message-bubble\]/);
@@ -1782,7 +1849,7 @@ test("aharness artifact audit recognizes both native app-shell tab layouts", () 
 
   assert.match(artifactAudit, /data-app-shell-tabs/);
   assert.match(artifactAudit, /data-app-shell-tab-strip-controller/);
-  assert.match(artifactAudit, /data-app-shell-tab-panel-controller/);
+  assert.match(artifactAudit, /artifactTextEditorHostId/);
   assert.match(artifactAudit, /artifactCommonShell/);
   assert.match(artifactAudit, /new Set/);
 });
@@ -4516,7 +4583,7 @@ test("visual contract writes screenshots and compact readbacks", async () => {
         expectedWarnings: [],
         applyResult: {
           sourceApp: "/Applications/Codex.app",
-          patchSet: "codex-test",
+          patchSet: "chatgpt-test",
           codexVersion: "26.623.141536",
           bundleVersion: "4753",
         },
@@ -4533,6 +4600,16 @@ test("visual contract writes screenshots and compact readbacks", async () => {
       wait() {},
       activateFixture: async () => ({ ok: true }),
       verifyComposer: async () => ({ ok: true, pillCount: 1, synthetic: true }),
+      verifyComposerVerbatim: async () => ({ ok: true, supported: false, screenshots: {} }),
+      captureNewChat: async () => ({ ok: true, supported: false, screenshots: {} }),
+      verifyComposerState: async () => ({
+        ok: true,
+        synthetic: true,
+        goalStatusFlattened: true,
+        textContrast: 12,
+        contextIndicatorContrast: 12,
+        contextIndicatorAdaptive: true,
+      }),
       verifySidebarStatus: async () => ({ ok: true, synthetic: true, textContrast: 12 }),
       verifyReview: async () => ({ ok: true }),
       waitReviewFixture: async () => ({ ok: true, plusTomlVisible: true, subprojectCommitCount: 2, loadingPlaceholderCount: 0 }),
@@ -4545,13 +4622,15 @@ test("visual contract writes screenshots and compact readbacks", async () => {
 
     assert.equal(contract.ok, true);
     assert.equal(dialogDismissals, 1);
-    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
+    for (const file of ["contract.json", "audit-summary.json", "composer-pill.png", "composer-state-contrast.png", "sidebar-needs-input.png", "shell.png", "review.png", "sidebar-command.png", "settings.png"]) {
       assert.equal(fs.existsSync(path.join(tmpDir, file)), true);
     }
     const readback = JSON.parse(fs.readFileSync(path.join(tmpDir, "contract.json"), "utf8"));
     assert.equal(readback.settings.generalVisible, true);
     assert.equal(readback.review.diffCardCount, 2);
     assert.equal(readback.composerPill.ok, true);
+    assert.equal(readback.composerStateContrast.goalStatusFlattened, true);
+    assert.equal(readback.composerStateContrast.contextIndicatorAdaptive, true);
     assert.equal(readback.sidebarNeedsInput.ok, true);
     const summary = JSON.parse(fs.readFileSync(path.join(tmpDir, "audit-summary.json"), "utf8"));
     assert.equal(summary.newChatComposer.newChatNeutral, true);

@@ -3,7 +3,9 @@
   const STORAGE_KEY = "codex-plus:user-message-bubble-colors";
   const EVENT = "codex-plus:user-message-bubble-colors-change";
   const AUTO_CONTRAST_ATTRIBUTE = "data-codex-plus-auto-contrast";
+  const INSET_SURFACE_ATTRIBUTE = "data-codex-plus-composer-inset-surface";
   const contrastOriginals = new WeakMap();
+  const insetSurfaceOriginals = new WeakMap();
   let contrastObserver = null;
   let contrastFrame = null;
   let contrastTimer = null;
@@ -73,8 +75,26 @@
       return [0, 2, 4].map((offset) => parseInt(hex[1].slice(offset, offset + 2), 16)).concat(1);
     }
     const rgb = value.trim().match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i);
-    if (!rgb) return null;
-    return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] == null ? 1 : Number(rgb[4])];
+    if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] == null ? 1 : Number(rgb[4])];
+    const srgb = value.trim().match(/^color\(srgb\s+([\d.+-]+)\s+([\d.+-]+)\s+([\d.+-]+)(?:\s*\/\s*([\d.]+))?\s*\)$/i);
+    if (!srgb) return null;
+    return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255, srgb[4] == null ? 1 : Number(srgb[4])];
+  }
+
+  function compositeColor(foreground, background) {
+    const front = Array.isArray(foreground) ? foreground : parseCssColor(foreground);
+    const back = Array.isArray(background) ? background : parseCssColor(background);
+    if (!front || !back) return null;
+    const alpha = front[3] + back[3] * (1 - front[3]);
+    if (alpha <= 0) return [0, 0, 0, 0];
+    return [0, 1, 2].map((index) => Math.round(
+      (front[index] * front[3] + back[index] * back[3] * (1 - front[3])) / alpha,
+    )).concat(alpha);
+  }
+
+  function cssColor(color) {
+    if (!color) return null;
+    return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`;
   }
 
   function relativeLuminance(value) {
@@ -97,20 +117,31 @@
   }
 
   function contrastForeground(background) {
-    return contrastRatio("#111111", background) >= contrastRatio("#ffffff", background) ? "#111111" : "#ffffff";
+    const nearBlackContrast = contrastRatio("#111111", background);
+    const whiteContrast = contrastRatio("#ffffff", background);
+    if (nearBlackContrast >= 4.5 && nearBlackContrast >= whiteContrast) return "#111111";
+    return contrastRatio("#000000", background) >= whiteContrast ? "#000000" : "#ffffff";
   }
 
   function effectiveBackground(element, boundary) {
+    let composed = null;
     for (let current = element; current; current = current.parentElement) {
       const background = window.getComputedStyle(current).backgroundColor;
       const parsed = parseCssColor(background);
-      if (parsed && parsed[3] >= 0.95) return background;
+      if (parsed && parsed[3] > 0) {
+        composed = composed ? compositeColor(composed, parsed) : parsed;
+        if (composed[3] >= 0.999) return cssColor(composed);
+      }
       if (current === boundary) break;
     }
-    return window.getComputedStyle(document.documentElement).backgroundColor || "rgb(255, 255, 255)";
+    const root = parseCssColor(window.getComputedStyle(document.documentElement).backgroundColor) || [255, 255, 255, 1];
+    return cssColor(composed ? compositeColor(composed, root) : root);
   }
 
   function composerBackground(element, surface) {
+    if (element !== surface && element.closest?.(`[${INSET_SURFACE_ATTRIBUTE}]`)) {
+      return window.getComputedStyle(surface).backgroundColor;
+    }
     const background = window.getComputedStyle(element).backgroundColor;
     const parsed = parseCssColor(background);
     const transparent = background === "transparent" || (parsed && parsed[3] < 0.05);
@@ -131,23 +162,72 @@
     contrastOriginals.delete(element);
   }
 
+  function restoreComposerInsetSurface(element) {
+    const original = insetSurfaceOriginals.get(element);
+    if (!original) return;
+    for (const [property, value, priority] of original) {
+      if (value) element.style?.setProperty?.(property, value, priority);
+      else element.style?.removeProperty?.(property);
+    }
+    element.removeAttribute?.(INSET_SURFACE_ATTRIBUTE);
+    insetSurfaceOriginals.delete(element);
+  }
+
+  function isComposerInsetSurface(element, surface, style) {
+    if (element === surface || element.matches?.("[role='dialog'],[role='menu'],[role='listbox'],[data-composer-attachment-pill],.composer-attachment-surface")) return false;
+    const surfaceRect = surface.getBoundingClientRect?.();
+    const rect = element.getBoundingClientRect?.();
+    if (!surfaceRect || !rect || surfaceRect.width <= 0 || surfaceRect.height <= 0 || rect.width <= 0 || rect.height <= 0) return false;
+    const background = parseCssColor(style.backgroundColor);
+    const hasPaint = background?.[3] >= 0.95 ||
+      (style.backgroundImage && style.backgroundImage !== "none") ||
+      (style.boxShadow && style.boxShadow !== "none");
+    const radius = Math.max(...[style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius]
+      .map((value) => Number.parseFloat(value) || 0));
+    return hasPaint &&
+      radius > 0 &&
+      rect.width / surfaceRect.width >= 0.85 &&
+      rect.height / surfaceRect.height <= 0.55 &&
+      rect.top <= surfaceRect.top + surfaceRect.height * 0.35;
+  }
+
+  function flattenComposerInsetSurface(element) {
+    insetSurfaceOriginals.set(element, ["background-color", "background-image", "box-shadow", "border-color", "border-radius"].map((property) => [
+      property,
+      element.style?.getPropertyValue?.(property) || "",
+      element.style?.getPropertyPriority?.(property) || "",
+    ]));
+    element.setAttribute?.(INSET_SURFACE_ATTRIBUTE, "");
+    element.style?.setProperty?.("background-color", "transparent", "important");
+    element.style?.setProperty?.("background-image", "none", "important");
+    element.style?.setProperty?.("box-shadow", "none", "important");
+    element.style?.setProperty?.("border-color", "transparent", "important");
+    element.style?.setProperty?.("border-radius", "0", "important");
+  }
+
   function applyComposerContrast(surface) {
     if (!surface?.querySelectorAll || typeof window.getComputedStyle !== "function") return 0;
     const elements = [surface, ...surface.querySelectorAll("*")];
     for (const element of elements) {
       restoreComposerContrast(element);
+      restoreComposerInsetSurface(element);
+    }
+    for (const element of elements) {
+      const style = window.getComputedStyle(element);
+      if (isComposerInsetSurface(element, surface, style)) flattenComposerInsetSurface(element);
     }
     let adjusted = 0;
     for (const element of elements) {
       if (element !== surface && element.closest?.(".ProseMirror")) continue;
-      if (element.closest?.("[class*='h-token-button-composer']")) continue;
       const style = window.getComputedStyle(element);
       if (style.display === "none" || style.visibility === "hidden") continue;
       const foreground = style.color;
       const background = composerBackground(element, surface);
-      if (contrastRatio(foreground, background) >= 4.5) continue;
+      const strokeNeedsContrast = style.stroke && style.stroke !== "none" && contrastRatio(style.stroke, background) < 4.5;
+      const fillNeedsContrast = style.fill && style.fill !== "none" && contrastRatio(style.fill, background) < 4.5;
+      if (contrastRatio(foreground, background) >= 4.5 && !strokeNeedsContrast && !fillNeedsContrast) continue;
       const nextForeground = contrastForeground(background);
-      contrastOriginals.set(element, ["color", "-webkit-text-fill-color", "opacity"].map((property) => [
+      contrastOriginals.set(element, ["color", "-webkit-text-fill-color", "opacity", "stroke", "fill"].map((property) => [
         property,
         element.style?.getPropertyValue?.(property) || "",
         element.style?.getPropertyPriority?.(property) || "",
@@ -156,14 +236,21 @@
       element.style?.setProperty?.("color", nextForeground, "important");
       element.style?.setProperty?.("-webkit-text-fill-color", "currentColor", "important");
       element.style?.setProperty?.("opacity", "1", "important");
+      if (strokeNeedsContrast) element.style?.setProperty?.("stroke", "currentColor", "important");
+      if (fillNeedsContrast) element.style?.setProperty?.("fill", "currentColor", "important");
       adjusted += 1;
     }
     return adjusted;
   }
 
+  function composerContrastSurfaces() {
+    const surfaces = Array.from(document.querySelectorAll?.("[data-codex-plus-user-entry]") || []);
+    return surfaces.filter((surface) => !surfaces.some((candidate) => candidate !== surface && candidate.contains?.(surface)));
+  }
+
   function refreshComposerContrast() {
     contrastFrame = null;
-    for (const surface of document.querySelectorAll?.("[data-codex-plus-user-entry]") || []) {
+    for (const surface of composerContrastSurfaces()) {
       applyComposerContrast(surface);
     }
   }
@@ -234,6 +321,7 @@
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble]:not(:has([data-user-message-bubble])),:root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble],:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry]:not(:has([data-codex-plus-user-bubble])){background-color:var(--codex-plus-user-bubble-light-bg);color:var(--codex-plus-user-bubble-light-fg)}' +
         '[data-codex-plus-user-entry] .composer-surface-chrome{background-color:transparent!important;background-image:none!important}' +
         '[data-codex-plus-user-entry] [data-composer-layout]{background-color:transparent!important;background-image:none!important}' +
+        '[data-codex-plus-composer-inset-surface]::before,[data-codex-plus-composer-inset-surface]::after{background-color:transparent!important;background-image:none!important;box-shadow:none!important;border-color:transparent!important;border-radius:0!important}' +
         '[data-codex-plus-user-entry]:has([data-codex-plus-user-bubble]){background-color:transparent!important;box-shadow:none!important}' +
         '[data-codex-plus-user-bubble]:has([data-user-message-bubble]){background-color:transparent!important;box-shadow:none!important;border-left:0!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,[data-codex-plus-rich-content],[data-codex-plus-rich-content] *){color:var(--codex-plus-user-bubble-light-fg)!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
@@ -261,7 +349,7 @@
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] .composer-attachment-surface :is(*,[class*="text-token"],[class*="opacity-"]){color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]){opacity:1!important;color:var(--codex-plus-user-bubble-light-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]) *{animation:none!important;background-image:none!important;color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
-        ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-light-fg)}' +
+        ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::before,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::after,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-light-fg)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-bubble]:not(:has([data-user-message-bubble])),:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble],:root.dark [data-codex-plus-user-entry]:not(:has([data-codex-plus-user-bubble])),:root.electron-dark [data-codex-plus-user-bubble]:not(:has([data-user-message-bubble])),:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble],:root.electron-dark [data-codex-plus-user-entry]:not(:has([data-codex-plus-user-bubble])){background-color:var(--codex-plus-user-bubble-dark-bg);color:var(--codex-plus-user-bubble-dark-fg)}' +
         ':root.dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,[data-codex-plus-rich-content],[data-codex-plus-rich-content] *),:root.electron-dark [data-codex-plus-user-entry] :is(.ProseMirror,.ProseMirror *,[data-codex-plus-rich-content],[data-codex-plus-rich-content] *){color:var(--codex-plus-user-bubble-dark-fg)!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(.ProseMirror,textarea,[contenteditable="true"]),:root.electron-dark [data-codex-plus-user-entry] :is(.ProseMirror,textarea,[contenteditable="true"]){caret-color:var(--codex-plus-user-bubble-dark-fg)!important}' +
@@ -288,17 +376,21 @@
         ':root.dark [data-codex-plus-user-entry] .composer-attachment-surface :is(*,[class*="text-token"],[class*="opacity-"]),:root.electron-dark [data-codex-plus-user-entry] .composer-attachment-surface :is(*,[class*="text-token"],[class*="opacity-"]){color:inherit!important;opacity:1!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]),:root.electron-dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]){opacity:1!important;color:var(--codex-plus-user-bubble-dark-fg)!important;-webkit-text-fill-color:currentColor!important}' +
         ':root.dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]) *,:root.electron-dark [data-codex-plus-user-entry] :is(button[aria-disabled="true"],button[class*="opacity-25"],[role="button"][aria-disabled="true"],[role="button"][class*="opacity-25"]) *{animation:none!important;background-image:none!important;color:inherit!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
-        ':root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::before,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],[class*="text-token-input-placeholder-foreground"])::after,:root.electron-dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-dark-fg)}' +
+        ':root.dark [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::before,:root.dark [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::after,:root.dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::before,:root.electron-dark [data-codex-plus-user-entry] :is([data-placeholder],.is-editor-empty,[class*="is-editor-empty"],[class*="text-token-input-placeholder-foreground"])::after,:root.electron-dark [data-codex-plus-user-entry] :is(input,textarea,[contenteditable="true"],[class*="placeholder:text-token-input-placeholder-foreground"])::placeholder{color:var(--codex-plus-user-bubble-dark-fg)!important;opacity:1!important;-webkit-text-fill-color:currentColor!important}' +
         ':root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root:not(.dark):not(.electron-dark) [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ *,:root.electron-dark [data-codex-plus-user-bubble] [data-user-message-bubble] ~ * *{color:var(--color-token-text-tertiary)!important;stroke:currentColor!important;-webkit-text-fill-color:currentColor!important}' +
-        '[data-codex-plus-auto-contrast] :is(svg,path){color:inherit!important;stroke:currentColor!important}',
+        ':is([data-codex-plus-auto-contrast],[data-codex-plus-auto-contrast] :is(svg,path,circle)){color:inherit!important;stroke:currentColor!important}',
       exports: {
         applyComposerContrast,
+        composerBackground,
+        composerContrastSurfaces,
+        compositeColor,
         contrastForeground,
         contrastRatio,
         defaultColor,
         controlTextColor,
         eventName: EVENT,
         isColor,
+        isComposerInsetSurface,
         isStoredColor,
         readColors,
         renderColorRow,
